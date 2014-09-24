@@ -1,0 +1,1 @@
+../../../../../../home/arendeiro/projects/chipmentation/src/fastq_all_samples.sh

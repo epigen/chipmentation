@@ -1,0 +1,1 @@
+../../../../../../home/arendeiro/projects/chipmentation/src/pipeline_with_trimming.sh
