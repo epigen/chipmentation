@@ -1,4 +1,4 @@
-align = read.table("~/projects/chipmentation/alignment rates.csv", sep = ",", header = TRUE)
+align = read.table("~/projects/chipmentation/results/alignment rates.csv", sep = ",", header = TRUE)
 #align = read.table("~/workspace/ChIPmentation/alignment rates.csv", sep = ",", header = TRUE)
 align$name <- paste(align$technique, align$antibody, sep = '_')
 

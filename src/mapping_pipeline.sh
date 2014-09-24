@@ -30,11 +30,11 @@
 #
 # $ while read SAMPLE_NAME SAMPLE_FILE; do
 # $    sbatch /home/arendeiro/projects/chipmentation/src/pipeline_with_trimming.sh \
-# $    $SAMPLE_NAME \
-# $    $SAMPLE_FILE \
 # $    --job-name="pipeline_trim_${SAMPLE_NAME}" \
 # $    --error="/home/arendeiro/logs/pipeline_trim_${SAMPLE_NAME}_%j.err" \
 # $    --output="/home/arendeiro/logs/pipeline_trim_${SAMPLE_NAME}_%j.log" \
+# $    $SAMPLE_NAME \
+# $    $SAMPLE_FILE
 # $ done < $SAMPLES_FILE
 
 
@@ -61,7 +61,8 @@ SAMPLE_FILE=$2
 ### Specify paths
 PROJECTDIR=/home/arendeiro/data/human/chipmentation
 GENOMEREF=/fhgfs/prod/ngs_resources/genomes/hg19/forBowtie2/hg19
-PRESEQ=.local/software/preseq-0.1.0/preseq
+PRESEQ=/home/arendeiro/.local/software/preseq-0.1.0/preseq
+
 ### Start work on samples 
 # Fastqc on raw data
 mkdir -p $PROJECTDIR/raw/fastqc
