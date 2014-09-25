@@ -46,6 +46,7 @@ module load trimmomatic/0.32
 module load samtools
 module load bamtools/bamtools
 module load bowtie/2.2.0
+module load python/2.7.6
 
 # set the temporary folder to your scratch location (avoid using node local /tmp)
 export SCRATCH_PATH=/fhgfs/scratch/users/arendeiro
@@ -77,7 +78,7 @@ bamtools convert -in $SAMPLE_FILE -format fastq > $PROJECTDIR/raw/fastq/$SAMPLE_
 # Remove adapters, trim reads when needed
 java -jar `which trimmomatic-0.32.jar` SE \
 $PROJECTDIR/raw/fastq/$SAMPLE_NAME.fastq ${PROJECTDIR}/raw/${SAMPLE_NAME}.trimmed.fastq \
-ILLUMINACLIP:/home/arendeiro/adapters/TruSeq3-SE.fa:1:40:15 \
+ILLUMINACLIP:/home/arendeiro/adapters/chipmentation.fa:1:40:15 \
 LEADING:3 TRAILING:3 \
 SLIDINGWINDOW:4:10 \
 MINLEN:36
@@ -90,17 +91,11 @@ bowtie2 --very-sensitive -p 16 -x $GENOMEREF $PROJECTDIR/raw/$SAMPLE_NAME.trimme
  if [[ $SAMPLE_NAME == *ATAC-seq* ]] || [[ $SAMPLE_NAME == *CM* ]]
     then
     echo "Shifting reads for sample:" $SAMPLE_NAME
-    samtools view $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.bam | awk -F "\t" 'BEGIN{OFS="\t"}($2==16){ offset=$4-5; print $1,$2,$3, offset,$5,$6,$7,$8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20}' > $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted_minus.sam
-    samtools view $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.bam | awk -F "\t" 'BEGIN{OFS="\t"}($2==0){ offset=$4+4; print $1,$2,$3, offset,$5,$6,$7,$8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20}' > $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted_plus.sam
-    cat $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted_minus.sam $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted_plus.sam | samtools view -S -b - | samtools sort - $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.bam
-    if [ -s $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.bam ]
-        then
-        rm $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted_minus.sam $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted_plus.sam
-    fi
+    samtools view -h $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.bam | python2.7 projects/chipmentation/src/shift_reads.py | samtools view -S -b - | samtools sort - $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.bam
 fi
 
 # Preseq
-if [[ $SAMPLE_NAME == *ATAC-seq* || $SAMPLE_NAME == *CM*]]
+if [[ $SAMPLE_NAME == *ATAC-seq* || $SAMPLE_NAME == *CM* ]]
     then
     $PRESEQ c_curve -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.bam -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_c_curve.txt
     $PRESEQ c_curve -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.bam -e 1e8 -s 2e6 -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_lc_extrap.txt
