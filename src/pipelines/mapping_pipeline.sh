@@ -1,43 +1,15 @@
 #!/bin/bash
-#SBATCH --partition=mediumq
+#SBATCH --partition=shortq
 #SBATCH --ntasks=1
 #SBATCH --time=10:00:00
 
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=16
 #SBATCH --mem-per-cpu=2000
 #SBATCH --nodes=1
 
-#SBATCH --job-name=shiftreads_markdups
-#SBATCH --output=/home/arendeiro/logs/shiftreads_markdups_%j.out
-#SBATCH --error=/home/arendeiro/logs/shiftreads_markdups_%j.err
-
-
-####### EXPLANATION OF USAGE ##########
-
-# Submit jobs for this script by doing:
-# $ sbatch <path>/pipeline_with_trimming.sh SAMPLE_NAME SAMPLE_FILE
-# 
-# You can encapsulate this in a loop as such to run multiple samples from a file:
-#
-# SAMPLES_FILE=/home/arendeiro/projects/chipmentation/samples_test_4.txt
-# $ while read SAMPLE_NAME SAMPLE_FILE; do
-# $     sbatch /home/arendeiro/projects/chipmentation/src/pipeline_with_trimming.sh $SAMPLE_NAME $SAMPLE_FILE
-# $ done < $SAMPLES_FILE
-# 
-# You can supply additional options to the sbatch command, so that the jobname and logs
-# reflect the current sample:
-
-# SAMPLES_FILE=/home/arendeiro/projects/chipmentation/samples_test_4.txt
-#
-# $ while read SAMPLE_NAME SAMPLE_FILE; do
-# $    sbatch /home/arendeiro/projects/chipmentation/src/pipeline_with_trimming.sh \
-# $    --job-name="pipeline_trim_${SAMPLE_NAME}" \
-# $    --error="/home/arendeiro/logs/pipeline_trim_${SAMPLE_NAME}_%j.err" \
-# $    --output="/home/arendeiro/logs/pipeline_trim_${SAMPLE_NAME}_%j.log" \
-# $    $SAMPLE_NAME \
-# $    $SAMPLE_FILE
-# $ done < $SAMPLES_FILE
-
+#SBATCH --job-name=mapping
+#SBATCH --output=/home/arendeiro/logs/mapping_%j.out
+#SBATCH --error=/home/arendeiro/logs/mapping_%j.err
 
 # *** setup environment ***
 # load the required environmental modules that your script depends upon
@@ -65,15 +37,41 @@ PROJECTDIR=/home/arendeiro/data/human/chipmentation
 GENOMEREF=/fhgfs/prod/ngs_resources/genomes/hg19/forBowtie2/hg19
 PRESEQ=/home/arendeiro/.local/software/preseq-0.1.0/preseq
 PICARDDIR=/cm/shared/apps/picard-tools/1.118/
+HOMERDIR=/home/arendeiro/.local/software/homer-4.6/bin
+
+### Start work on samples 
+# Fastqc on raw data
+mkdir -p $PROJECTDIR/raw/fastqc
+fastqc -o $PROJECTDIR/raw/fastqc $SAMPLE_FILE
+
+# Convert to fastq
+echo "Converting to fastq: " $SAMPLE_NAME
+mkdir -p $PROJECTDIR/raw/fastq
+bamtools convert -in $SAMPLE_FILE -format fastq > $PROJECTDIR/raw/fastq/$SAMPLE_NAME.fastq
+
+# Trimming 
+# Remove adapters, trim reads when needed
+echo "Trimming reads: " $SAMPLE_NAME
+java -jar `which trimmomatic-0.32.jar` SE \
+$PROJECTDIR/raw/fastq/$SAMPLE_NAME.fastq ${PROJECTDIR}/raw/${SAMPLE_NAME}.trimmed.fastq \
+ILLUMINACLIP:/home/arendeiro/adapters/chipmentation.fa:1:40:15 \
+LEADING:3 TRAILING:3 \
+SLIDINGWINDOW:4:10 \
+MINLEN:36
+
+# Map with bowtie2 end-to-end sensitive settings
+echo "Mapping: " $SAMPLE_NAME
+mkdir -p $PROJECTDIR/mapped/
+bowtie2 --very-sensitive -p 16 -x $GENOMEREF $PROJECTDIR/raw/$SAMPLE_NAME.trimmed.fastq | samtools view -S -b - | samtools sort - $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted
 
 # Shift reads from tagmentation samples
 if [[ $SAMPLE_NAME == *ATAC-seq* ]] || [[ $SAMPLE_NAME == *_CM_* ]]
     then
     echo "Shifting reads for sample:" $SAMPLE_NAME
-    samtools view -h $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.bam | python2.7 projects/chipmentation/src/shift_reads.py | samtools view -S -b - | samtools sort - $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted
+    samtools view -h $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.bam | python2.7 projects/chipmentation/src/scripts/shift_reads.py | samtools view -S -b - | samtools sort - $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted
 fi
 
-# Mark & remove duplicates
+# Mark duplicates
 if [[ $SAMPLE_NAME == *ATAC-seq* ]] || [[ $SAMPLE_NAME == *_CM_* ]]
     then
     echo "Marking & removing duplicates: " $SAMPLE_NAME
@@ -119,5 +117,22 @@ else
     $PRESEQ lc_extrap -e 1e8 -s 2e6 -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_lc_extrap.txt
 fi
 
+# HOMER
+# make tag dirs
+mkdir -p $PROJECTDIR/homer/${SAMPLE_NAME}_homer
+if [[ $SAMPLE_NAME == *ATAC-seq* ]] || [[ $SAMPLE_NAME == *_CM_* ]]
+    then
+    echo "Making tag directory for sample: " $SAMPLE_NAME
+    $HOMERDIR/makeTagDirectory $PROJECTDIR/homer/${SAMPLE_NAME}_homer $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.bam
+    # make UCSC tracks
+    echo "Making tracks for sample: " $SAMPLE_NAME
+    $HOMERDIR/makeUCSCfile $PROJECTDIR/homer/${SAMPLE_NAME}_homer -name $SAMPLE_NAME -o auto
+else
+    echo "Making tag directory for sample: " $SAMPLE_NAME
+    $HOMERDIR/makeTagDirectory $PROJECTDIR/homer/${SAMPLE_NAME}_homer $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam
+    # make UCSC tracks
+    echo "Making tracks for sample: " $SAMPLE_NAME
+    $HOMERDIR/makeUCSCfile $PROJECTDIR/homer/${SAMPLE_NAME}_homer -name $SAMPLE_NAME -o auto
+fi
 
 date

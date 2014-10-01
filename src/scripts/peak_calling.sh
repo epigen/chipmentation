@@ -10,34 +10,6 @@
 #SBATCH --mail-type=end
 #SBATCH --mail-user=arendeiro@cemm.oeaw.ac.at
 
-
-####### EXPLANATION OF USAGE ##########
-
-# Submit jobs for this script by doing:
-# $ sbatch <path>/pipeline_with_trimming.sh SAMPLE_NAME SAMPLE_FILE
-# 
-# You can encapsulate this in a loop as such to run multiple samples from a file:
-#
-# SAMPLES_FILE=/home/arendeiro/projects/chipmentation/samples_test_4.txt
-# $ while read SAMPLE_NAME SAMPLE_FILE; do
-# $     sbatch /home/arendeiro/projects/chipmentation/src/pipeline_with_trimming.sh $SAMPLE_NAME $SAMPLE_FILE
-# $ done < $SAMPLES_FILE
-# 
-# You can supply additional options to the sbatch command, so that the jobname and logs
-# reflect the current sample:
-
-# SAMPLES_FILE=/home/arendeiro/projects/chipmentation/samples_test_4.txt
-#
-# $ while read SAMPLE_NAME SAMPLE_FILE; do
-# $    sbatch /home/arendeiro/projects/chipmentation/src/pipeline_with_trimming.sh \
-# $    $SAMPLE_NAME \
-# $    $SAMPLE_FILE \
-# $    --job-name="pipeline_trim_${SAMPLE_NAME}" \
-# $    --error="/home/arendeiro/logs/pipeline_trim_${SAMPLE_NAME}_%j.err" \
-# $    --output="/home/arendeiro/logs/pipeline_trim_${SAMPLE_NAME}_%j.log" \
-# $ done < $SAMPLES_FILE
-
-
 # *** setup environment ***
 # load the required environmental modules that your script depends upon
 module load FastQC/0.11.2
@@ -64,7 +36,7 @@ PROJECTDIR=/home/arendeiro/data/human/chipmentation
 GENOMEREF=/fhgfs/prod/ngs_resources/genomes/hg19/forBowtie2/hg19
 PICARDDIR=/cm/shared/apps/picard-tools/1.118
 PRESEQ=/home/arendeiro/.local/software/preseq-0.1.0/preseq
-MACS2="python2.7 .local/software/bin/macs2"
+MACS2="python2.7 /home/arendeiro/.local/software/bin/macs2"
 HOMERDIR=/home/arendeiro/.local/software/homer-4.6/bin
 
 ### Call Peaks

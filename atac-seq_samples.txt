@@ -1,1 +1,0 @@
-SRR891272_atac-seq_1M /home/arendeiro/data/human/atac-seq/SRR891272_1_1M.fastq /home/arendeiro/data/human/atac-seq/SRR891272_2_1M.fastq

@@ -1,1 +1,0 @@
-../../../../../../home/arendeiro/projects/chipmentation/src/optimize_pipeline.alignment.sh
