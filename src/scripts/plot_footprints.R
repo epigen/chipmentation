@@ -1,5 +1,3 @@
-R
-
 library(ggplot2)
 library(gplots)
 

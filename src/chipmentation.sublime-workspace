@@ -1,0 +1,668 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+			[
+				"CON",
+				"CONSERVATION"
+			],
+			[
+				"PU1",
+				"PU1_signal"
+			],
+			[
+				"GENOM",
+				"GENOMEREF"
+			],
+			[
+				"len",
+				"length"
+			],
+			[
+				"2kb",
+				"2kb_coverage"
+			],
+			[
+				"_",
+				"_peak"
+			],
+			[
+				"sample",
+				"sample"
+			],
+			[
+				"data",
+				"dataDir"
+			],
+			[
+				"_peak",
+				"_peak_coverage"
+			],
+			[
+				"BED",
+				"BEDTOOLSDIR"
+			],
+			[
+				"DBA",
+				"DBA_TISSUE"
+			],
+			[
+				"D",
+				"DBA_CONDITION"
+			],
+			[
+				"ife",
+				"ifelse"
+			],
+			[
+				"projec",
+				"projectDir"
+			],
+			[
+				"SAMPLE",
+				"SAMPLE_NAME"
+			],
+			[
+				"SA",
+				"SAMPLE_FILE_2"
+			],
+			[
+				"PR",
+				"PROJECTDIR"
+			],
+			[
+				"CONTROL",
+				"CONTROL_NAME"
+			],
+			[
+				"C",
+				"CONTROL_FILE"
+			],
+			[
+				"SAMP",
+				"SAMPLE_FILE"
+			],
+			[
+				"HOMER",
+				"HOMERDIR"
+			],
+			[
+				"SAM",
+				"SAMPLE_NAME"
+			],
+			[
+				"inser",
+				"insertSizes"
+			]
+		]
+	},
+	"buffers":
+	[
+		{
+			"file": "main.sh",
+			"settings":
+			{
+				"buffer_size": 2141,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "/home/afr/Documents/workspace/chipmentation/TODO",
+			"settings":
+			{
+				"buffer_size": 1995,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"contents": "\n# parse file\ntry:\n    with open(infile, 'r') as f:\n\n        PU1 = {}; IGG = {}; AT = {}; GC = {}; A = {}; C = {}; G = {}; T = {}; CONS = {};\n\n        reader = csv.reader(f, delimiter='\\t')\n\n        bp = 0\n        for row in reader:\n            # check the columns\n            peak = row[4]; pu1 = row[5]; igg = row[6]; at = row[7]; gc = row[8]; a = row[9]; c = row[10]; g = row[11]; t = row[12], cons = row[13];\n            \n            i = 5\n            for variable in [PU1, IGG, AT, GC, A, C, G, T, CONS]:\n                if peak in PU1.keys():\n                    variable[peak].append(row[i])\n                else:\n                    # new peak\n                    variable[peak] = [row[i]]\n                i += 1\n\n# calculate averages\npu1, igg, at, gc, a, c, g, t, cons = 0\nfor peak in PU1:\n    i = 0\n    for variable in [pu1, igg, at, gc, a, c, g, t, cons]:\n    variable += peak[i]\n\n\n                ",
+			"settings":
+			{
+				"buffer_size": 909,
+				"line_ending": "Unix"
+			}
+		}
+	],
+	"build_system": "",
+	"command_palette":
+	{
+		"height": 264.0,
+		"selected_items":
+		[
+			[
+				"bas",
+				"Set Syntax: Shell Script (Bash)"
+			],
+			[
+				"R",
+				"Set Syntax: R"
+			],
+			[
+				"bash",
+				"Set Syntax: Shell Script (Bash)"
+			],
+			[
+				"python",
+				"Set Syntax: Python"
+			],
+			[
+				"py",
+				"Set Syntax: Python"
+			],
+			[
+				"pytho",
+				"Set Syntax: Python"
+			],
+			[
+				"insta",
+				"Package Control: Install Package"
+			],
+			[
+				"she",
+				"Set Syntax: Shell Script (Bash)"
+			],
+			[
+				"shell",
+				"Set Syntax: Shell Script (Bash)"
+			]
+		],
+		"width": 449.0
+	},
+	"console":
+	{
+		"height": 139.0,
+		"history":
+		[
+			"import urllib.request,os,hashlib; h = '7183a2d3e96f11eeadd761d777e62404' + 'e330c659d4bb41d3bdf022e94cab3cd0'; pf = 'Package Control.sublime-package'; ipp = sublime.installed_packages_path(); urllib.request.install_opener( urllib.request.build_opener( urllib.request.ProxyHandler()) ); by = urllib.request.urlopen( 'http://sublime.wbond.net/' + pf.replace(' ', '%20')).read(); dh = hashlib.sha256(by).hexdigest(); print('Error validating download (got %s instead of %s), please try manual install' % (dh, h)) if dh != h else open(os.path.join( ipp, pf), 'wb' ).write(by)"
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"file_history":
+	[
+		"/home/afr/Documents/workspace/getGeneNames.R",
+		"/home/afr/Documents/workspace/chipmentation/src/scripts/merge_replicates.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/pipelines/mapping_pipeline.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/scripts/plot_footprints.R",
+		"/home/afr/Documents/workspace/chipmentation/src/scripts/plot_correlations.R",
+		"/home/afr/Documents/workspace/chipmentation/src/scripts/counts_on_windows.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/scripts/footprint_analysis.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/scripts/plot_alignment_rates.R",
+		"/home/afr/Documents/workspace/chipmentation/src/scripts/optimization_bowtie2.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/scripts/getCageData.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/scripts/getEncodeData.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/pipelines/mapping_pipeline_PE.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/lib/shift_reads.py",
+		"/home/afr/Documents/workspace/chipmentation/results/correlations_raw.tsv",
+		"/home/afr/Documents/workspace/chipmentation/src/plot_footprints.R",
+		"/home/afr/Documents/workspace/chipmentation/src/footprint_analysis.sh",
+		"/home/afr/Documents/workspace/chipmentation/sample_coverage.sh",
+		"/home/afr/Documents/workspace/ChIPmentation/count_insertSizes.py",
+		"/home/afr/Documents/workspace/ChIPmentation/insert_distribution.sh",
+		"/home/afr/Documents/workspace/ChIPmentation/src/optimize_pipeline.alignmentBowtie.sh",
+		"/home/afr/Documents/workspace/ChIPmentation/src/homer_optimization.sh",
+		"/home/afr/Documents/workspace/ChIPmentation/src/getEncodeData.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/scripts/optimization_homer.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/shift_reads.py",
+		"/home/afr/Documents/workspace/chipmentation/src/shiftReads.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/shift.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/counts_on_windows_peaks.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/coverage_gc_peaks.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/optimize_peak_calling_macs2.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/optimization_macs2.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/counts_on_windows.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/mapping_pipeline.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/peak_intersection.sh",
+		"/home/afr/Documents/workspace/annotateFromGFF/annotateFromGFF.py",
+		"/home/afr/Documents/workspace/chipmentation/src/concatenate_counts_on_windows.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/merge_replicates.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/joining_replicates.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/plot_correlations.R",
+		"/home/afr/Documents/workspace/chipmentation/src/run_counts_on_windows_peaks.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/peak_calling.sh",
+		"/home/afr/Documents/workspace/chipmentation/src/submit_pipeline.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/peak_intersection.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/homer_optimization.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/TODO",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/footprint_analysis.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/optimize_peak_calling_macs2.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/samples.txt",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/samples_peaks.txt",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_CM15-1.narrowPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_CM15-1_bw200_peaks.narrowPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_500k_CM_CM11-4_bw200_peaks.narrowPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_500k_CM_CM11-4.narrowPeak",
+		"/home/afr/PU1_K562_10mio_CM_CM15-1_bw200_peaks.narrowPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_CM15-1.summits.bed",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_CM15-1_peaks_MACS2_bw200/PU1_K562_10mio_CM_CM15-1_bw200_peaks.narrowPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/motifs/PU1_K562_10mio_CM_CM15-1/knownResults/known1.motif",
+		"/home/afr/.cache/.fr-hMPEOk/wgEncodeRikenCageK562CellPapTssHmm.bedRnaElements",
+		"/home/afr/.cache/.fr-YCJH5T/I35_TSSGencv7.gff",
+		"/home/afr/.cache/.fr-jPDvHt/wgEncodeRikenCageK562CellPapTssHmm.txt",
+		"/home/afr/.cache/.fr-tvI26G/wgEncodeRikenCageK562CellPapPlusClustersRep1.txt",
+		"/home/afr/Downloads/mart_export.txt",
+		"/home/afr/.cache/.fr-7NphOm/wgEncodeRikenCageK562ChromatinTotalTssHmmV3.bedRnaElements",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/shift_reads.py",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/motifs/PU1_K562_10mio_CM_CM15-1/homerResults/motif1.motif",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/motifs/PU1_K562_500k_CM_CM11-4/knownResults/known1.motif",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/motifs/PU1_K562_500k_CM_CM11-4/homerResults/motif1.motif",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/motifs/PU1_K562_10mio_CM_CM15-1/knownResults.txt",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/motifs/PU1_K562_10mio_CM_CM15-1/homerMotifs.motifs8",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/motifs/PU1_K562_10mio_CM_CM15-1/target.clean..pos",
+		"/home/afr/Documents/workspace/E2F-chip-seq/src/scripts/plotAnnotation.R",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/counts_on_windows_peaks.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/counts_on_windows.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/diffBind_analysis.R",
+		"/home/afr/Documents/workspace/ChIPmentation/src/plot_correlation.R",
+		"/home/afr/Documents/workspace/minION/poretools_stats.py",
+		"/home/afr/winner.fasta",
+		"/home/afr/seqs.fa",
+		"/home/afr/Downloads/test_run_report.ipynb",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/concatenate_counts_on_windows.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/mapping_pipeline.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K27me3_K562_10k_CM_CM12-6_R2_peaks_MACS2_broad_nomodel_extsize200_pvalue1e3/H3K27me3_K562_10k_CM_CM12-6_R2_std_peaks.broadPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K27me3_K562_10k_CM_CM11-6_R1_peaks_MACS2_broad_nomodel_extsize200_pvalue1e3/H3K27me3_K562_10k_CM_CM11-6_R1_std_peaks.broadPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K27me3_K562_10k_CM_CM11-6_R1_peaks_MACS2_std/H3K27me3_K562_10k_CM_CM11-6_R1_std_model.r",
+		"/home/afr/Documents/workspace/ChIPmentation/src/peak_calling.sh",
+		"/home/afr/Downloads/all_to_map (2)",
+		"/home/afr/Downloads/path-to-data.txt",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/joining_replicates.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/distance_reads_correlations.py",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/diffBind_sample_info.csv",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K4me3_K562_500k_ChIP_CM11-9_R1_peaks_MACS2_std/H3K4me3_K562_500k_ChIP_CM11-9_R1_std_peaks.narrowPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/homer/H3K4me3_K562_10k_CM_CM11-5_R1_homer/regions.txt",
+		"/home/afr/Downloads/H3K27me3_K562_10k_CM_CM11-6_R1_homer_peaks.bed",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/homer/H3K27me3_K562_10k_CM_CM11-6_R1_homer/peaks.bed",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K4me3_K562_10k_CM_CM12-5_R2_peaks_MACS2_std/H3K4me3_K562_10k_CM_CM12-5_R2_std_peaks.narrowPeak",
+		"/home/afr/Documents/workspace/ChIPmentation/src/mapping_pipeline.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K27me3_K562_500k_ChIP_Encode_R1_std_peaks.narrowPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K27me3_K562_500k_CM_CM12-2_R2_peaks_MACS2_std/H3K27me3_K562_500k_CM_CM12-2_R2_std_peaks.broadPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K27me3_K562_500k_CM_CM11-2_R1_peaks_MACS2_std/H3K27me3_K562_500k_CM_CM11-2_R1_std_peaks.broadPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K27me3_K562_500k_ChIP_Encode_R1_peaks_MACS2_std/H3K27me3_K562_500k_ChIP_Encode_R1_std_peaks.narrowPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/results/correlations_raw.tsv",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/diffBind_samples.csv",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/shiftReads.sh",
+		"/home/afr/Documents/workspace/ngrok_howto",
+		"/home/afr/Documents/workspace/scripts/sample_normalization/ChIP_normalization.R",
+		"/home/afr/Documents/workspace/chipseq-pipelines/src/scripts/diffBind_analysis.R",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/macs2_optimization.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/peak_calling.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/submit_pipeline.sh",
+		"/home/afr/Documents/workspace/scripts/ChIP_complete_analysis.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/merge_replicates.sh",
+		"/home/afr/Documents/workspace/scripts/sample_correlations/correlation_between_ChIPs_analysis.R",
+		"/home/afr/Documents/workspace/scripts/sample_correlations/ChIP.correlations.normalized_data.R",
+		"/home/afr/Documents/workspace/scripts/sample_correlations/Chip.correlations.raw_data.R",
+		"/home/afr/Documents/workspace/scripts/michi_peakzilla_and_peak_overlap.sh",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/homer/H3K4me3_K562_500k_ChIP_CM12-9_R2_homer/regions.txt",
+		"/home/afr/Downloads/H3K27me3_K562_500k_CM_CM12-2_R2_bw200_peaks.broadPeak",
+		"/home/afr/Documents/workspace/E2F-chip-seq/src/scripts/plotAnnotationSummits.R",
+		"/home/afr/Documents/workspace/E2F-chip-seq/src/testtrimmingPE....sh",
+		"/home/afr/Downloads/H3K27me3_K562_500k_ChIP_CM12-10_R2_bw200_peaks.broadPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K4me3_K562_500k_CM_CM11-1_R1_peaks_MACS2_bw200/H3K4me3_K562_500k_CM_CM11-1_R1_bw200_peaks.narrowPeak",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K4me3_K562_500k_CM_CM11-1_R1_peaks_MACS2_bw200/H3K4me3_K562_500k_CM_CM11-1_R1_bw200_summits.bed",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K4me3_K562_500k_CM_CM11-1_R1_peaks_MACS2_std/H3K4me3_K562_500k_CM_CM11-1_R1_std_summits.bed",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K4me3_K562_500k_CM_CM11-1_R1_peaks_MACS2_summits/H3K4me3_K562_500k_CM_CM11-1_R1_summits_summits.bed",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/data/human/chipmentation/peaks/H3K4me3_K562_500k_CM_CM12-1_R2_peaks_MACS2_bw200/H3K4me3_K562_500k_CM_CM12-1_R2_bw200_summits.bed",
+		"/home/afr/Downloads/all_to_map (1)",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/fhgfs/groups/lab_bock/shared/data/mapped/CTCF_K562_500k_ChIP_ChIP15-7.trimmed.bowtie2.sorted.dups.txt",
+		"/home/afr/Downloads/IGV_2.3.34/readme.txt",
+		"/run/user/1000/gvfs/sftp:host=hpclogin,user=arendeiro/home/arendeiro/projects/chipmentation/src/cruft/christian/4_sortedSAM_preseq_QC.bash"
+	],
+	"find":
+	{
+		"height": 35.0
+	},
+	"find_in_files":
+	{
+		"height": 0.0,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": false,
+		"find_history":
+		[
+			"sh",
+			"sh ",
+			"src/",
+			"intersectBed",
+			"sortBed",
+			"mergeBed",
+			"$BEDTOOLSDIR/",
+			"SAMPLE_FILE",
+			"q1",
+			"1",
+			"PU1_signal",
+			",",
+			"\"",
+			"fn",
+			"8",
+			"$BEDTOOLSDIR/",
+			"N",
+			"!",
+			"$PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak",
+			"narrowPeak",
+			" $PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak",
+			"$PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak",
+			"10m",
+			"narrowPeak",
+			"_std_peaks",
+			"_peaks_MACS2_std",
+			"_std_peaks",
+			"allPeaks",
+			"H3K27me3_K562_10k_CM_CM11",
+			"SAMPLE_NAME",
+			"\\t",
+			"homer_findPeaks",
+			"R\\d.*",
+			"mapping",
+			"mapping_",
+			"mapping",
+			"-4",
+			"CM11-4",
+			"15-4",
+			"homer_findPeaks",
+			".*\\t",
+			"macs2_callPeaks1",
+			"macs2_callPeaks",
+			".trimmed.bowtie2.sorted.dup",
+			".trimmed.bowtie2.sorted.shifted.dup",
+			"dup",
+			"CONTROL_NAME.trimmed.bowtie2.sorted.shifted.dup",
+			".trimmed.bowtie2.sorted.shifted.dup",
+			"seq_ASP14_50k_untreated_ATAC15",
+			"H3K4me3_K562_500k_ChIP_CM12-9",
+			"H3K4me3_K562_500k_ChIP_CM12-9_R1",
+			"H3K4me3_K562_500k_ChIP_CM12-9_R",
+			"H3K4me3_K562_500k_ChIP_CM11-9_R2",
+			"H3K4me3_K562_500k_ChIP_CM11-9_R1",
+			"H3K4me3_K562_500k_ChIP_CM11-9",
+			"-\\d\\s",
+			"sample",
+			"mapping",
+			"mapping_",
+			"mapping",
+			"mapping_",
+			"mapping",
+			"shifted",
+			"mapped",
+			"-1",
+			"\\t.*",
+			"ATAC-seq_ASP14_50k_untreated_ATAC10-7",
+			"ATAC10-7",
+			"ATAC10-7-1",
+			"ATAC-seq_ASP14_50k_DOX_ATAC15-8_R2",
+			"ATAC-seq_ASP14_50k_DOX_ATAC10-8_R1",
+			".sorted.",
+			"mapping",
+			"$PROJECTDIR/mapped/",
+			"rm",
+			"macs2_callPeaks",
+			"1000",
+			"$CONTROL_NAME.trimmed.bowtie2.sorted.shifted.dup.bam",
+			"e2.sorted.bam",
+			"shifted",
+			"mapping",
+			"shifted",
+			"--broad",
+			".sorted.bam",
+			".sorted.shifted.bam",
+			"$PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup",
+			"dup",
+			" $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup",
+			"$PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup",
+			"$PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.notsorted.bam",
+			"mapping",
+			".dup",
+			"nodup",
+			"shifted",
+			"\\t.*",
+			"row",
+			"stran",
+			"row",
+			"mapping",
+			"mapping_",
+			"mapping_pipeline",
+			"preseq",
+			"/Volumes/",
+			"\\t.*",
+			"raw/trimmed/",
+			".q10",
+			"samples",
+			"chipmentation",
+			"GENOMEREFBOWTIE",
+			"$PROJECTDIR/raw/trimmed/$SAMPLE_NAME.trimmed.q10.fastq",
+			"PROJECTDIR/raw/trimmed/$SAMPLE_NAME.trimmed.q10.fastq",
+			"preseq",
+			"\\t.*",
+			"pipeline_trim_",
+			"GENOMEREFBOWTIE",
+			"pipeline_trim_fl_",
+			"pipeline_trim_vfl_",
+			"vf",
+			"_f_",
+			"_s_",
+			"S",
+			"s",
+			"pipeline_trim_vs_",
+			"pipeline_trim",
+			"samples",
+			"SAMPLES",
+			"/fhgfs/scratch/users/arendeiro/",
+			"/raw/trimmed/$SAMPLE_NAME.trimmed.q10.bowtie2"
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": true,
+		"replace_history":
+		[
+			"",
+			"\\n",
+			"",
+			"\\t",
+			"",
+			"/fhgfs/groups/",
+			" ",
+			"",
+			"$PROJECTDIR",
+			"PROJECTDIR",
+			" ",
+			"/fhgfs/groups/lab_bsf/samples/",
+			" ",
+			"/fhgfs/groups/lab_bsf/samples/",
+			"",
+			" ",
+			"",
+			"\\t"
+		],
+		"reverse": false,
+		"show_context": true,
+		"use_buffer2": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"selected": 2,
+			"sheets":
+			[
+				{
+					"buffer": 0,
+					"file": "main.sh",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 2141,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								647,
+								647
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/ShellScript/Shell-Unix-Generic.tmLanguage",
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"type": "text"
+				},
+				{
+					"buffer": 1,
+					"file": "/home/afr/Documents/workspace/chipmentation/TODO",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 1995,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								854,
+								854
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Text/Plain text.tmLanguage"
+						},
+						"translation.x": 0.0,
+						"translation.y": 204.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 2,
+					"type": "text"
+				},
+				{
+					"buffer": 2,
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 909,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								142,
+								142
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Python/Python.tmLanguage",
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 0,
+					"type": "text"
+				}
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 25.0
+	},
+	"input":
+	{
+		"height": 0.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"output.find_results":
+	{
+		"height": 0.0
+	},
+	"project": "chipmentation.sublime-project",
+	"replace":
+	{
+		"height": 64.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_symbol":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"selected_group": 0,
+	"settings":
+	{
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 150.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}

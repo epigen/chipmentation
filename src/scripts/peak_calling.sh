@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --partition=develop
+#SBATCH --partition=shortq
 #SBATCH --ntasks=1
 #SBATCH --time=10:00:00
 
 # Optional parameters
 #SBATCH --cpus-per-task=2
-#SBATCH --mem-per-cpu=2000
+#SBATCH --mem-per-cpu=8000
 #SBATCH --nodes=1
-#SBATCH --mail-type=end
-#SBATCH --mail-user=arendeiro@cemm.oeaw.ac.at
+#SBATCH --job-name=call_peaks
+#SBATCH --output=/home/arendeiro/logs/call_peaks_%j.out
 
 # *** setup environment ***
 # load the required environmental modules that your script depends upon
@@ -31,80 +31,38 @@ date
 SAMPLE_NAME=$1
 CONTROL_NAME=$2
 
+### Activate virtual environment
+source /home/arendeiro/venv/bin/activate
+
+
 ### Specify paths
 PROJECTDIR=/home/arendeiro/data/human/chipmentation
 GENOMEREF=/fhgfs/prod/ngs_resources/genomes/hg19/forBowtie2/hg19
-PICARDDIR=/cm/shared/apps/picard-tools/1.118
-PRESEQ=/home/arendeiro/.local/software/preseq-0.1.0/preseq
-MACS2="python2.7 /home/arendeiro/.local/software/bin/macs2"
-HOMERDIR=/home/arendeiro/.local/software/homer-4.6/bin
 
 ### Call Peaks
 mkdir -p $PROJECTDIR/peaks/
 
 # MACS
-if [[ $SAMPLE_NAME == *ATAC-seq* ]] || [[ $SAMPLE_NAME == *_CM_* ]]
+if [[ $SAMPLE_NAME != *H3K27me3* ]]
     then
-    if [[ $SAMPLE_NAME == *H3K27me3* ]]
-        then
-        echo "Calling broad peaks for sample " $SAMPLE_NAME
-        $MACS2 callpeak -t $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.bam \
-        -c $PROJECTDIR/mapped/$CONTROL_NAME.trimmed.bowtie2.sorted.shifted.dup.bam \
-        --broad -g hs -n $SAMPLE_NAME --outdir $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks_MACS2
-    else
-        echo "Calling normal peaks for sample " $SAMPLE_NAME
-        $MACS2 callpeak -t $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.bam \
-        -c $PROJECTDIR/mapped/$CONTROL_NAME.trimmed.bowtie2.sorted.shifted.dup.bam \
-        -g hs -n $SAMPLE_NAME --outdir $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks_MACS2
-    fi
+    echo "Calling broad peaks for sample " $SAMPLE_NAME
+
+    macs2 callpeak -t $PROJECTDIR/mapped/merged/$SAMPLE_NAME.bam \
+    -c $PROJECTDIR/mapped/merged/$CONTROL_NAME.bam \
+    --bw 200 \
+    -g hs -n ${SAMPLE_NAME} --outdir $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks
+
+    awk '$9 >= 10' $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.narrowPeak > $PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak
+    awk '{print $1, $2 + $10, $2 + $10 + 1, $4}' $PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak > $PROJECTDIR/peaks/${SAMPLE_NAME}.summits.bed
+    $BEDTOOLSDIR/slopBed -b 2000 -i $PROJECTDIR/peaks/${SAMPLE_NAME}.summits.bed -g $GENOMESIZE > $PROJECTDIR/peaks/${SAMPLE_NAME}.summits.2kb.bed
 else
-    if [[ $SAMPLE_NAME == *H3K27me3* ]]
-        then
-        echo "Calling broad peaks for sample " $SAMPLE_NAME
-        $MACS2 callpeak -t $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam \
-        -c $PROJECTDIR/mapped/$CONTROL_NAME.trimmed.bowtie2.sorted.dup.bam \
-        --broad -g hs -n $SAMPLE_NAME --outdir $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks_MACS2
-    else
-        echo "Calling normal peaks for sample " $SAMPLE_NAME
-        $MACS2 callpeak -t $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam \
-        -c $PROJECTDIR/mapped/$CONTROL_NAME.trimmed.bowtie2.sorted.dup.bam \
-        -g hs -n $SAMPLE_NAME --outdir $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks_MACS2
-    fi
+    macs2 callpeak -B -t $PROJECTDIR/mapped/merged/$SAMPLE_NAME.bam \
+    -c $PROJECTDIR/mapped/merged/$CONTROL_NAME.bam \
+    --broad --nomodel --extsize 200 --pvalue 1e-3 \
+    -g hs -n ${SAMPLE_NAME} --outdir $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks
 fi
 
-
-# HOMER
-# make tag dirs
-mkdir -p $PROJECTDIR/homer/${SAMPLE_NAME}_homer
-if [[ $SAMPLE_NAME == *ATAC-seq* ]] || [[ $SAMPLE_NAME == *_CM_* ]]
-    then
-    $HOMERDIR/makeTagDirectory $PROJECTDIR/homer/${SAMPLE_NAME}_homer $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.bam
-    $HOMERDIR/makeTagDirectory $PROJECTDIR/homer/${CONTROL_NAME}_homer $PROJECTDIR/mapped/$CONTROL_NAME.trimmed.bowtie2.sorted.shifted.dup.bam
-    # make UCSC tracks
-    $HOMERDIR/makeUCSCfile $PROJECTDIR/homer/${SAMPLE_NAME}_homer -name $SAMPLE_NAME -o auto
-    $HOMERDIR/makeUCSCfile $PROJECTDIR/homer/${CONTROL_NAME}_homer -name $CONTROL_NAME -o auto
-else
-    $HOMERDIR/makeTagDirectory $PROJECTDIR/homer/${SAMPLE_NAME}_homer $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam
-    $HOMERDIR/makeTagDirectory $PROJECTDIR/homer/${CONTROL_NAME}_homer $PROJECTDIR/mapped/$CONTROL_NAME.trimmed.bowtie2.sorted.dup.bam
-    # make UCSC tracks
-    $HOMERDIR/makeUCSCfile $PROJECTDIR/homer/${SAMPLE_NAME}_homer -name $SAMPLE_NAME -o auto
-    $HOMERDIR/makeUCSCfile $PROJECTDIR/homer/${CONTROL_NAME}_homer -name $CONTROL_NAME -o auto
-fi
-
-# find peaks
-if [[ $SAMPLE_NAME == *H3* ]]
-    then
-    echo "Detected histone data"
-    $HOMERDIR/findPeaks $PROJECTDIR/homer/${SAMPLE_NAME}_homer -style histone -o auto -i $PROJECTDIR/homer/${CONTROL_NAME}_homer_std
-    $HOMERDIR/findPeaks $PROJECTDIR/homer/${SAMPLE_NAME}_homer -style histone -region -size 150 -minDist 370 -o auto -i $PROJECTDIR/homer/${CONTROL_NAME}_homer_region_150_370
-    $HOMERDIR/findPeaks $PROJECTDIR/homer/${SAMPLE_NAME}_homer -style histone -region -size 150 -minDist 1000 -o auto -i $PROJECTDIR/homer/${CONTROL_NAME}_homer_region_150_1000
-    $HOMERDIR/findPeaks $PROJECTDIR/homer/${SAMPLE_NAME}_homer -style histone -region -size 1000 -minDist 2500 -o auto -i $PROJECTDIR/homer/${CONTROL_NAME}_homer_region_1000_2500
-    $HOMERDIR/findPeaks $PROJECTDIR/homer/${SAMPLE_NAME}_homer -style histone -region -size 1000 -minDist 10000 -o auto -i $PROJECTDIR/homer/${CONTROL_NAME}_homer_region_1000_10000
-else
-    echo "Detected TF data"
-    $HOMERDIR/findPeaks $PROJECTDIR/homer/${SAMPLE_NAME}_homer -style factor -o auto -i $PROJECTDIR/homer/${CONTROL_NAME}_homer_std
-    $HOMERDIR/findPeaks $PROJECTDIR/homer/${SAMPLE_NAME}_homer -style factor -C 1 -o auto -i $PROJECTDIR/homer/${CONTROL_NAME}_homer_c1
-    $HOMERDIR/findPeaks $PROJECTDIR/homer/${SAMPLE_NAME}_homer -style factor -C 0 -o auto -i $PROJECTDIR/homer/${CONTROL_NAME}_homer_c0
-fi
-
+deactivate
 date
+
+
