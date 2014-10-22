@@ -1,3 +1,6 @@
+# request more resources with salloc
+# salloc --partition=develop --time=10:00:00 --job-name=R --nodes=1 --mem=20000 --nodelist=n001 srun R --no-save
+
 require(lattice)
 library(ggplot2)
 library(reshape2)

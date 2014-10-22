@@ -123,4 +123,4 @@ done
 column $INTERSECTIONS > tmp
 mv tmp $INTERSECTIONS
 
-
+date

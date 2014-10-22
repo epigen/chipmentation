@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1
 #SBATCH --time=12:00:00
 
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=64000
 #SBATCH --nodes=1
 
@@ -41,13 +41,20 @@ HOMERDIR=/home/arendeiro/.local/software/homer-4.6/bin
 CONSERVATION=/home/arendeiro/reference/Homo_sapiens/phyloP/placentalMammals
 CAGE=/home/arendeiro/reference/Homo_sapiens/cage_K562_cell_tss_f10.bed
 
-CHIP_SAMPLE=PU1_K562_10mio_ChIP
+CHIP_SAMPLE=${SAMPLE_NAME/CM/ChIP}
 DNase_SAMPLE=DNase_UWashington_K562_mergedReplicates
 
 ### Start work on samples 
 
+# Find motifs
+findMotifsGenome.pl $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.narrowPeak hg19 \
+$PROJECTDIR/motifs/$SAMPLE_NAME/ \
+-mask -size 150 -len 8,10,12
+
 # center on motifs
-annotatePeaks.pl $PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak hg19 -size 4000 -center $PROJECTDIR/motifs/$SAMPLE_NAME/homerResults/motif1.motif | \
+annotatePeaks.pl $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.narrowPeak \
+hg19 -size 4000 -center \
+$PROJECTDIR/motifs/$SAMPLE_NAME/homerResults/motif1.motif | \
 awk -v OFS='\t' '{print $2, $3, $4, $1}' | \
 sortBed > $PROJECTDIR/bed/${SAMPLE_NAME}.motif.bed
 
@@ -127,14 +134,9 @@ do
     bedtools intersect -wa -wb -a $PROJECTDIR/bed/${SAMPLE_NAME}_peak_coverage_sbp.bed -b $chr \
     > $TMPDIR/${SAMPLE_NAME}_peak_conservation.${CHR}
 done
-# concatenate and sort
+
+# concatenate
 echo "Concatenation conservation scores for sample: " $SAMPLE_NAME
 cat $TMPDIR/${SAMPLE_NAME}_peak_conservation.* > $PROJECTDIR/bed/${SAMPLE_NAME}_peak_conservation.bed
 
-# For each position in each peak put all toghether (paste relevant columns from each file, remove headers when existing)
-cut -f 6 $PROJECTDIR/bed/${SAMPLE_NAME}_peak_coverage_IgG.bed | paste $PROJECTDIR/bed/${SAMPLE_NAME}_peak_coverage.bed - > $TMPDIR/tmp
-cut -f 5,6,7,8,9,10 $PROJECTDIR/bed/${SAMPLE_NAME}_peak_nucleotide_compos.bed | tail -n +2 | paste $TMPDIR/tmp - > $TMPDIR/tmp2
-cut -f 11 $PROJECTDIR/bed/${SAMPLE_NAME}_peak_conservation.bed | paste $TMPDIR/tmp2 - > $PROJECTDIR/bed/${SAMPLE_NAME}_peak.2kb_coverage.bed
-
-
-
+date

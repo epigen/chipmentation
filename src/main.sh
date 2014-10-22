@@ -21,14 +21,22 @@ sh scripts/joining_replicates.sh # <- by hand for more than two replicates
 
 
 ### CORRELATIONS
+# biological replicates
 while read SAMPLE_NAME CONTROL_NAME; do
     sbatch /home/arendeiro/projects/chipmentation/src/scripts/counts_on_windows.sh $SAMPLE_NAME
     sbatch /home/arendeiro/projects/chipmentation/src/scripts/counts_on_windows.sh $CONTROL_NAME
 done < $PEAKS_FILE
+
+# merged replicates
+while read SAMPLE_NAME CONTROL_NAME; do
+    sbatch /home/arendeiro/projects/chipmentation/src/scripts/counts_on_windows_mergedSamples.sh $SAMPLE_NAME
+    sbatch /home/arendeiro/projects/chipmentation/src/scripts/counts_on_windows_mergedSamples.sh $CONTROL_NAME
+done < $PEAKS_FILE_MERGED
+
 # concatenate files
-sh scripts/concatenate_counts_on_windows.sh
+sbatch /home/arendeiro/projects/chipmentation/src/scripts/concatenate_counts_on_windows.sh
 # plot correlations
-R scripts/plot_correlations.R # needs work to accept arguments
+R scripts/plot_correlations.R # needs more memory, ask with salloc
 
 
 ### MERGE SAMPLES
@@ -50,10 +58,8 @@ done < $PEAKS_FILE_MERGED
 # R scripts/diffBind_analysis.R
 
 # Compare peaks between samples
-sh scripts/peak_intersection.sh #<- by hand, very bad
+sh scripts/peak_intersection.sh
 
-# Find motifs in TF samples
-sh # missing!!!
 
 ### FOOTPRINTING
 ## H3K4me3 on TSSs
@@ -75,9 +81,12 @@ deactivate
 # Count reads on windows centered on peaks' summits
 #run_counts_on_windows_peaks.sh # deprecated
 
+
+# Find motifs
 # Center peaks on motif, get 4kb window around 
 # Count reads around motifs
 sbatch /home/arendeiro/projects/chipmentation/src/scripts/footprint_analysis.sh PU1_K562_10mio_CM IgG_K562_10mio_CM
+sbatch /home/arendeiro/projects/chipmentation/src/scripts/footprint_analysis.sh CTCF_K562_10mio_CM IgG_K562_10mio_CM
 
 source /home/arendeiro/venv/bin/activate
 python /home/arendeiro/projects/chipmentation/src/scripts/plot_coverage_on_tss.py PU1_K562_10mio_CM

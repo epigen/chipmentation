@@ -59,6 +59,14 @@ TATA=/home/arendeiro/reference/Homo_sapiens/tata-promoters.bed
 #-b /fhgfs/groups/lab_bock/shared/data/posfiles/wgEncodeRikenCageK562CellPapTssHmm.bedRnaElements \
 #> /home/arendeiro/reference/Homo_sapiens/DPIcluster_hg19_20120116.permissive_set.TATA_CpG_annotated.onlyTATA.K562.bed
 
+
+##### DOnt do now
+# Filter CAGE peaks by score
+#awk -v OFS='\t' '$8 >= 3' /home/arendeiro/reference/Homo_sapiens/cage.txt | \
+# Get central position
+#awk -v OFS='\t' '{a=int(($3+$4)/2+0.5); $3=a; $4=a+1;print}' | \
+#cut -f 2,3,4,5,6,7,8,9 > /home/arendeiro/reference/Homo_sapiens/cage_K562_cell_tss_filtered3.bed
+
 # Get cage peaks in H3K4me3 peaks
 bedtools intersect -wa \
 -a $CAGE \
@@ -70,6 +78,13 @@ bedtools slop -b 2000 \
 -i $PROJECTDIR/cageTSSs/${SAMPLE_NAME}_cageTSSs_in_peaks.bed \
 -g $GENOMESIZE \
 > $PROJECTDIR/cageTSSs/${SAMPLE_NAME}_cageTSSs_in_peaks.2kbSlop.bed
+
+# Filter TATA-containing promoters
+#bedtools intersect -wa \
+#-a $PROJECTDIR/cageTSSs/${SAMPLE_NAME}_cageTSSs_in_peaks.2kbSlop.bed \
+#-b $TATA \
+#> $PROJECTDIR/cageTSSs/${SAMPLE_NAME}_cageTSSs_in_peaks.2kbSlop.TATA.bed
+
 
 # get only 5' position of reads
 echo "Getting 5' read positions for sample: " $SAMPLE_NAME
