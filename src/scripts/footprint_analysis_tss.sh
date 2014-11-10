@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=develop
+#SBATCH --partition=shortq
 #SBATCH --ntasks=1
 #SBATCH --time=12:00:00
 

@@ -42,34 +42,34 @@ if [[ $SAMPLE_NAME == *Encode* ]]; then
 	bedtools bamtobed -i $PROJECTDIR/../encode/chip-seq/mapped/$SAMPLE_NAME.bam | \
 	bedtools intersect -c -a $WINDOWS -b stdin | \
 	bedtools sort \
-	> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows.bed
+	> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed
 	
-	cut -f 4 $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows.bed | \
+	cut -f 4 $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed | \
 	sed "1s/^/$SAMPLE_NAME\n/" \
-	> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows_1col.bed
+	> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows_1col.bed
 
 else
 	if [[ $SAMPLE_NAME == *_CM_* ]]; then
 		echo "Counting reads on chipmentation sample: " $SAMPLE_NAME
-		bedtools bamtobed -i $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.bam | \
+		bedtools bamtobed -i $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.bam | \
 		bedtools intersect -c -a $WINDOWS -b stdin | \
 		bedtools sort \
-		> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows.bed
+		> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed
 		
-		cut -f 4 $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows.bed | \
+		cut -f 4 $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed | \
 		sed "1s/^/$SAMPLE_NAME\n/" \
-		> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows_1col.bed
+		> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows_1col.bed
 
 	elif [[ $SAMPLE_NAME == *_ChIP_* ]]; then
 		echo "Counting reads on ChIP sample: " $SAMPLE_NAME
 		bedtools bamtobed -i $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam | \
 		bedtools intersect -c -a $WINDOWS -b stdin | \
 		bedtools sort \
-		> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows.bed
+		> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed
 		
-		cut -f 4 $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows.bed | \
+		cut -f 4 $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed | \
 		sed "1s/^/$SAMPLE_NAME\n/" \
-		> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows_1col.bed
+		> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows_1col.bed
 
 	fi
 fi

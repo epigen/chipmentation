@@ -61,7 +61,7 @@ bedtools bamtobed -i $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.bam | python /home
 echo "Getting 5' read positions for sample: " $CONTROL_NAME
 bedtools bamtobed -i $PROJECTDIR/mapped/merged/${CONTROL_NAME}.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py > $PROJECTDIR/mapped/merged/${CONTROL_NAME}.5prime.bed
 echo "Getting 5' read positions for DNase sample."
-bedtools bamtobed -i $PROJECTDIR/mapped/$DNase_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py > $PROJECTDIR/mapped/merged/$DNase_SAMPLE.5prime.bed
+bedtools bamtobed -i $PROJECTDIR/mapped/merged/$DNase_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py > $PROJECTDIR/mapped/merged/$DNase_SAMPLE.5prime.bed
 
 # get read count of PU1 in windows
 echo "Getting read counts for sample: " $SAMPLE_NAME

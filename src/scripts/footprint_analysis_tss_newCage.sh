@@ -131,10 +131,11 @@ bedtools coverage -d \
 > $PROJECTDIR/bed/${SAMPLE_NAME}_tss_coverage_DNase.bed
 
 
-# Get single basepair position within TSSs for nucl compos. coverage and conservation
+# Get single basepair position within TSSs for nucl compos. and conservation
 echo "Getting single basepairs for sample:" $SAMPLE_NAME
 cat $PROJECTDIR/bed/${SAMPLE_NAME}_tss_coverage.bed | \
 python /home/arendeiro/projects/chipmentation/src/lib/get_single_bp_for_tss.py \
+python /home/arendeiro/projects/chipmentation/src/lib/fix_bedfile_genome_boundaries.py \
 > $PROJECTDIR/bed/${SAMPLE_NAME}_tss_coverage_sbp.bed
 
 # get nucleotide composition in windows
@@ -142,8 +143,7 @@ python /home/arendeiro/projects/chipmentation/src/lib/get_single_bp_for_tss.py \
 ## get 12bp windows around each nucleotide position in the 4kb
 ## see nucleotide composition in those 12bp windows
 echo "Getting nucleotide composition for sample: " $SAMPLE_NAME
-awk -v OFS='\t' '{print $1, $2 + $5, $2 + $5 + 1, $4}' $PROJECTDIR/bed/${SAMPLE_NAME}_tss_coverage_sbp.bed | \
-bedtools slop -b 6 -i stdin -g $GENOMESIZE | \
+bedtools slop -b 6 -i $PROJECTDIR/bed/${SAMPLE_NAME}_tss_coverage_sbp.bed -g $GENOMESIZE | \
 bedtools nuc -fi $GENOMEREF -bed stdin \
 > $PROJECTDIR/bed/${SAMPLE_NAME}_tss_nucleotide_compos.bed
 
