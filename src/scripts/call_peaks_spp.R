@@ -2,17 +2,26 @@
 library(spp);
 
 
+args <- commandArgs(TRUE)
+
+sample = args[1]
+input = args[2]
+
+print(paste("SAMPLE:", sample))
+print(paste("INPUT:", sample))
+
 dataDir = '/home/arendeiro/data/human/chipmentation'
-sample = 'H3K4me3_K562_500k_CM'
-input = 'IgG_K562_500k_CM'
+
+#sample = 'H3K4me3_K562_500k_CM'
+#input = 'IgG_K562_500k_CM'
 
 # The following section shows how to initialize a cluster of 8 nodes for parallel processing
 # see "snow" package manual for details.
 library(snow)
-cluster <- makeCluster(8);
+cluster <- makeCluster(4);
 
-chip.data <- read.bowtie.tags(paste(dataDir, '/mapped/merged/', sample, '.bam', sep = ''))
-input.data <- read.bowtie.tags(paste(dataDir, '/mapped/merged/', input, '.bam', sep = ''))
+chip.data <- read.bam.tags(paste(dataDir, '/mapped/merged/', sample, '.bam', sep = ''))
+input.data <- read.bam.tags(paste(dataDir, '/mapped/merged/', input, '.bam', sep = ''))
 
 
 # get binding info from cross-correlation profile
@@ -21,16 +30,16 @@ input.data <- read.bowtie.tags(paste(dataDir, '/mapped/merged/', input, '.bam', 
 #
 # bin - bin tags within the specified number of basepairs to speed up calculation;
 # increasing bin size decreases the accuracy of the determined parameters
-binding.characteristics <- get.binding.characteristics(chip.data,srange=c(50,500),bin=5,cluster=cluster);
+binding.characteristics <- get.binding.characteristics(chip.data, srange = c(50,500), bin = 5, cluster = cluster);
 
 # print out binding peak separation distance
 print(paste("binding peak separation distance =",binding.characteristics$peak$x))
 
 # plot cross-correlation profile
-pdf(file="example.crosscorrelation.pdf",width=5,height=5)
+pdf(file = paste(dataDir, "/", sample, ".crosscorrelation.pdf", sep = ""), width = 5, height = 5)
 par(mar = c(3.5,3.5,1.0,0.5), mgp = c(2,0.65,0), cex = 0.8);
-plot(binding.characteristics$cross.correlation,type='l',xlab="strand shift",ylab="cross-correlation");
-abline(v=binding.characteristics$peak$x,lty=2,col=2)
+plot(binding.characteristics$cross.correlation, type = 'l', xlab = "strand shift", ylab = "cross-correlation");
+abline(v = binding.characteristics$peak$x, lty = 2, col = 2)
 dev.off();
 
 
@@ -45,24 +54,24 @@ input.data <- remove.local.tag.anomalies(input.data);
 
 # output smoothed tag density (subtracting re-scaled input) into a WIG file
 # note that the tags are shifted by half of the peak separation distance
-tag.shift <- round(binding.characteristics$peak$x/2)
-smoothed.density <- get.smoothed.tag.density(chip.data,control.tags=input.data,bandwidth=200,step=100,tag.shift=tag.shift);
-writewig(smoothed.density,"example.density.wig","Example smoothed, background-subtracted tag density");
-rm(smoothed.density);
+#tag.shift <- round(binding.characteristics$peak$x/2)
+#smoothed.density <- get.smoothed.tag.density(chip.data,control.tags=input.data,bandwidth=200,step=100,tag.shift=tag.shift);
+#writewig(smoothed.density,"example.density.wig","Example smoothed, background-subtracted tag density");
+#rm(smoothed.density);
 
 
-smoothed.enrichment.estimate <- get.smoothed.enrichment.mle(chip.data,input.data,bandwidth=200,step=100,tag.shift=tag.shift)
-writewig(smoothed.enrichment.estimate,"example.enrichment.wig","Example smoothed maximum likelihood log2 enrichment estimate");
+#smoothed.enrichment.estimate <- get.smoothed.enrichment.mle(chip.data,input.data,bandwidth=200,step=100,tag.shift=tag.shift)
+#writewig(smoothed.enrichment.estimate,"example.enrichment.wig","Example smoothed maximum likelihood log2 enrichment estimate");
 
 # output conservative enrichment estimates
 # alpha specifies significance level at which confidence intervals will be estimated
-enrichment.estimates <- get.conservative.fold.enrichment.profile(chip.data,input.data,fws=500,step=100,alpha=0.01);
-writewig(enrichment.estimates,"example.enrichment.estimates.wig","Example conservative fold-enrichment/depletion estimates shown on log2 scale");
-rm(enrichment.estimates);
+#enrichment.estimates <- get.conservative.fold.enrichment.profile(chip.data,input.data,fws=500,step=100,alpha=0.01);
+#writewig(enrichment.estimates,"example.enrichment.estimates.wig","Example conservative fold-enrichment/depletion estimates shown on log2 scale");
+#rm(enrichment.estimates);
 
 broad.clusters <- get.broad.enrichment.clusters(chip.data,input.data,window.size=1e3,z.thr=3,tag.shift=round(binding.characteristics$peak$x/2))
 # write out in broadPeak format
-write.broadpeak.info(broad.clusters,"example.broadPeak")
+write.broadpeak.info(broad.clusters, paste(dataDir, "/spp_peaks/", sample, ".broadPeak", sep = ""))
 
 
 
@@ -78,13 +87,16 @@ bp <- find.binding.positions(signal.data=chip.data,control.data=input.data,fdr=f
 print(paste("detected",sum(unlist(lapply(bp$npl,function(d) length(d$x)))),"peaks"));
   
 # output detected binding positions
-output.binding.results(bp,"example.binding.positions.txt");
+output.binding.results(bp, paste(dataDir, "/spp_peaks/", sample, ".binding.positions.txt", sep = ""));
 
 bp <- find.binding.positions(signal.data=chip.data,control.data=input.data,fdr=fdr,method=tag.lwcc,whs=detection.window.halfsize,cluster=cluster)
+# output narrowPeaks
+write.narrowpeak.binding(bp, paste(dataDir, "/spp_peaks/", sample, ".narrowPeak", sep = ""))
+
 
 bp <- add.broad.peak.regions(chip.data,input.data,bp,window.size=1000,z.thr=3)
-# output using narrowPeak format
-write.narrowpeak.binding(bp,"example.narrowPeak")
+# output narrowPeaks and broad peaks toghether
+write.narrowpeak.binding(bp, paste(dataDir, "/spp_peaks/", sample, ".narrow+BroadPeak", sep = ""))
 
 
 
@@ -92,9 +104,9 @@ write.narrowpeak.binding(bp,"example.narrowPeak")
 # note: this will take approximately 10-15x the amount of time the initial binding detection did
 # The saturation criteria here is 99% consistency in the set of binding positions when adding 1e5 tags.
 # To ensure convergence the number of subsampled chains (n.chains) should be higher (80)
-mser <- get.mser(chip.data,input.data,step.size=1e5,test.agreement=0.99,n.chains=8,cluster=cluster,fdr=fdr,method=tag.wtd,whs=detection.window.halfsize)
+#mser <- get.mser(chip.data,input.data,step.size=1e5,test.agreement=0.99,n.chains=8,cluster=cluster,fdr=fdr,method=tag.wtd,whs=detection.window.halfsize)
 
-print(paste("MSER at a current depth is",mser));
+#print(paste("MSER at a current depth is",mser));
 
 
 
@@ -104,8 +116,8 @@ print(paste("MSER at a current depth is",mser));
 # The interpolation will be based on the difference in MSER at the current depth, and a depth at 5e5 fewer tags (n.steps=6);
 # evaluation of the intermediate points is omitted here to speed up the calculation (excluded.steps parameter)
 # A total of 7 chains is used here to speed up calculation, whereas a higher number of chains (50) would give good convergence
-msers <- get.mser.interpolation(chip.data,input.data,step.size=1e5,test.agreement=0.99, target.fold.enrichment=2,
- n.chains=7,n.steps=6,cluster=cluster,fdr=fdr,method=tag.wtd,whs=detection.window.halfsize)
+#msers <- get.mser.interpolation(chip.data,input.data,step.size=1e5,test.agreement=0.99, target.fold.enrichment=2,
+# n.chains=7,n.steps=6,cluster=cluster,fdr=fdr,method=tag.wtd,whs=detection.window.halfsize)
 
-print(paste("predicted sequencing depth =",round(unlist(lapply(msers,function(x) x$prediction))/1e6,5)," million tags"))
+#print(paste("predicted sequencing depth =",round(unlist(lapply(msers,function(x) x$prediction))/1e6,5)," million tags"))
 

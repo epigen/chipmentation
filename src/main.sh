@@ -53,6 +53,13 @@ while read SAMPLE_NAME CONTROL_FILE; do
     sbatch /home/arendeiro/projects/chipmentation/src/scripts/peak_calling.sh $SAMPLE_NAME $CONTROL_FILE
 done < $PEAKS_FILE_MERGED
 
+# with spp
+while read SAMPLE_NAME CONTROL_NAME; do
+    sbatch /home/arendeiro/projects/chipmentation/src/scripts/submit_call_peaks_spp.sh $SAMPLE_NAME $CONTROL_NAME
+done < $PEAKS_FILE_MERGED
+
+
+
 # OLD:
 # Derive consensus peaks between replicates, count #'s
 # R scripts/diffBind_analysis.R

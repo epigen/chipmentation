@@ -9,10 +9,10 @@ library(LSD)
 projectDir <- "/home/arendeiro/projects/chipmentation/"
 dataDir <- "/home/arendeiro/data/human/chipmentation/"
 
-counts <- read.csv(paste(dataDir, "counts_1kb_windows.tsv", sep = ""), sep= '\t')
+counts <- read.csv(paste(dataDir, "counts_1kb_windows.nodups.tsv", sep = ""), sep= '\t')
 
 # exclude samples
-counts <- counts[ , grepl(x = names(counts), pattern = "PBMC")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "PBMC")]
 counts <- counts[ , !grepl(x = names(counts), pattern = "IgG")]
 counts <- counts[ , !grepl(x = names(counts), pattern = "Input")]
 counts <- counts[ , !grepl(x = names(counts), pattern = "_R1")]
@@ -20,6 +20,8 @@ counts <- counts[ , !grepl(x = names(counts), pattern = "_R2")]
 counts <- counts[ , !grepl(x = names(counts), pattern = "PU1")]
 counts <- counts[ , !grepl(x = names(counts), pattern = "CTCF")]
 counts <- counts[ , !grepl(x = names(counts), pattern = "cJUN")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "H3K4me3")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "H3K27me3")]
 # normalize to size 
 rawCounts <- counts
 
@@ -35,35 +37,73 @@ rawCor <- cor(rawCounts)
 write.table(rawCor, paste(projectDir, "results/correlations_10kb_raw.tsv", sep = ""))
 
 # scatterplot 
-pdf(paste(projectDir, "results/plots/correlations_1kb_windows_scatter_mergedReplicates.pdf", sep = ""))
-par(mfrow = c(2,2),
-    oma = c(5,6,2,0) + 0.1,
-    mar = c(0,0,0,0) + 0.1)
+pdf(paste(projectDir, "results/plots/correlations_1kb_windows_scatter_mergedReplicates.pdf", sep = ""), height = 11, width = 7)
+m = matrix(c(1,2,3,4,5,5,6,7) ,nrow = 4,ncol = 2, byrow = TRUE)
+layout(mat = m, heights = c(1,1,0.2,1))
+
+par(oma = c(5,5,2,0) + 0.1,
+    mar = c(0,0,0,0) + 0.1,
+    pty = "s")
 
 smoothScatter(log2(rawCounts$H3K4me3_K562_500k_CM), log2(rawCounts$H3K4me3_K562_500k_ChIP),
     col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, xaxt = 'n')
-text(-3, max(log2(rawCounts$H3K4me3_K562_500k_ChIP)), bquote(R^2 == .(round(cor(rawCounts$H3K4me3_K562_500k_CM, rawCounts$H3K4me3_K562_500k_ChIP), 3))))
+text(par('usr')[1] + 1.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$H3K4me3_K562_500k_CM, rawCounts$H3K4me3_K562_500k_ChIP), 3))),
+    cex = 1.6
+)
 mtext(side = 2, "500.000 cells", line = 2)
 mtext(side = 3, "H3K4me3")
 
 smoothScatter(log2(rawCounts$H3K27me3_K562_500k_CM), log2(rawCounts$H3K27me3_K562_500k_ChIP),
     col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, xaxt = 'n', yaxt = 'n')
-text(-3, max(log2(rawCounts$H3K27me3_K562_500k_ChIP)), bquote(R^2 == .(round(cor(rawCounts$H3K27me3_K562_500k_CM, rawCounts$H3K27me3_K562_500k_ChIP), 3))))
+text(par('usr')[1] + 1.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$H3K27me3_K562_500k_CM, rawCounts$H3K27me3_K562_500k_ChIP), 3))),
+    cex = 1.6
+)
 mtext(side = 3, "H3K27me3")
 
 smoothScatter(log2(rawCounts$H3K4me3_K562_10k_CM), log2(rawCounts$H3K4me3_K562_500k_ChIP),
     col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE)
 mtext(side = 2, "10.000 cells", line = 2)
-text(-3, max(log2(rawCounts$H3K4me3_K562_500k_ChIP)), bquote(R^2 == .(round(cor(rawCounts$H3K4me3_K562_10k_CM, rawCounts$H3K4me3_K562_500k_ChIP), 3))))
+text(par('usr')[1] + 1.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$H3K4me3_K562_10k_CM, rawCounts$H3K4me3_K562_500k_ChIP), 3))),
+    cex = 1.6
+)
 
 smoothScatter(log2(rawCounts$H3K27me3_K562_10k_CM), log2(rawCounts$H3K27me3_K562_500k_ChIP),
     col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, yaxt = 'n')
-text(-3, max(log2(rawCounts$H3K27me3_K562_500k_ChIP)), bquote(R^2 == .(round(cor(rawCounts$H3K27me3_K562_10k_CM, rawCounts$H3K27me3_K562_500k_ChIP), 3))))
+text(par('usr')[1] + 1.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$H3K27me3_K562_10k_CM, rawCounts$H3K27me3_K562_500k_ChIP), 3))),
+    cex = 1.6
+)
+mtext(side = 1, "ChIP", outer= FALSE, at = -6.2, cex = 1, line = 3)
 
-title(xlab = "ChIP",
+plot.new()
+#mtext(side = 1, "ChIP", line = 0, at = 0)
+
+smoothScatter(log2(rawCounts$H3K4me3_K562_500k_CM), log2(rawCounts$H3K4me3_K562_10k_CM),
+    col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE)
+mtext(side = 2, "500.000 cells", line = 2)
+text(par('usr')[1] + 1.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$H3K4me3_K562_500k_CM, rawCounts$H3K4me3_K562_10k_CM), 3))),
+    cex = 1.6
+)
+mtext(side = 1, "10.000 cells", line = 2, cex.lab = 1.5)
+
+smoothScatter(log2(rawCounts$H3K27me3_K562_500k_CM), log2(rawCounts$H3K27me3_K562_10k_CM),
+    col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, yaxt = 'n')
+text(par('usr')[1] + 1.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$H3K27me3_K562_500k_CM, rawCounts$H3K27me3_K562_10k_CM), 3))),
+    cex = 1.6
+)
+mtext(side = 1, "10.000 cells", line = 2, cex.lab = 1.5)
+
+title(xlab = "ChIPmentation",
       ylab = "ChIPmentation",
       outer = TRUE, cex.lab = 1.5)
 dev.off()
+
+
 
 # biological replicates scatterplot 
 pdf(paste(projectDir, "results/plots/correlations_1kb_windows_scatter_biologicalReplicates.pdf", sep = ""))
@@ -143,6 +183,94 @@ mtext(side = 2, "10pg", line = 2)
 mtext(side = 3, "2pg")
 text(-1, max(log2(rawCounts$H3K4me3_500k_PBMC_CM_next_2pg_ChIP8.8_R1)), bquote(R^2 == .(round(cor(rawCounts$H3K4me3_500k_PBMC_CM_next_10pg_ChIP8.8_R1, rawCounts$H3K4me3_500k_PBMC_CM_next_2pg_ChIP8.8_R1), 3))))
 
+dev.off()
+
+
+
+
+
+
+# TFs
+# scatterplot 
+pdf(paste(projectDir, "results/plots/correlations_1kb_windows_scatter_mergedReplicates.TFs.pdf", sep = ""))
+m = matrix(c(1,2,3,3) ,nrow = 2,ncol = 2,byrow = TRUE)
+layout(mat = m, heights = c(0.4, 0.02))
+
+par(oma = c(5,6,2,0) + 0.1,
+    mar = c(0,0,0,0) + 0.1,
+    pty = "s")
+
+smoothScatter(log2(rawCounts$PU1_K562_10mio_CM + 1), log2(rawCounts$PU1_K562_10mio_ChIP + 1),
+    col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE)
+text(par('usr')[1] + 0.5, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$PU1_K562_10mio_CM, rawCounts$PU1_K562_10mio_ChIP), 3)))
+)
+
+mtext(side = 2, "10^7 cells", line = 2)
+mtext(side = 3, "PU1")
+
+smoothScatter(log2(rawCounts$CTCF_K562_10mio_CM + 1), log2(rawCounts$CTCF_K562_10mio_ChIP + 1),
+    col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, yaxt = 'n')
+text(par('usr')[1] + 0.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$CTCF_K562_10mio_CM, rawCounts$CTCF_K562_10mio_ChIP), 3)))
+)
+mtext(side = 3, "CTCF")
+
+plot.new()
+mtext(side = 1, "10^7 cells", line = 2)
+
+
+title(xlab = "ChIP",
+      ylab = "ChIPmentation",
+      outer = TRUE, cex.lab = 1.5)
+dev.off()
+
+
+# biological replicates scatterplot 
+pdf(paste(projectDir, "results/plots/correlations_1kb_windows_scatter_biologicalReplicates.TFs.pdf", sep = ""))
+m = matrix(c(1,2,3,4,5,5) ,nrow = 3,ncol = 2,byrow = TRUE)
+layout(mat = m, heights = c(0.4, 0.4, 0.02))
+
+par(oma = c(5,6,2,0) + 0.1,
+    mar = c(0,1,0,0) + 0.1,
+    pty = "s")
+
+# ChIP
+smoothScatter(log2(rawCounts$PU1_K562_10mio_ChIP_CM15.5_R1 + 1), log2(rawCounts$PU1_K562_10mio_ChIP_CM16.4_R2 + 1),
+    col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, xaxt = 'n')
+text(par('usr')[1] + 0.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$PU1_K562_10mio_ChIP_CM15.5_R1, rawCounts$PU1_K562_10mio_ChIP_CM16.4_R2), 3)))
+)
+mtext(side = 2, "ChIP", line = 3)
+mtext(side = 3, "PU.1")
+
+smoothScatter(log2(rawCounts$CTCF_K562_10mio_ChIP_CM15.6_R1 + 1), log2(rawCounts$CTCF_K562_10mio_ChIP_CM16.5_R2 + 1),
+    col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, xaxt = 'n', yaxt = 'n')
+text(par('usr')[1] + 0.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$CTCF_K562_10mio_ChIP_CM15.6_R1, rawCounts$CTCF_K562_10mio_ChIP_CM16.5_R2), 3)))
+)
+mtext(side = 3, "CTCF")
+
+# CM
+smoothScatter(log2(rawCounts$PU1_K562_10mio_CM_CM15.1_R1 + 1), log2(rawCounts$PU1_K562_10mio_CM_CM16.1_R2 + 1),
+    col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE)
+text(par('usr')[1] + 0.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$PU1_K562_10mio_CM_CM15.1_R1, rawCounts$PU1_K562_10mio_CM_CM16.1_R2), 3)))
+)
+mtext(side = 2, "ChIPmentation", line = 3)
+
+smoothScatter(log2(rawCounts$CTCF_K562_10mio_CM_CM15.2_R1 + 1), log2(rawCounts$CTCF_K562_10mio_CM_CM16.2_R2 + 1),
+    col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, yaxt = 'n')
+text(par('usr')[1] + 0.8, par('usr')[4] - 0.5,
+    bquote(R^2 == .(round(cor(rawCounts$CTCF_K562_10mio_CM_CM15.2_R1, rawCounts$CTCF_K562_10mio_CM_CM16.2_R2), 3)))
+)
+
+plot.new()
+mtext(side = 1, "10^7 cells", line = 2)
+
+title(xlab = "Replicate 1",
+      ylab = "Replicate 2",
+      outer = TRUE, cex.lab = 2)
 dev.off()
 
 

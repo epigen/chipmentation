@@ -52,9 +52,9 @@ if [[ $SAMPLE_NAME != *H3K27me3* ]]
     --bw 200 \
     -g hs -n ${SAMPLE_NAME} --outdir $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks
 
-    awk '$9 >= 10' $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.narrowPeak > $PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak
-    awk '{print $1, $2 + $10, $2 + $10 + 1, $4}' $PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak > $PROJECTDIR/peaks/${SAMPLE_NAME}.summits.bed
-    $BEDTOOLSDIR/slopBed -b 2000 -i $PROJECTDIR/peaks/${SAMPLE_NAME}.summits.bed -g $GENOMESIZE > $PROJECTDIR/peaks/${SAMPLE_NAME}.summits.2kb.bed
+    #awk '$9 >= 10' $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.narrowPeak > $PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak
+    #awk '{print $1, $2 + $10, $2 + $10 + 1, $4}' $PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak > $PROJECTDIR/peaks/${SAMPLE_NAME}.summits.bed
+    #$BEDTOOLSDIR/slopBed -b 2000 -i $PROJECTDIR/peaks/${SAMPLE_NAME}.summits.bed -g $GENOMESIZE > $PROJECTDIR/peaks/${SAMPLE_NAME}.summits.2kb.bed
 else
     macs2 callpeak -B -t $PROJECTDIR/mapped/merged/$SAMPLE_NAME.bam \
     -c $PROJECTDIR/mapped/merged/$CONTROL_NAME.bam \
