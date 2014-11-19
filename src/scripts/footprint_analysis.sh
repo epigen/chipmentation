@@ -41,6 +41,7 @@ CAGE=/home/arendeiro/reference/Homo_sapiens/cage_K562_cell_tss_f10.bed
 
 CHIP_SAMPLE=${SAMPLE_NAME/CM/ChIP}
 DNase_SAMPLE=DNase_UWashington_K562_mergedReplicates
+ENCODE_SAMPLE=wgEncodeHaibTfbsK562Pu1Pcr1xAln
 
 ### Start work on samples 
 
@@ -62,6 +63,10 @@ echo "Getting 5' read positions for sample: " $CONTROL_NAME
 bedtools bamtobed -i $PROJECTDIR/mapped/merged/${CONTROL_NAME}.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py > $PROJECTDIR/mapped/merged/${CONTROL_NAME}.5prime.bed
 echo "Getting 5' read positions for DNase sample."
 bedtools bamtobed -i $PROJECTDIR/mapped/$DNase_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py > $PROJECTDIR/mapped/merged/$DNase_SAMPLE.5prime.bed
+echo "Getting 5' read positions for Encode sample."
+bedtools bamtobed -i /home/arendeiro/data/human/encode/chip-seq/$ENCODE_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py > $PROJECTDIR/mapped/merged/$ENCODE_SAMPLE.5prime.bed
+
+
 
 # get read count of PU1 in windows
 echo "Getting read counts for sample: " $SAMPLE_NAME
@@ -81,6 +86,12 @@ bedtools coverage -d \
 -a $PROJECTDIR/mapped/merged/${DNase_SAMPLE}.5prime.bed \
 -b $PROJECTDIR/bed/${SAMPLE_NAME}.motif.bed \
 > $PROJECTDIR/bed/${SAMPLE_NAME}_peak_coverage_DNase.bed
+# get read count of DNase in windows
+echo "Getting read counts for sample: " $DNase_SAMPLE
+bedtools coverage -d \
+-a $PROJECTDIR/mapped/merged/$ENCODE_SAMPLE.5prime.bed \
+-b $PROJECTDIR/bed/${SAMPLE_NAME}.motif.bed \
+> $PROJECTDIR/bed/${SAMPLE_NAME}_peak_coverage_Encode.bed
 
 # get nucleotide composition in windows
 ## center at single nucleotide resolution

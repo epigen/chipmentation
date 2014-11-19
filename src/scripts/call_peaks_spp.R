@@ -18,7 +18,7 @@ dataDir = '/home/arendeiro/data/human/chipmentation'
 # The following section shows how to initialize a cluster of 8 nodes for parallel processing
 # see "snow" package manual for details.
 library(snow)
-cluster <- makeCluster(4);
+cluster <- makeCluster(8);
 
 chip.data <- read.bam.tags(paste(dataDir, '/mapped/merged/', sample, '.bam', sep = ''))
 input.data <- read.bam.tags(paste(dataDir, '/mapped/merged/', input, '.bam', sep = ''))

@@ -29,19 +29,15 @@ ALL_SAMPLES=/home/arendeiro/projects/chipmentation/all_samples_for_correlation.t
 cat $SAMPLES_FILE $PEAKS_FILE_MERGED > $ALL_SAMPLES
 
 ### 1kb windows
-COUNTS=$PROJECTDIR/counts_1kb_windows.tsv
+COUNTS=$PROJECTDIR/counts_1kb_windows.nodups.tsv
 COUNTER=0
 while read SAMPLE_NAME CONTROL_NAME; do
     echo "Doing sample: " $SAMPLE_NAME "and control: " $CONTROL_NAME
     if [[ $COUNTER == 0 ]]
         then
         cp $PROJECTDIR/bed/correlations_nodups/${SAMPLE_NAME}_1kb_windows_1col.bed $COUNTS
-        paste $COUNTS $PROJECTDIR/bed/correlations_nodups/${CONTROL_NAME}_1kb_windows_1col.bed > tmp
-        mv tmp $COUNTS
     else
         paste $COUNTS $PROJECTDIR/bed/correlations_nodups/${SAMPLE_NAME}_1kb_windows_1col.bed > tmp
-        mv tmp $COUNTS
-        paste $COUNTS $PROJECTDIR/bed/correlations_nodups/${CONTROL_NAME}_1kb_windows_1col.bed > tmp
         mv tmp $COUNTS
     fi
     COUNTER=$[COUNTER + 1]

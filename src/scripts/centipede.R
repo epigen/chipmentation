@@ -64,68 +64,71 @@ tmp \
 R
 library(CENTIPEDE)
 
-pu1 = read.csv("/home/arendeiro/PU1_K562_10mio_CM_peaks.csv")
-pu1 = t(pu1)
+#pu1 = read.csv("/home/arendeiro/PU1_K562_10mio_CM_peaks.csv")
+#pu1 = t(pu1)
 
 gata = read.csv("/home/arendeiro/PU1_K562_10mio_CM_peaks.GATAmotif.csv")
 gata = t(gata)
-cons = read.table("/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.conservation.bed", sep = "\t", stringsAsFactors=FALSE)
+#cons = read.table("/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.conservation.bed", sep = "\t", stringsAsFactors=FALSE)
 
-score = peaks[,8]
+#score = peaks[,8]
 # try different peak windows
 # get conservation score for whole window
-centFitPU1 <- fitCentipede(Xlist = list(DNase=as.matrix(pu1[,1850:2250])))
+#centFitPU1 <- fitCentipede(Xlist = list(DNase=as.matrix(pu1[,1850:2250])))
 centFitGATA <- fitCentipede(Xlist = list(DNase=as.matrix(gata[,1850:2250])))
     #Y=cbind(cons[,5], score)
 
-df = data.frame(postProb = centFitPU1$PostPr, sample = 'PU1 motifs')
-df = rbind(df, data.frame(postProb = centFitGATA$PostPr, sample = 'GATA motifs'))
+#df = data.frame(postProb = centFitPU1$PostPr, sample = 'PU1 motifs')
+#df = rbind(df, data.frame(postProb = centFitGATA$PostPr, sample = 'GATA motifs'))
 
-pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bp.PU1vsGATA.pdf")
-ggplot(df, aes(sample, postProb)) +
-    geom_boxplot() +
-    theme_bw()
-dev.off()
+# pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bp.PU1vsGATA.pdf")
+# ggplot(df, aes(sample, postProb)) +
+#     geom_boxplot() +
+#     theme_bw()
+# dev.off()
 
 
 library(ggplot2)
+# pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bpAll.pu1.pdf")
+# imageCutSites(pu1[ , 1850:2250][order(centFitPU1$PostPr),])
+# dev.off()
+# pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.1000bpAll.pu1.pdf")
+# imageCutSites(pu1[ , 1500:2500][order(centFitPU1$PostPr),])
+# dev.off()
+# pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bp90.pu1.pdf")
+# imageCutSites(pu1[centFit$PostPr > 0.9 , 1850:2250])
+# dev.off()
+# pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.1000bp90.pu1.pdf")
+# imageCutSites(pu1[centFit$PostPr > 0.9 , 1500:2500])
+# dev.off()
+
 pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bpAll.gata.pdf")
 imageCutSites(gata[ , 1850:2250][order(centFitGATA$PostPr),])
 dev.off()
 pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.1000bpAll.gata.pdf")
 imageCutSites(gata[ , 1500:2500][order(centFitGATA$PostPr),])
 dev.off()
-pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bp90.pdf")
-imageCutSites(pu1[centFit$PostPr > 0.9 , 1850:2250])
+pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bp90.gata.pdf")
+imageCutSites(gata[centFitGATA$PostPr > 0.9 , 1850:2250])
 dev.off()
-pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.1000bp90.pdf")
-imageCutSites(pu1[centFit$PostPr > 0.9 , 1500:2500])
-dev.off()
-
-
-
-pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.pdf")
-par(mfrow = c(2,2))
-plotProfile(centFit$LambdaParList[[1]],Mlen=21)
-boxplot(centFit$PostPr, notch = TRUE, ylab = 'Posterior Prob')
+pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.1000bp90.gata.pdf")
+imageCutSites(gata[centFitGATA$PostPr > 0.9 , 1500:2500])
 dev.off()
 
 
 
 # Export list of peaks
-peaksPU1 = read.table("/home/arendeiro/data/human/chipmentation/bed/PU1_K562_10mio_CM.bed", sep = "\t", stringsAsFactors=FALSE)
-colnames(peaksPU1) = c('chr','start','end','id')
+# peaksPU1 = read.table("/home/arendeiro/data/human/chipmentation/bed/PU1_K562_10mio_CM.bed", sep = "\t", stringsAsFactors=FALSE)
+# colnames(peaksPU1) = c('chr','start','end','id')
 
 peaksGATA = read.table("/home/arendeiro/data/human/chipmentation/bed/PU1_K562_10mio_CM.GATAmotif.bed", sep = "\t", stringsAsFactors=FALSE)
 colnames(peaksGATA) = c('chr','start','end','id')
 
-
-
-postPU1 = cbind(rownames(pu1), centFitPU1$PostPr)
-colnames(postPU1) = c('id', 'posterior')
-expPU1 = merge(peaksPU1, postPU1)
-expPU1 = expPU1[, c('chr', 'start', 'end', 'id', 'posterior')]
-expPU1$posterior = as.numeric(as.character(expPU1$posterior))
+# postPU1 = cbind(rownames(pu1), centFitPU1$PostPr)
+# colnames(postPU1) = c('id', 'posterior')
+# expPU1 = merge(peaksPU1, postPU1)
+# expPU1 = expPU1[, c('chr', 'start', 'end', 'id', 'posterior')]
+# expPU1$posterior = as.numeric(as.character(expPU1$posterior))
 
 postGATA = cbind(rownames(gata), centFitGATA$PostPr)
 colnames(postGATA) = c('id', 'posterior')
@@ -133,86 +136,152 @@ expGATA = merge(peaksGATA, postGATA)
 expGATA = expGATA[, c('chr', 'start', 'end', 'id', 'posterior')]
 expGATA$posterior = as.numeric(as.character(expGATA$posterior))
 
-
-
-write.table(expPU1,
-    "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.bed",
-    quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
-# filter for posterior > 0.9
-write.table(expPU1[expPU1$posterior > 0.9,],
-    "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior>09.bed",
-    quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
-# filter for posterior < 0.4
-write.table(expPU1[expPU1$posterior < 0.4,],
-    "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior<04.bed",
-    quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+# write.table(expPU1,
+#     "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.bed",
+#     quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+# # filter for posterior > 0.9
+# write.table(expPU1[expPU1$posterior > 0.9,],
+#     "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior>09.bed",
+#     quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+# # filter for posterior < 0.4
+# write.table(expPU1[expPU1$posterior < 0.4,],
+#     "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior<04.bed",
+#     quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
 
 write.table(expGATA,
     "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif.bed",
+    quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+# filter for posterior > 0.99
+write.table(expGATA[expGATA$posterior > 0.99,],
+    "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif>099.bed",
     quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
 # filter for posterior > 0.9
 write.table(expGATA[expGATA$posterior > 0.9,],
     "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif>09.bed",
     quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+# filter for posterior > 0.8
+write.table(expGATA[expGATA$posterior > 0.8,],
+    "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif>08.bed",
+    quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+# filter for posterior > 0.5
+write.table(expGATA[expGATA$posterior > 0.5,],
+    "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif>05.bed",
+    quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+
+
+# filter for posterior < 0.8
+write.table(expGATA[expGATA$posterior < 0.8,],
+    "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif<08.bed",
+    quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+
 # filter for posterior < 0.4
 write.table(expGATA[expGATA$posterior < 0.4,],
     "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif<04.bed",
     quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+# filter for posterior < 0.4
+write.table(expGATA[expGATA$posterior < 0.3,],
+    "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif<03.bed",
+    quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+
+# filter for posterior < 0.4
+write.table(expGATA[expGATA$posterior < 0.1,],
+    "/home/arendeiro/data/human/chipmentation/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif<01.bed",
+    quote = FALSE, row.names = FALSE, col.names = FALSE, sep= '\t')
+
 
 
 
 PROJECTDIR=/home/arendeiro/data/human/chipmentation
 GATADIR=/home/arendeiro/data/human/encode/chip-seq
 
+for T in 099 09 08
+do
 for GATA in wgEncodeAwgTfbsHaibK562Gata2sc267Pcr1xUniPk.narrowPeak wgEncodeAwgTfbsSydhK562Gata1UcdUniPk.narrowPeak wgEncodeAwgTfbsSydhK562Gata2UcdUniPk.narrowPeak wgEncodeAwgTfbsUchicagoK562Egata2UniPk.narrowPeak
 do
-echo $GATA
 # Have footprint
 ## have peak
-bedtools intersect -u \
--a "$PROJECTDIR/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif>09.bed" \
+yy=`bedtools intersect -u \
+-a "$PROJECTDIR/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif>${T}.bed" \
 -b $GATADIR/$GATA \
-| wc -l
-## don't have peak (subtract this from above)
-wc -l /home/arendeiro/data/human/chipmentation/bed/PU1_K562_10mio_CM.GATAmotif.bed
+| wc -l`
+## don't have peak
+yn=`bedtools intersect -v \
+-a "$PROJECTDIR/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif>${T}.bed" \
+-b $GATADIR/$GATA \
+| wc -l`
 
 # Don't have footprint
 ## have peak
-bedtools intersect -u \
--a "$PROJECTDIR/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif<04.bed" \
+ny=`bedtools intersect -u \
+-a "$PROJECTDIR/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif<08.bed" \
 -b $GATADIR/$GATA \
-| wc -l
+| wc -l`
 ## don't have peak (subtract this from above)
-wc -l /home/arendeiro/data/human/chipmentation/bed/PU1_K562_10mio_CM.GATAmotif.bed
+nn=`bedtools intersect -v \
+-a "$PROJECTDIR/peaks/PU1_K562_10mio_CM_peaks/PU1_K562_10mio_CM_peaks.centipedePosterior.GATAmotif<08.bed" \
+-b $GATADIR/$GATA \
+| wc -l`
+
+echo "fisher_exact([[$yy, $yn], [$ny, $nn]])"
+
+done
 done
 
-wgEncodeAwgTfbsHaibK562Gata2sc267Pcr1xUniPk.narrowPeak
-521
-10848
-1943
-9426
-wgEncodeAwgTfbsSydhK562Gata1UcdUniPk.narrowPeak
-182
-11187
-684
-10685
-wgEncodeAwgTfbsSydhK562Gata2UcdUniPk.narrowPeak
-362
-11007
-1324
-10045
-wgEncodeAwgTfbsUchicagoK562Egata2UniPk.narrowPeak
-344
-11025
-1363
-10006
+# < 0.8
+# 0.99
+fisher_exact([[371, 935], [2209, 6947]])
+(1.2478543053091025, 0.00097949588576523258)
+fisher_exact([[130, 1176], [753, 8403]])
+(1.2336030029541698, 0.037943902478709074)
+fisher_exact([[256, 1050], [1498, 7658]])
+(1.2463907432131731, 0.0038385225223134039)
+fisher_exact([[248, 1058], [1551, 7605]])
+(1.1493529998939644, 0.071308157380166964)
+
+# 0.9
+fisher_exact([[521, 1350], [2209, 6947]])
+(1.2136837516556847, 0.00080168127069898541)
+fisher_exact([[182, 1689], [753, 8403]])
+(1.2024890373379189, 0.036122506975226114)
+fisher_exact([[362, 1509], [1498, 7658]])
+(1.2263738441624397, 0.0020373398490278897)
+fisher_exact([[344, 1527], [1551, 7605]])
+(1.104604545644549, 0.13037068871019813)
+
+# 0.8
+fisher_exact([[613, 1600], [2209, 6947]])
+(1.2048752263467633, 0.00054872924704832827)
+fisher_exact([[213, 2000], [753, 8403]])
+(1.1884721115537848, 0.037311978727615686)
+fisher_exact([[418, 1795], [1498, 7658]])
+(1.1904615624918646, 0.0048515516023193072)
+fisher_exact([[398, 1815], [1551, 7605]])
+(1.0752114071966368, 0.24496550187737376)
+
+# < 0.4
+# 0.99
+fisher_exact([[371, 935], [1943, 5871]])
+fisher_exact([[130, 1176], [684, 7130]])
+fisher_exact([[256, 1050], [1324, 6490]])
+fisher_exact([[248, 1058], [1363, 6451]])
+
+# 0.9
+fisher_exact([[521, 1350], [1943, 5871]])
+fisher_exact([[182, 1689], [684, 7130]])
+fisher_exact([[362, 1509], [1324, 6490]])
+fisher_exact([[344, 1527], [1363, 6451]])
+
+# 0.8
+fisher_exact([[613, 1600], [1943, 5871]])
+fisher_exact([[213, 2000], [684, 7130]])
+fisher_exact([[418, 1795], [1324, 6490]])
+fisher_exact([[398, 1815], [1363, 6451]])
+
+# 0.5
+fisher_exact([[809, 2374], [1943, 5871]])
+fisher_exact([[258, 2925], [684, 7130]])
+fisher_exact([[548, 2635], [1324, 6490]])
+fisher_exact([[533, 2650], [1363, 6451]])
 
 
-fisher_exact([[521,10848],[1943, 9426]])
-(0.23299289712560178, 2.239359192110117e-213)
-fisher_exact([[182,11187],[684, 10685]])
-(0.25414184279267343, 1.3907346750027083e-71)
-fisher_exact([[362,11007],[1324, 10045]])
-(0.24951781577062879, 3.8063320109304112e-138)
-fisher_exact([[344,11025],[1363, 10006]])
-(0.22905748457367783, 5.7237439107939745e-154)
+

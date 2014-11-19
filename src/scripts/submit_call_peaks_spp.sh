@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=mediumq
-#SBATCH --ntasks=1
+#SBATCH --ntasks=8
 #SBATCH --time=12:00:00
 
 # Optional parameters
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=10000
 #SBATCH --nodes=1
 #SBATCH --job-name=spp_peaks

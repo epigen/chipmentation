@@ -136,12 +136,16 @@ def parseBedConservation(bedFile):
 # Parse files into dataframes
 covCM = parseBedCoverage(projectDir + 'bed/' + sample + '_tss_coverage.bed')
 covCMDF = pd.DataFrame(covCM).T
+covCMDF.to_csv(sample + "_tss_coverage.csv")
 covChIP = parseBedCoverage(projectDir + 'bed/' + sample + '_tss_coverage_ChIP.bed')
 covChIPDF = pd.DataFrame(covChIP).T
+covChIPDF.to_csv(sample + "_tss_coverage_ChIP.csv")
 covIgG = parseBedCoverage(projectDir + 'bed/' + sample + '_tss_coverage_IgG.bed')
 covIgGDF = pd.DataFrame(covIgG).T
+covIgGDF.to_csv(sample + "_tss_coverage_IgG.csv")
 covDNase = parseBedCoverage(projectDir + 'bed/' + sample + '_tss_coverage_DNase.bed')
 covDNaseDF = pd.DataFrame(covDNase).T
+covDNaseDF.to_csv(sample + "_tss_coverage_DNase.csv")
 
 A,C,G,T = parseBedNucComposition(projectDir + 'bed/' + sample + '_tss_nucleotide_compos.bed')
 nucCompA = pd.DataFrame(A).T
