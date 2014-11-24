@@ -51,6 +51,14 @@ annotatePeaks.pl $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.nar
 awk -v OFS='\t' '{print $2, $3, $4, $1}' | \
 sortBed > $PROJECTDIR/bed/${SAMPLE_NAME}.motif.bed
 
+# or on peak center
+	cat $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.narrowPeak \
+	| python /home/arendeiro/projects/chipmentation/src/lib/get_peak_center.py \
+	| bedtools slop -b 2000 -i stdin -g $GENOMESIZE \
+	| sortBed \
+	| cut -f 1,2,3,4 > $PROJECTDIR/bed/${SAMPLE_NAME}.peakCentered.bed
+
+
 # get summits
 #awk -v OFS='\t' '{print $1, $2 + $10, $2 + $10 + 1, $4}' $PROJECTDIR/peaks/${SAMPLE_NAME}.narrowPeak > $PROJECTDIR/peaks/${SAMPLE_NAME}.summits.bed
 # get 4kb window around summits
@@ -58,13 +66,17 @@ sortBed > $PROJECTDIR/bed/${SAMPLE_NAME}.motif.bed
 
 # get only 5' position of reads
 echo "Getting 5' read positions for sample: " $SAMPLE_NAME
-bedtools bamtobed -i $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py > $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.5prime.bed
+bedtools bamtobed -i $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py \
+> $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.5prime.bed
 echo "Getting 5' read positions for sample: " $CONTROL_NAME
-bedtools bamtobed -i $PROJECTDIR/mapped/merged/${CONTROL_NAME}.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py > $PROJECTDIR/mapped/merged/${CONTROL_NAME}.5prime.bed
+bedtools bamtobed -i $PROJECTDIR/mapped/merged/${CONTROL_NAME}.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py \
+> $PROJECTDIR/mapped/merged/${CONTROL_NAME}.5prime.bed
 echo "Getting 5' read positions for DNase sample."
-bedtools bamtobed -i $PROJECTDIR/mapped/$DNase_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py > $PROJECTDIR/mapped/merged/$DNase_SAMPLE.5prime.bed
+bedtools bamtobed -i $PROJECTDIR/mapped/$DNase_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py \
+> $PROJECTDIR/mapped/merged/$DNase_SAMPLE.5prime.bed
 echo "Getting 5' read positions for Encode sample."
-bedtools bamtobed -i /home/arendeiro/data/human/encode/chip-seq/$ENCODE_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py > $PROJECTDIR/mapped/merged/$ENCODE_SAMPLE.5prime.bed
+bedtools bamtobed -i /home/arendeiro/data/human/encode/chip-seq/$ENCODE_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py \
+> $PROJECTDIR/mapped/merged/$ENCODE_SAMPLE.5prime.bed
 
 
 
@@ -74,6 +86,15 @@ bedtools coverage -d \
 -a $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.5prime.bed \
 -b $PROJECTDIR/bed/${SAMPLE_NAME}.motif.bed \
 > $PROJECTDIR/bed/${SAMPLE_NAME}_peak_coverage.bed
+
+# or windows around peaks centers
+	echo "Getting read counts for sample: " $SAMPLE_NAME
+	bedtools coverage -d \
+	-a $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.5prime.bed \
+	-b $PROJECTDIR/bed/${SAMPLE_NAME}.peakCentered.bed \
+	> $PROJECTDIR/bed/${SAMPLE_NAME}.peakCentered.peak_coverage.bed
+
+
 # get read count of IgG in windows
 echo "Getting read counts for sample: " $CONTROL_NAME
 bedtools coverage -d \

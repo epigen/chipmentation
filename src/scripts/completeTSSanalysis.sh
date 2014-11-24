@@ -79,6 +79,7 @@ mv tmp /fhgfs/groups/lab_bock/shared/data/cage_tss/GRCh37_hg19_refSeq.tss.H3K4me
 
 # Parse coverage file
 
+
 import sys
 import csv
 import pandas as pd
@@ -97,9 +98,9 @@ def parseBedCoverage(bedFile):
             start = str(row[1])
             end = str(row[2])
             peak = str(row[3])
-            strand = str(row[4])
-            bp = int(row[5])
-            count = int(row[6])
+            strand = str(row[5])
+            bp = int(row[9])
+            count = int(row[10])
             
             if peak != prev_peak:
                 # new peak
@@ -125,7 +126,13 @@ k562.to_csv("/fhgfs/groups/lab_bock/shared/data/cage_tss/hg19.cage_peak_coord_ro
 sample = '/fhgfs/groups/lab_bock/shared/data/cage_tss/hg19.cage_peak_coord_robust.H3K4me3_K562_500k_CM_peaks.unique.120bpCoverage.bed'
 covCM = parseBedCoverage(sample)
 unique = pd.DataFrame(covCM).T
-unique.to_csv("/fhgfs/groups/lab_bock/shared/data/cage_tss/hg19.cage_peak_coord_robust.H3K4me3_K562_500k_CM_peaks.unique.120bpCoverage.tsv")
+
+
+pos = pd.DataFrame([unique.ix[row] for row in range(1, len(unique)) if "+" in unique.index[row]])
+neg = pd.DataFrame([unique.ix[row][::-1] for row in range(1, len(unique)) if "-" in unique.index[row]])
+uniqueRev = pos.append(neg)
+uniqueRev.columns = ["X" + str(i) for i in uniqueRev.columns]
+uniqueRev.to_csv("/fhgfs/groups/lab_bock/shared/data/cage_tss/hg19.cage_peak_coord_robust.H3K4me3_K562_500k_CM_peaks.unique.120bpCoverage.tsv", sep = '\t')
 
 
 refseqCM = parseBedCoverage("/fhgfs/groups/lab_bock/shared/data/cage_tss/GRCh37_hg19_refSeq.tss.H3K4me3_K562_500k_CM_peaks.120bpCoverage.bed")

@@ -1,7 +1,9 @@
-
 R
 
 sample = 'H3K4me3_K562_500k_CM'
+
+#sample = "hg19.cage_peak_coord_robust.TATA_Annotated.K562_expressed"
+
 
 names = c(paste("X.", c(2000:1), sep = ""), paste("X", c(0:2000), sep = ""))
 
@@ -41,22 +43,26 @@ df = cbind(ChIPmentation, ChIP, IgG, DNase)
 df = melt(df)
 
 p = ggplot(df, aes(Var1, value, colour = Var2)) +
-	geom_line() + 
-	facet_wrap(~Var2, scales = "free", ncol = 2) + 
+	#geom_line() +
+	stat_smooth(method = "gam", formula = y ~ s(x, k = 240)) + 
+	facet_wrap( ~ Var2) + # , ncol = 2, scales = "free"
 	xlab("Distance to peak") +
 	ylab("Tags") +
 	scale_color_manual(values = colors) +
-	theme_bw() +
-	scale_size(range=c(0.1, 0.6), guide=FALSE)
+	theme_bw() #+
+	#scale_size(range=c(0.0, 1.2), guide=FALSE)
 
 ggsave(filename = "tss_signal.pdf", plot = p, height = 3, width = 6)
+
+
 
 window = -1000:1000
 a = df[df$Var1 %in% window, ]
 p = ggplot(a, aes(Var1, value, colour = Var2)) +
-	geom_line() + 
+	#geom_line() + 
+	stat_smooth(method = "gam", formula = y ~ s(x, k = 240), se = FALSE) + 
 	facet_grid(Var2 ~ ., scales = "free") + 
-	coord_cartesian(xlim = c(-1000, 1000)) +
+	#coord_cartesian(xlim = c(-1000, 1000)) +
 	xlab("Distance to peak") +
 	ylab("Tags") +
 	scale_color_manual(values = colors) +
@@ -69,9 +75,10 @@ window = -400:400
 a = df[df$Var1 %in% window, ]
 
 p = ggplot(a, aes(Var1, value, colour = Var2)) +
-	geom_line() + 
+	#geom_line() + 
+	stat_smooth(method = "gam", formula = y ~ s(x, k = 550), se = FALSE) + 
 	facet_grid(Var2 ~ ., scales = "free") + 
-	coord_cartesian(xlim = c(-200, 200)) +
+	#coord_cartesian(xlim = c(-200, 200)) +
 	xlab("Distance to peak") +
 	ylab("Tags") +
 	scale_color_manual(values = colors) +
