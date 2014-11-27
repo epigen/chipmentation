@@ -78,15 +78,19 @@ gata = t(gata)
 centFitGATA <- fitCentipede(Xlist = list(DNase=as.matrix(gata[,1850:2250])))
     #Y=cbind(cons[,5], score)
 
-#df = data.frame(postProb = centFitPU1$PostPr, sample = 'PU1 motifs')
-#df = rbind(df, data.frame(postProb = centFitGATA$PostPr, sample = 'GATA motifs'))
+df = data.frame(postProb = centFitGATA$PostPr, sample = 'GATA motifs')
 
-# pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bp.PU1vsGATA.pdf")
-# ggplot(df, aes(sample, postProb)) +
-#     geom_boxplot() +
-#     theme_bw()
-# dev.off()
+p = ggplot(df, aes(sample, postProb)) +
+    geom_boxplot() +
+    theme_bw()
+ggsave(filename = "/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bp.PU1-GATA.boxplot.pdf",
+    plot = p, height = 4, width = 1.25)
 
+p = ggplot(df, aes(sample, postProb)) +
+    geom_violin(alpha=0.5, color="gray") + 
+    theme_bw()
+ggsave(filename = "/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bp.PU1-GATA.violinplot.pdf",
+    plot = p, height = 4, width = 1.25)
 
 library(ggplot2)
 # pdf("/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bpAll.pu1.pdf")

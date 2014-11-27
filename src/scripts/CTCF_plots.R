@@ -3,7 +3,7 @@ SAMPLE_NAME=CTCF_K562_10mio_CM
 
 for TECH in CM IgG ChIP DNase Encode
 do
-    if [[ $TECH == CM]]; then
+    if [[ $TECH == CM ]]; then
         sbatch /home/arendeiro/projects/chipmentation/src/scripts/cage_tss_coverage-pythonParse_job.sh \
         $PROJECTDIR/bed/${SAMPLE_NAME}_peak_coverage.bed
     else
@@ -14,39 +14,93 @@ do
 done
 
 
-cm = read.csv('pu1_CM.csv')
+R
+dir = "/home/arendeiro/data/human/chipmentation"
+plotsDir = "/home/arendeiro/projects/chipmentation/results/plots/"
+sample = "CTCF_K562_10mio_CM"
+
+cm = read.csv(paste(dir, '/bed/', sample, '_peak_coverage.csv', sep = ""))
 rownames(cm) = cm[,1]
 colnames(cm) = seq(-2000, 1999)
 cm = cm[,-1]
-chip = read.csv('pu1_ChIP.csv')
+chip = read.csv(paste(dir, '/bed/', sample, '_peak_coverage_ChIP.csv', sep = ""))
 rownames(chip) = chip[,1]
 colnames(chip) = seq(-2000, 1999)
 chip = chip[,-1]
-igg = read.csv('pu1_IgG.csv')
+igg = read.csv(paste(dir, '/bed/', sample, '_peak_coverage_IgG.csv', sep = ""))
 rownames(igg) = igg[,1]
 colnames(igg) = seq(-2000, 1999)
 igg = igg[,-1]
-dnase = read.csv('pu1_DNase.csv')
+dnase = read.csv(paste(dir, '/bed/', sample, '_peak_coverage_DNase.csv', sep = ""))
 rownames(dnase) = dnase[,1]
 colnames(dnase) = seq(-2000, 1999)
 dnase = dnase[,-1]
 
-encode = read.csv('PU1_K562_10mio_CM_peak_coverage_Encode.csv')
+encode = read.csv(paste(dir, '/bed/', sample, '_peak_coverage_Encode.csv', sep = ""))
 rownames(encode) = encode[,1]
 colnames(encode) = seq(-2000, 1999)
 encode = encode[,-1]
 
-ChIPmentation = colMeans(cm) / (143376696 / 29824946.)
-ChIP = colMeans(chip) / (30931217 / 29824946.)
-IgG = colMeans(igg) / (29824946 / 29824946.)
-DNase = colMeans(dnase) / (66663835 / 29824946.)
-ChIP_Encode = colMeans(encode) / (34072563 / 29824946.)
+ChIPmentation = colMeans(cm) / (25369965 / 25369965.)
+ChIP = colMeans(chip) / (34063407 / 25369965.)
+IgG = colMeans(igg) / (29824946 / 25369965.)
+DNase = colMeans(dnase) / (66663835 / 25369965.)
+ChIP_Encode = colMeans(encode) / (55971147 / 25369965.)
 
-colors = c("#3FAB35", "#4169E1", "#233D8C", "#696969", "#8B0000")
+colors = c("#3FAB35", "#4169E1", "#696969", "#8B0000")
 
 ### Plot average profiles
 library(ggplot2)
 library("reshape2")
+df = cbind(ChIPmentation, ChIP, IgG, DNase)
+df = melt(df)
+
+p = ggplot(df, aes(Var1, value, colour = Var2)) +
+    geom_line() + 
+    facet_grid(Var2 ~ ., scales = "free") + 
+    coord_cartesian(xlim = c(-1000, 1000)) +
+    xlab("Distance to peak") +
+    ylab("Tags") +
+    scale_color_manual(values = colors) +
+    theme_bw()
+
+ggsave(filename = paste(plotsDir, "CTCF_peaks_signal_2kb.pdf", sep = ""), plot = p, height = 3, width = 5)
+
+ChIPmentation = colMeans(cm) / (25369965 / 25369965.)
+ChIP = colMeans(chip) / (34063407 / 25369965.)
+IgG = colMeans(igg) / (29824946 / 25369965.)
+DNase = colMeans(dnase) / (66663835 / 25369965.)
+ChIP_Encode = colMeans(encode) / (55971147 / 25369965.)
+
+ChIPmentation = ChIPmentation[1750:2250]
+ChIP = ChIP[1750:2250]
+IgG = IgG[1750:2250]
+DNase = DNase[1750:2250]
+
+df = cbind(ChIPmentation, ChIP, IgG, DNase)
+df = melt(df)
+
+p = ggplot(df, aes(Var1, value, colour = Var2)) +
+    geom_line() + 
+    #facet_grid(Var2 ~ ., scales = "free") + 
+    #coord_cartesian(xlim = c(-1000, 1000)) +
+    xlab("Distance to peak") +
+    ylab("Tags") +
+    scale_color_manual(values = colors) +
+    theme_bw()
+
+ggsave(filename = paste(plotsDir, "CTCF_peaks_signal_2kb_allinone.pdf", sep = ""), plot = p, height = 3, width = 5)
+
+
+ChIPmentation = colMeans(cm) / (25369965 / 25369965.)
+ChIPmentation = (ChIPmentation / IgG) / (sum(ChIPmentation)/sum(IgG))
+ChIP = colMeans(chip) / (34063407 / 25369965.)
+ChIP = (ChIP / IgG) / (sum(ChIP)/sum(IgG))
+IgG = colMeans(igg) / (29824946 / 25369965.)
+IgG = (IgG / IgG) / (sum(IgG)/sum(IgG))
+DNase = colMeans(dnase) / (66663835 / 25369965.)
+ChIP_Encode = colMeans(encode) / (55971147 / 25369965.)
+
 df = cbind(ChIPmentation, ChIP, ChIP_Encode, IgG, DNase)
 df = melt(df)
 
@@ -59,7 +113,8 @@ p = ggplot(df, aes(Var1, value, colour = Var2)) +
     scale_color_manual(values = colors) +
     theme_bw()
 
-ggsave(filename = "PU1_peaks_signal_2kb.pdf", plot = p, height = 3, width = 5)
+ggsave(filename = paste(plotsDir, "CTCF_peaks_signal_2kb.normalized.pdf", sep = ""), plot = p, height = 3, width = 5)
+
 
 df2 = cbind(ChIPmentation[1000:3000])
 df2 = melt(df2)
@@ -71,7 +126,7 @@ p = ggplot(df2, aes(Var1, value)) +
     ylab("Tags") +
     #scale_color_manual(values = colors[1]) +
     theme_bw()
-ggsave(filename = "PU1_peaks_signal_1kb_CMonly.pdf", plot = p, height = 2, width = 5)
+ggsave(filename = "CTCF_peaks_signal_1kb_CMonly.pdf", plot = p, height = 2, width = 5)
 
 
 
@@ -87,7 +142,7 @@ p = ggplot(df2, aes(Var1, value)) +
     #scale_color_manual(values = colors) +
     theme_bw()
 
-ggsave(filename = "PU1_peaks_signal_400bp_CMonly.pdf", plot = p, height = 2, width = 6)
+ggsave(filename = "CTCF_peaks_signal_400bp_CMonly.pdf", plot = p, height = 2, width = 6)
 
 
 
@@ -95,21 +150,21 @@ ggsave(filename = "PU1_peaks_signal_400bp_CMonly.pdf", plot = p, height = 2, wid
 library(gplots)
 require(made4)
 
-cm = read.csv("/home/arendeiro/data/human/chipmentation/bed/PU1_K562_10mio_CM.peakCentered.peak_coverage.csv")
+cm = read.csv("/home/arendeiro/data/human/chipmentation/bed/CTCF_K562_10mio_CM.peakCentered.peak_coverage.csv")
 
 window = c(1600:2400)
 r = sample(1:nrow(cm), 2000)
-pdf("PU1_peaks_heatmap_400bp_CM.pdf")
+pdf("CTCF_peaks_heatmap_400bp_CM.pdf")
 heatplot(cm[r,window], dend = 'row', labRow = NA, , labCol = NA)
 dev.off()
 
 r = sample(1:nrow(chip), 2000)
-pdf("PU1_peaks_heatmap_400bp_ChIP.pdf")
+pdf("CTCF_peaks_heatmap_400bp_ChIP.pdf")
 heatplot(chip[r,window], dend = 'row', labRow = NA, , labCol = NA)
 dev.off()
 
 # Plot it centered on motifs
-pu1 = read.csv("/home/arendeiro/PU1_K562_10mio_CM_peaks.csv")
+ctcf = read.csv("/home/arendeiro/PU1_K562_10mio_CM_peaks.csv")
 pu1 = t(pu1)
 
 r = sample(1:nrow(cm), 2000)
@@ -135,21 +190,21 @@ clusterOrder$GWEIGHT = 1
 colnames(clusterOrder)[1:800] = paste("X", 1:800, sep = "")
 clusterOrder = clusterOrder[, c("X", "NAME", "GWEIGHT", paste("X", 1:800, sep = ""))]
 clusterOrder = as.data.frame(rbind(c("EWEIGHT", "", "", rep(1, 800)), clusterOrder))
-write.table(clusterOrder, "pu1_CM.cdt", sep = '\t', quote = FALSE, row.names = FALSE, col.names = TRUE) # all
+write.table(clusterOrder, "ctcf_CM.cdt", sep = '\t', quote = FALSE, row.names = FALSE, col.names = TRUE) # all
 
 # make PostProb plots
-df = data.frame(postProb = centFit$PostPr, sample = 'PU1 motifs')
+df = data.frame(postProb = centFit$PostPr, sample = 'CTCF motifs')
 
 p = ggplot(df, aes(sample, postProb)) +
     geom_boxplot() +
     theme_bw()
-ggsave(filename = "/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bp.PU1.boxplot.pdf",
+ggsave(filename = "/home/arendeiro/projects/chipmentation/results/plots/CTCF_K562_10mio_CM_peaks.footprintsCentipede.400bp.CTCF.boxplot.pdf",
     plot = p, height = 4, width = 1.25)
 
 p = ggplot(df, aes(sample, postProb)) +
     geom_violin(alpha=0.5, color="gray") + 
     theme_bw()
-ggsave(filename = "/home/arendeiro/projects/chipmentation/results/plots/PU1_K562_10mio_CM_peaks.footprintsCentipede.400bp.PU1.violinplot.pdf",
+ggsave(filename = "/home/arendeiro/projects/chipmentation/results/plots/CTCF_K562_10mio_CM_peaks.footprintsCentipede.400bp.CTCF.violinplot.pdf",
     plot = p, height = 4, width = 1.25)
 
 

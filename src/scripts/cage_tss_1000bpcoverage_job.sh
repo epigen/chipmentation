@@ -32,36 +32,36 @@ CAGEDIR=/fhgfs/groups/lab_bock/shared/data/cage_tss/
 # echo "Calculating ChIPmentation coverage in TSS set" $CAGE
 # bedtools coverage -d \
 # -a /home/arendeiro/data/human/chipmentation/bed/H3K4me3_K562_500k_CM.bed \
-# -b $CAGEDIR/$CAGE.120bpSlop.bed \
-# > $CAGEDIR/$CAGE.120bpSlop.CMcoverage.bed
+# -b $CAGEDIR/$CAGE.1000bpSlop.bed \
+# > $CAGEDIR/$CAGE.1000bpSlop.CMcoverage.bed
 if [[ $TECH == CM ]]
 	then
 	echo "Calculating" $TECH " coverage in TSS set" $CAGE
 	bedtools coverage -d \
 	-a /home/arendeiro/data/human/chipmentation/bed/H3K4me3_K562_500k_CM.bed \
-	-b $CAGEDIR/$CAGE.120bpSlop.bed \
-	> $CAGEDIR/$CAGE.120bpSlop.CMcoverage.bed
+	-b $CAGEDIR/$CAGE.1000bpSlop.bed \
+	> $CAGEDIR/$CAGE.1000bpSlop.CMcoverage.bed
 elif [[ $TECH == IgG ]]
 	then
 	echo "Calculating" $TECH "coverage in TSS set" $CAGE
 	bedtools coverage -d \
 	-a /home/arendeiro/data/human/chipmentation/bed/IgG_K562_500k_CM.bed \
-	-b $CAGEDIR/$CAGE.120bpSlop.bed \
-	> $CAGEDIR/$CAGE.120bpSlop.IgGcoverage.bed
+	-b $CAGEDIR/$CAGE.1000bpSlop.bed \
+	> $CAGEDIR/$CAGE.1000bpSlop.IgGcoverage.bed
 elif [[ $TECH == ChIP ]]
 	then
 	echo "Calculating" $TECH "coverage in TSS set" $CAGE
 	bedtools coverage -d \
 	-a /home/arendeiro/data/human/chipmentation/bed/H3K4me3_K562_500k_ChIP.bed \
-	-b $CAGEDIR/$CAGE.120bpSlop.bed \
-	> $CAGEDIR/$CAGE.120bpSlop.ChIPcoverage.bed
+	-b $CAGEDIR/$CAGE.1000bpSlop.bed \
+	> $CAGEDIR/$CAGE.1000bpSlop.ChIPcoverage.bed
 elif [[ $TECH == DNase ]]
 	then
 	echo "Calculating" $TECH "coverage in TSS set" $CAGE
 	bedtools coverage -d \
 	-a /home/arendeiro/data/human/chipmentation/bed/DNase_UWashington_K562_mergedReplicates.bed \
-	-b $CAGEDIR/$CAGE.120bpSlop.bed \
-	> $CAGEDIR/$CAGE.120bpSlop.DNasecoverage.bed
+	-b $CAGEDIR/$CAGE.1000bpSlop.bed \
+	> $CAGEDIR/$CAGE.1000bpSlop.DNasecoverage.bed
 fi
 
 date

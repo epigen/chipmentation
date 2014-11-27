@@ -33,7 +33,7 @@ source /home/arendeiro/venv/bin/activate
 
 echo $CAGE
 echo "Running python /home/arendeiro/projects/chipmentation/src/lib/parseBedCoverage.py $CAGE"
-python /home/arendeiro/projects/chipmentation/src/lib/parseBedCoverage.py $CAGE
+python /home/arendeiro/projects/chipmentation/src/lib/parseBedCoverage-peaks.py $CAGE
 
 deactivate
 

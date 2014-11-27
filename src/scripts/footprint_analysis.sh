@@ -41,22 +41,28 @@ CAGE=/home/arendeiro/reference/Homo_sapiens/cage_K562_cell_tss_f10.bed
 
 CHIP_SAMPLE=${SAMPLE_NAME/CM/ChIP}
 DNase_SAMPLE=DNase_UWashington_K562_mergedReplicates
-ENCODE_SAMPLE=wgEncodeHaibTfbsK562Pu1Pcr1xAln
+
+if [[ $SAMPLE_NAME == *CTCF* ]]; then
+    ENCODE_SAMPLE=wgEncodeHaibTfbsK562CtcfcPcr1xAln
+elif [[ $SAMPLE_NAME == *PU1* ]]; then
+    ENCODE_SAMPLE=wgEncodeHaibTfbsK562Pu1Pcr1xAln
+fi
 
 ### Start work on samples 
 
 # center on motifs
 annotatePeaks.pl $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.narrowPeak hg19 -size 4000 \
 -center $PROJECTDIR/motifs/$SAMPLE_NAME/homerResults/motif1.motif | \
-awk -v OFS='\t' '{print $2, $3, $4, $1}' | \
+awk -v OFS='\t' '{print $2, $3, $4, $1}' | 
+python /home/arendeiro/projects/chipmentation/src/lib/fix_bedfile_genome_boundaries.py | \
 sortBed > $PROJECTDIR/bed/${SAMPLE_NAME}.motif.bed
 
 # or on peak center
-	cat $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.narrowPeak \
-	| python /home/arendeiro/projects/chipmentation/src/lib/get_peak_center.py \
-	| bedtools slop -b 2000 -i stdin -g $GENOMESIZE \
-	| sortBed \
-	| cut -f 1,2,3,4 > $PROJECTDIR/bed/${SAMPLE_NAME}.peakCentered.bed
+    cat $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.narrowPeak \
+    | python /home/arendeiro/projects/chipmentation/src/lib/get_peak_center.py \
+    | bedtools slop -b 2000 -i stdin -g $GENOMESIZE \
+    | sortBed \
+    | cut -f 1,2,3,4 > $PROJECTDIR/bed/${SAMPLE_NAME}.peakCentered.bed
 
 
 # get summits
@@ -72,8 +78,8 @@ echo "Getting 5' read positions for sample: " $CONTROL_NAME
 bedtools bamtobed -i $PROJECTDIR/mapped/merged/${CONTROL_NAME}.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py \
 > $PROJECTDIR/mapped/merged/${CONTROL_NAME}.5prime.bed
 echo "Getting 5' read positions for DNase sample."
-bedtools bamtobed -i $PROJECTDIR/mapped/$DNase_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py \
-> $PROJECTDIR/mapped/merged/$DNase_SAMPLE.5prime.bed
+# bedtools bamtobed -i $PROJECTDIR/mapped/$DNase_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py \
+# > $PROJECTDIR/mapped/merged/$DNase_SAMPLE.5prime.bed
 echo "Getting 5' read positions for Encode sample."
 bedtools bamtobed -i /home/arendeiro/data/human/encode/chip-seq/$ENCODE_SAMPLE.bam | python /home/arendeiro/projects/chipmentation/src/lib/get5primePosition.py \
 > $PROJECTDIR/mapped/merged/$ENCODE_SAMPLE.5prime.bed
@@ -88,11 +94,11 @@ bedtools coverage -d \
 > $PROJECTDIR/bed/${SAMPLE_NAME}_peak_coverage.bed
 
 # or windows around peaks centers
-	echo "Getting read counts for sample: " $SAMPLE_NAME
-	bedtools coverage -d \
-	-a $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.5prime.bed \
-	-b $PROJECTDIR/bed/${SAMPLE_NAME}.peakCentered.bed \
-	> $PROJECTDIR/bed/${SAMPLE_NAME}.peakCentered.peak_coverage.bed
+    echo "Getting read counts for sample: " $SAMPLE_NAME
+    bedtools coverage -d \
+    -a $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.5prime.bed \
+    -b $PROJECTDIR/bed/${SAMPLE_NAME}.peakCentered.bed \
+    > $PROJECTDIR/bed/${SAMPLE_NAME}.peakCentered.peak_coverage.bed
 
 
 # get read count of IgG in windows
@@ -107,8 +113,8 @@ bedtools coverage -d \
 -a $PROJECTDIR/mapped/merged/${DNase_SAMPLE}.5prime.bed \
 -b $PROJECTDIR/bed/${SAMPLE_NAME}.motif.bed \
 > $PROJECTDIR/bed/${SAMPLE_NAME}_peak_coverage_DNase.bed
-# get read count of DNase in windows
-echo "Getting read counts for sample: " $DNase_SAMPLE
+# get read count of Encode sample in windows
+echo "Getting read counts for sample: " $ENCODE_SAMPLE
 bedtools coverage -d \
 -a $PROJECTDIR/mapped/merged/$ENCODE_SAMPLE.5prime.bed \
 -b $PROJECTDIR/bed/${SAMPLE_NAME}.motif.bed \
