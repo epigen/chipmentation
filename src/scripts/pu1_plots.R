@@ -42,7 +42,7 @@ IgG = colMeans(igg) / (29824946 / 29824946.)
 DNase = colMeans(dnase) / (66663835 / 29824946.)
 ChIP_Encode = colMeans(encode) / (34072563 / 29824946.)
 
-colors = c("#3FAB35", "#4169E1", "#233D8C", "#696969", "#8B0000")
+colors = c("#3FAB35", "#4169E1", "black", "#696969", "#8B0000")
 
 ### Plot average profiles
 library(ggplot2)
@@ -51,15 +51,15 @@ df = cbind(ChIPmentation, ChIP, ChIP_Encode, IgG, DNase)
 df = melt(df)
 
 p = ggplot(df, aes(Var1, value, colour = Var2)) +
-    geom_line() + 
+    geom_line(size = 1.5, alpha = 0.9) + 
     facet_grid(Var2 ~ ., scales = "free") + 
-    coord_cartesian(xlim = c(-1000, 1000)) +
+    coord_cartesian(xlim = c(-200, 200)) +
     xlab("Distance to peak") +
     ylab("Tags") +
     scale_color_manual(values = colors) +
     theme_bw()
 
-ggsave(filename = "PU1_peaks_signal_2kb.pdf", plot = p, height = 3, width = 5)
+ggsave(filename = "PU1_peaks_signal_400bp.smaller.fat.pdf", plot = p, height = 6, width = 6)
 
 df2 = cbind(ChIPmentation[1000:3000])
 df2 = melt(df2)
@@ -95,7 +95,7 @@ ggsave(filename = "PU1_peaks_signal_400bp_CMonly.pdf", plot = p, height = 2, wid
 library(gplots)
 require(made4)
 
-cm = read.csv("/home/arendeiro/data/human/chipmentation/bed/PU1_K562_10mio_CM.peakCentered.peak_coverage.csv")
+cm = read.csv("/home/arendeiro/data/human/chipmentation/bed/PU1_K562_10mio_CM.peak_coverage.csv")
 
 window = c(1600:2400)
 r = sample(1:nrow(cm), 2000)
@@ -211,7 +211,7 @@ cm = cm[,-1]
 cmNorm = t(apply(cm[,-ncol(cm)], 1, function(x)((x - min(x)) / (max(x) - min(x))))) # scale to [0:1]
 cmNorm = cmNorm[,-ncol(cmNorm)]
 
-window = c(1600:2400)
+window = c(1750:2250)
 #r = sample(1:nrow(cm), 1000)
 
 #dist2 <- function(x, ...)
@@ -277,7 +277,9 @@ rownames(cm) = cm[,1]
 colnames(cm) = seq(-2000, 1999)
 cm = cm[,-1]
 
-km = kmeans(cm, centers = 6)
+window = c(1750:2250)
+
+km = kmeans(as.matrix(cm[, window]), centers = 5, nstart = 25, )
 df = data.frame(peak = names(km$cluster), cluster = km$cluster)
 cm$peak = rownames(cm)
 d = merge(cm, df, by = "peak")
@@ -291,10 +293,11 @@ heatplot(d[,window], dend = 'none', labRow = NA, classvec = d$cluster)
 
 
 #### INDEPENDENT
-dir = "/fhgfs/groups/lab_bock/shared/data/pu1_clusters/"
+dir = "/home/arendeiro/data/human/chipmentation/"
+plotsDir = "/home/arendeiro/projects/chipmentation/results/plots/"
+sample = "PU1_K562_10mio_CM"
 
-
-cm = read.csv('pu1_CM.csv')
+cm = read.csv(paste(dir, '/bed/', sample, '_peak_coverage.csv', sep = ""))
 rownames(cm) = cm[,1]
 colnames(cm) = seq(-2000, 1999)
 cm = cm[,-1]
@@ -302,11 +305,27 @@ cm = cm[,-1]
 cmNorm = t(apply(cm[,-ncol(cm)], 1, function(x)((x - min(x)) / (max(x) - min(x))))) # scale to [0:1]
 cmNorm = cmNorm[,-ncol(cmNorm)]
 
-window = c(1600:2400)
+window = c(1750:2250)
 
-d <- as.dist(1-cor(t(log2(as.matrix(cmNorm[, window]) + 1)))); # distance
+d <- as.dist(1-cor(t(as.matrix(cm[, window])))) # distance
+
+d = d[complete.cases(d)]
+
 dd <- hclust(d, method="ward"); # clustering and dendrogram
-save(dd, file = paste(dir, "hclust.R", sep = ""))
+save(dd, file = paste(dir, "pu1_CM_normNoLog_hclust.R", sep = ""))
+
+
+# export CM data orederd by clustering to cdt (JTV)
+# write cdt files out to Java Tree view
+clusterOrder = as.data.frame(cm[dd$order, window])
+clusterOrder$X = rownames(clusterOrder)
+clusterOrder$NAME = rownames(clusterOrder)
+clusterOrder$GWEIGHT = 1
+colnames(clusterOrder)[1:500] = paste("X", 1:500, sep = "")
+clusterOrder = clusterOrder[, c("X", "NAME", "GWEIGHT", paste("X", 1:500, sep = ""))]
+clusterOrder = as.data.frame(rbind(c("EWEIGHT", "", "", rep(1, 500)), clusterOrder))
+write.table(clusterOrder, "pu1_CM_normNoLog_kmclust.cdt", sep = '\t', quote = FALSE, row.names = FALSE, col.names = TRUE) # all
+
 
 ddd <- as.dendrogram(dd)
 dddd = heatmap.2(log2(as.matrix(cmNorm[, window]) + 1),

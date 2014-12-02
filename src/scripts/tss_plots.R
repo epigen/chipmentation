@@ -102,6 +102,20 @@ df = melt(df)
 p = ggplot(df, aes(Var1, value, colour = Var2)) +
 	#geom_line() +
 	stat_smooth(method = "gam", formula = y ~ s(x, k = 240), se = FALSE) + 
+	facet_wrap( ~ Var2) + # , ncol = 2, scales = "free"
+	xlab("Distance to peak") +
+	ylab("Tags") +
+	scale_color_manual(values = colors) +
+	theme_bw() +
+	theme(legend.title=element_blank()) #+
+	#scale_size(range=c(0.0, 1.2), guide=FALSE)
+
+ggsave(filename = "tss_signal.pdf", plot = p, height = 2, width = 7)
+ggsave(filename = "tss_signal_wide.pdf", plot = p, height = 2, width = 4)
+
+p = ggplot(df, aes(Var1, value, colour = Var2)) +
+	#geom_line() +
+	stat_smooth(method = "gam", formula = y ~ s(x, k = 240), se = FALSE) + 
 	#facet_wrap( ~ Var2) + # , ncol = 2, scales = "free"
 	xlab("Distance to peak") +
 	ylab("Tags") +
@@ -110,9 +124,8 @@ p = ggplot(df, aes(Var1, value, colour = Var2)) +
 	theme(legend.title=element_blank()) #+
 	#scale_size(range=c(0.0, 1.2), guide=FALSE)
 
-ggsave(filename = "tss_signal_allinone_wide.pdf", plot = p, height = 2, width = 8)
-
-
+ggsave(filename = "tss_signal_allinone_wide.pdf", plot = p, height = 2, width = 7)
+ggsave(filename = "tss_signal_allinone.pdf", plot = p, height = 2, width = 4)
 
 window = -1000:1000
 a = df[df$Var1 %in% window, ]

@@ -17,9 +17,9 @@ done
 R
 dir = "/home/arendeiro/data/human/chipmentation"
 plotsDir = "/home/arendeiro/projects/chipmentation/results/plots/"
-sample = "CTCF_K562_10mio_CM"
+sample = "PU1_K562_10mio_CM"
 
-cm = read.csv(paste(dir, '/bed/', sample, '_peak_coverage.csv', sep = ""))
+cm = read.csv(paste(dir, '/bed/', sample, '_peak_coverage_CM.csv', sep = ""))
 rownames(cm) = cm[,1]
 colnames(cm) = seq(-2000, 1999)
 cm = cm[,-1]
@@ -178,7 +178,7 @@ dev.off()
 library(CENTIPEDE)
 centFit <- fitCentipede(Xlist = list(DNase=as.matrix(cm[,1850:2250])))
 
-window = c(1600:2400)
+window = c(1940:2060)
 
 clusterOrder = as.data.frame(cm[order(centFit$PostPr, decreasing = TRUE), window])
 
@@ -187,10 +187,10 @@ clusterOrder = as.data.frame(cm[order(centFit$PostPr, decreasing = TRUE), window
 clusterOrder$X = rownames(clusterOrder)
 clusterOrder$NAME = rownames(clusterOrder)
 clusterOrder$GWEIGHT = 1
-colnames(clusterOrder)[1:800] = paste("X", 1:800, sep = "")
-clusterOrder = clusterOrder[, c("X", "NAME", "GWEIGHT", paste("X", 1:800, sep = ""))]
-clusterOrder = as.data.frame(rbind(c("EWEIGHT", "", "", rep(1, 800)), clusterOrder))
-write.table(clusterOrder, "ctcf_CM.cdt", sep = '\t', quote = FALSE, row.names = FALSE, col.names = TRUE) # all
+colnames(clusterOrder)[1:120] = paste("X", 1:120, sep = "")
+clusterOrder = clusterOrder[, c("X", "NAME", "GWEIGHT", paste("X", 1:120, sep = ""))]
+clusterOrder = as.data.frame(rbind(c("EWEIGHT", "", "", rep(1, 120)), clusterOrder))
+write.table(clusterOrder, "pu1_CM_120bp.cdt", sep = '\t', quote = FALSE, row.names = FALSE, col.names = TRUE) # all
 
 # make PostProb plots
 df = data.frame(postProb = centFit$PostPr, sample = 'CTCF motifs')
@@ -346,10 +346,11 @@ heatplot(d[,window], dend = 'none', labRow = NA, classvec = d$cluster)
 
 
 #### INDEPENDENT
-dir = "/fhgfs/groups/lab_bock/shared/data/pu1_clusters/"
+dir = "/home/arendeiro/data/human/chipmentation/"
+plotsDir = "/home/arendeiro/projects/chipmentation/results/plots/"
+sample = "CTCF_K562_10mio_CM"
 
-
-cm = read.csv('pu1_CM.csv')
+cm = read.csv(paste(dir, '/bed/', sample, '_peak_coverage.csv', sep = ""))
 rownames(cm) = cm[,1]
 colnames(cm) = seq(-2000, 1999)
 cm = cm[,-1]
@@ -357,11 +358,25 @@ cm = cm[,-1]
 cmNorm = t(apply(cm[,-ncol(cm)], 1, function(x)((x - min(x)) / (max(x) - min(x))))) # scale to [0:1]
 cmNorm = cmNorm[,-ncol(cmNorm)]
 
-window = c(1600:2400)
+window = c(1940:2060)
 
 d <- as.dist(1-cor(t(log2(as.matrix(cmNorm[, window]) + 1)))); # distance
 dd <- hclust(d, method="ward"); # clustering and dendrogram
-save(dd, file = paste(dir, "hclust.R", sep = ""))
+save(dd, file = paste(dir, "ctcf_CM_hclust.R", sep = ""))
+
+
+# export CM data orederd by clustering to cdt (JTV)
+# write cdt files out to Java Tree view
+clusterOrder = as.data.frame(cm[dd$order, window])
+clusterOrder$X = rownames(clusterOrder)
+clusterOrder$NAME = rownames(clusterOrder)
+clusterOrder$GWEIGHT = 1
+colnames(clusterOrder)[1:800] = paste("X", 1:800, sep = "")
+clusterOrder = clusterOrder[, c("X", "NAME", "GWEIGHT", paste("X", 1:800, sep = ""))]
+clusterOrder = as.data.frame(rbind(c("EWEIGHT", "", "", rep(1, 800)), clusterOrder))
+write.table(clusterOrder, paste(dir, "ctcf_CM.hierarchical.cdt", sep = "\t"), sep = '\t', quote = FALSE, row.names = FALSE, col.names = TRUE) # all
+
+
 
 ddd <- as.dendrogram(dd)
 dddd = heatmap.2(log2(as.matrix(cmNorm[, window]) + 1),

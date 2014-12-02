@@ -9,7 +9,7 @@ library(LSD)
 projectDir <- "/home/arendeiro/projects/chipmentation/"
 dataDir <- "/home/arendeiro/data/human/chipmentation/"
 
-counts <- read.csv(paste(dataDir, "counts_1kb_windows.nodups.tsv", sep = ""), sep= '\t')
+counts <- read.csv(paste(dataDir, "counts_1kb_windows.nodups.TFs.tsv", sep = ""), sep= '\t')
 
 # exclude samples
 counts <- counts[ , !grepl(x = names(counts), pattern = "PBMC")]
@@ -192,7 +192,7 @@ dev.off()
 
 # TFs
 # scatterplot 
-pdf(paste(projectDir, "results/plots/correlations_1kb_windows_scatter_mergedReplicates.TFs.pdf", sep = ""))
+pdf(paste(projectDir, "results/plots/correlations_1kb_windows_scatter_mergedReplicates.noDups.log.TFs.pdf", sep = ""))
 m = matrix(c(1,2,3,3) ,nrow = 2,ncol = 2,byrow = TRUE)
 layout(mat = m, heights = c(0.4, 0.02))
 
@@ -200,18 +200,18 @@ par(oma = c(5,6,2,0) + 0.1,
     mar = c(0,0,0,0) + 0.1,
     pty = "s")
 
-smoothScatter(log2(rawCounts$PU1_K562_10mio_CM + 1), log2(rawCounts$PU1_K562_10mio_ChIP + 1),
+smoothScatter(log2(rawCounts$PU1_K562_10mio_CM), log2(rawCounts$PU1_K562_10mio_ChIP),
     col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE)
-text(par('usr')[1] + 0.5, par('usr')[4] - 0.5,
+text(par('usr')[1] + 1.5, par('usr')[4] - 0.5,
     bquote(R^2 == .(round(cor(rawCounts$PU1_K562_10mio_CM, rawCounts$PU1_K562_10mio_ChIP), 3)))
 )
 
 mtext(side = 2, "10^7 cells", line = 2)
 mtext(side = 3, "PU1")
 
-smoothScatter(log2(rawCounts$CTCF_K562_10mio_CM + 1), log2(rawCounts$CTCF_K562_10mio_ChIP + 1),
+smoothScatter(log2(rawCounts$CTCF_K562_10mio_CM), log2(rawCounts$CTCF_K562_10mio_ChIP),
     col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, yaxt = 'n')
-text(par('usr')[1] + 0.8, par('usr')[4] - 0.5,
+text(par('usr')[1] + 1.8, par('usr')[4] - 0.5,
     bquote(R^2 == .(round(cor(rawCounts$CTCF_K562_10mio_CM, rawCounts$CTCF_K562_10mio_ChIP), 3)))
 )
 mtext(side = 3, "CTCF")
@@ -236,32 +236,32 @@ par(oma = c(5,6,2,0) + 0.1,
     pty = "s")
 
 # ChIP
-smoothScatter(log2(rawCounts$PU1_K562_10mio_ChIP_CM15.5_R1 + 1), log2(rawCounts$PU1_K562_10mio_ChIP_CM16.4_R2 + 1),
+smoothScatter(log2(rawCounts$PU1_K562_10mio_ChIP_CM15.5_R1), log2(rawCounts$PU1_K562_10mio_ChIP_CM16.4_R2),
     col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, xaxt = 'n')
-text(par('usr')[1] + 0.8, par('usr')[4] - 0.5,
+text(par('usr')[1] + 1.5, par('usr')[4] - 0.5,
     bquote(R^2 == .(round(cor(rawCounts$PU1_K562_10mio_ChIP_CM15.5_R1, rawCounts$PU1_K562_10mio_ChIP_CM16.4_R2), 3)))
 )
 mtext(side = 2, "ChIP", line = 3)
 mtext(side = 3, "PU.1")
 
-smoothScatter(log2(rawCounts$CTCF_K562_10mio_ChIP_CM15.6_R1 + 1), log2(rawCounts$CTCF_K562_10mio_ChIP_CM16.5_R2 + 1),
+smoothScatter(log2(rawCounts$CTCF_K562_10mio_ChIP_CM15.6_R1), log2(rawCounts$CTCF_K562_10mio_ChIP_CM16.5_R2),
     col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, xaxt = 'n', yaxt = 'n')
-text(par('usr')[1] + 0.8, par('usr')[4] - 0.5,
+text(par('usr')[1] + 1.5, par('usr')[4] - 0.5,
     bquote(R^2 == .(round(cor(rawCounts$CTCF_K562_10mio_ChIP_CM15.6_R1, rawCounts$CTCF_K562_10mio_ChIP_CM16.5_R2), 3)))
 )
 mtext(side = 3, "CTCF")
 
 # CM
-smoothScatter(log2(rawCounts$PU1_K562_10mio_CM_CM15.1_R1 + 1), log2(rawCounts$PU1_K562_10mio_CM_CM16.1_R2 + 1),
+smoothScatter(log2(rawCounts$PU1_K562_10mio_CM_CM15.1_R1), log2(rawCounts$PU1_K562_10mio_CM_CM16.1_R2),
     col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE)
-text(par('usr')[1] + 0.8, par('usr')[4] - 0.5,
+text(par('usr')[1] + 1.5, par('usr')[4] - 0.5,
     bquote(R^2 == .(round(cor(rawCounts$PU1_K562_10mio_CM_CM15.1_R1, rawCounts$PU1_K562_10mio_CM_CM16.1_R2), 3)))
 )
 mtext(side = 2, "ChIPmentation", line = 3)
 
-smoothScatter(log2(rawCounts$CTCF_K562_10mio_CM_CM15.2_R1 + 1), log2(rawCounts$CTCF_K562_10mio_CM_CM16.2_R2 + 1),
+smoothScatter(log2(rawCounts$CTCF_K562_10mio_CM_CM15.2_R1), log2(rawCounts$CTCF_K562_10mio_CM_CM16.2_R2),
     col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, yaxt = 'n')
-text(par('usr')[1] + 0.8, par('usr')[4] - 0.5,
+text(par('usr')[1] + 1.5, par('usr')[4] - 0.5,
     bquote(R^2 == .(round(cor(rawCounts$CTCF_K562_10mio_CM_CM15.2_R1, rawCounts$CTCF_K562_10mio_CM_CM16.2_R2), 3)))
 )
 
