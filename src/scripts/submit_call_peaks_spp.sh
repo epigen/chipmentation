@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=mediumq
+#SBATCH --partition=shortq
 #SBATCH --ntasks=8
 #SBATCH --time=12:00:00
 

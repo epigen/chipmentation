@@ -53,12 +53,21 @@ while read SAMPLE_NAME CONTROL_FILE; do
     sbatch /home/arendeiro/projects/chipmentation/src/scripts/peak_calling.sh $SAMPLE_NAME $CONTROL_FILE
 done < $PEAKS_FILE_MERGED
 
-# with spp
-while read SAMPLE_NAME CONTROL_NAME; do
-    sbatch /home/arendeiro/projects/chipmentation/src/scripts/submit_call_peaks_spp.sh $SAMPLE_NAME $CONTROL_NAME
-done < $PEAKS_FILE_MERGED
 
-
+# Call peaks with Spp
+while read SAMPLE_FILE CONTROL_FILE; do
+    if [[ $SAMPLE_FILE == *_CM_* ]]
+        then
+        sbatch /home/arendeiro/projects/chipmentation/src/scripts/submit_call_peaks_spp.sh \
+        /home/arendeiro/data/human/chipmentation/mapped/$SAMPLE_FILE.trimmed.bowtie2.sorted.shifted.dup.bam \
+        /home/arendeiro/data/human/chipmentation/mapped/$CONTROL_FILE.trimmed.bowtie2.sorted.shifted.dup.bam
+    elif [[ $SAMPLE_FILE == *_ChIP_* ]]
+        then
+        sbatch /home/arendeiro/projects/chipmentation/src/scripts/submit_call_peaks_spp.sh \
+        /home/arendeiro/data/human/chipmentation/mapped/$SAMPLE_FILE.trimmed.bowtie2.sorted.dup.bam \
+        /home/arendeiro/data/human/chipmentation/mapped/$CONTROL_FILE.trimmed.bowtie2.sorted.dup.bam
+    fi
+done < $PEAKS_FILE
 
 # OLD:
 # Derive consensus peaks between replicates, count #'s
@@ -90,6 +99,8 @@ deactivate
 
 
 # Find motifs
+sbatch /home/arendeiro/projects/chipmentation/src/scripts/meme.sh PU1_K562_10mio_CM
+sbatch /home/arendeiro/projects/chipmentation/src/scripts/meme.sh CTCF_K562_10mio_CM
 # Center peaks on motif, get 4kb window around 
 # Count reads around motifs
 sbatch /home/arendeiro/projects/chipmentation/src/scripts/footprint_analysis.sh PU1_K562_10mio_CM IgG_K562_10mio_CM

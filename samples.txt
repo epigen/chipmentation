@@ -77,3 +77,9 @@ IgGrab_K562_10mio_CM_CM16_3	/fhgfs/groups/lab_bock/shared/data/mapped/IgGrab_K56
 PU1_K562_10mio_ChIP_CM15_5	/fhgfs/groups/lab_bock/shared/data/mapped/PU1_K562_10mio_ChIP_CM15_5.trimmed.bowtie2.sorted.dup.bam
 PU1_K562_10mio_ChIP_CM16_4	/fhgfs/groups/lab_bock/shared/data/mapped/PU1_K562_10mio_ChIP_CM16_4.trimmed.bowtie2.sorted.dup.bam
 PU1_K562_10mio_CM_CM16_1	/fhgfs/groups/lab_bock/shared/data/mapped/PU1_K562_10mio_CM_CM16_1.trimmed.bowtie2.sorted.shifted.dup.bam
+
+/fhgfs/groups/lab_bock/shared/data/mapped/PU1_K562_10mio_CM_CM15-1_R1-1.trimmed.bowtie2.sorted.shifted.dup.bam
+/fhgfs/groups/lab_bock/shared/data/mapped/PU1_K562_10mio_CM_CM15-1_R1-2.trimmed.bowtie2.sorted.shifted.dup.bam
+/fhgfs/groups/lab_bock/shared/data/mapped/PU1_K562_10mio_CM_CM16-1_R2-1.trimmed.bowtie2.sorted.shifted.dup.bam
+/fhgfs/groups/lab_bock/shared/data/mapped/PU1_K562_10mio_CM_CM16-1_R2-2.trimmed.bowtie2.sorted.shifted.dup.bam
+

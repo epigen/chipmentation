@@ -7,8 +7,11 @@ args <- commandArgs(TRUE)
 sample = args[1]
 input = args[2]
 
-print(paste("SAMPLE:", sample))
-print(paste("INPUT:", sample))
+sample_name = strsplit(basename(sample), split="\\.")[[1]][1]
+input_name = strsplit(basename(input), split="\\.")[[1]][1]
+
+print(paste("SAMPLE:", sample_name))
+print(paste("INPUT:", input_name))
 
 dataDir = '/home/arendeiro/data/human/chipmentation'
 
@@ -20,8 +23,8 @@ dataDir = '/home/arendeiro/data/human/chipmentation'
 library(snow)
 cluster <- makeCluster(8);
 
-chip.data <- read.bam.tags(paste(dataDir, '/mapped/merged/', sample, '.bam', sep = ''))
-input.data <- read.bam.tags(paste(dataDir, '/mapped/merged/', input, '.bam', sep = ''))
+chip.data <- read.bam.tags(sample)
+input.data <- read.bam.tags(input)
 
 
 # get binding info from cross-correlation profile
@@ -36,7 +39,7 @@ binding.characteristics <- get.binding.characteristics(chip.data, srange = c(50,
 print(paste("binding peak separation distance =",binding.characteristics$peak$x))
 
 # plot cross-correlation profile
-pdf(file = paste(dataDir, "/", sample, ".crosscorrelation.pdf", sep = ""), width = 5, height = 5)
+pdf(file = paste(dataDir, "/", sample_name, ".crosscorrelation.pdf", sep = ""), width = 5, height = 5)
 par(mar = c(3.5,3.5,1.0,0.5), mgp = c(2,0.65,0), cex = 0.8);
 plot(binding.characteristics$cross.correlation, type = 'l', xlab = "strand shift", ylab = "cross-correlation");
 abline(v = binding.characteristics$peak$x, lty = 2, col = 2)
@@ -71,32 +74,32 @@ input.data <- remove.local.tag.anomalies(input.data);
 
 broad.clusters <- get.broad.enrichment.clusters(chip.data,input.data,window.size=1e3,z.thr=3,tag.shift=round(binding.characteristics$peak$x/2))
 # write out in broadPeak format
-write.broadpeak.info(broad.clusters, paste(dataDir, "/spp_peaks/", sample, ".broadPeak", sep = ""))
+write.broadpeak.info(broad.clusters, paste(dataDir, "/spp_peaks/", sample_name, ".broadPeak", sep = ""))
 
 
 
-# binding detection parameters
-# desired FDR (1%). Alternatively, an E-value can be supplied to the method calls below instead of the fdr parameter
-fdr <- 1e-2; 
-# the binding.characteristics contains the optimized half-size for binding detection window
-detection.window.halfsize <- binding.characteristics$whs;
+# # binding detection parameters
+# # desired FDR (1%). Alternatively, an E-value can be supplied to the method calls below instead of the fdr parameter
+# fdr <- 1e-2; 
+# # the binding.characteristics contains the optimized half-size for binding detection window
+# detection.window.halfsize <- binding.characteristics$whs;
   
-# determine binding positions using wtd method
-bp <- find.binding.positions(signal.data=chip.data,control.data=input.data,fdr=fdr,whs=detection.window.halfsize,cluster=cluster)
+# # determine binding positions using wtd method
+# bp <- find.binding.positions(signal.data=chip.data,control.data=input.data,fdr=fdr,whs=detection.window.halfsize,cluster=cluster)
 
-print(paste("detected",sum(unlist(lapply(bp$npl,function(d) length(d$x)))),"peaks"));
+# print(paste("detected",sum(unlist(lapply(bp$npl,function(d) length(d$x)))),"peaks"));
   
-# output detected binding positions
-output.binding.results(bp, paste(dataDir, "/spp_peaks/", sample, ".binding.positions.txt", sep = ""));
+# # output detected binding positions
+# output.binding.results(bp, paste(dataDir, "/spp_peaks/", sample_name, ".binding.positions.txt", sep = ""));
 
-bp <- find.binding.positions(signal.data=chip.data,control.data=input.data,fdr=fdr,method=tag.lwcc,whs=detection.window.halfsize,cluster=cluster)
-# output narrowPeaks
-write.narrowpeak.binding(bp, paste(dataDir, "/spp_peaks/", sample, ".narrowPeak", sep = ""))
+# bp <- find.binding.positions(signal.data=chip.data,control.data=input.data,fdr=fdr,method=tag.lwcc,whs=detection.window.halfsize,cluster=cluster)
+# # output narrowPeaks
+# write.narrowpeak.binding(bp, paste(dataDir, "/spp_peaks/", sample_name, ".narrowPeak", sep = ""))
 
 
-bp <- add.broad.peak.regions(chip.data,input.data,bp,window.size=1000,z.thr=3)
-# output narrowPeaks and broad peaks toghether
-write.narrowpeak.binding(bp, paste(dataDir, "/spp_peaks/", sample, ".narrow+BroadPeak", sep = ""))
+# bp <- add.broad.peak.regions(chip.data,input.data,bp,window.size=1000,z.thr=3)
+# # output narrowPeaks and broad peaks toghether
+# write.narrowpeak.binding(bp, paste(dataDir, "/spp_peaks/", sample_name, ".narrow+BroadPeak", sep = ""))
 
 
 

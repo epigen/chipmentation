@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --partition=mediumq
+#SBATCH --partition=shortq
 #SBATCH --ntasks=1
-#SBATCH --time=48:00:00
+#SBATCH --time=10:00:00
 
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=32000
+#SBATCH --mem-per-cpu=4000
 #SBATCH --nodes=1
 
 #SBATCH --job-name=cageParsePeaksCoverage
@@ -33,7 +33,7 @@ source /home/arendeiro/venv/bin/activate
 
 echo $CAGE
 echo "Running python /home/arendeiro/projects/chipmentation/src/lib/parseBedCoverage.py $CAGE"
-python /home/arendeiro/projects/chipmentation/src/lib/parseBedCoverage-peaks.py $CAGE
+python /home/arendeiro/projects/chipmentation/src/lib/parseBedCoverage-peaks-strand.py $CAGE
 
 deactivate
 
