@@ -9,21 +9,19 @@ library(LSD)
 projectDir <- "/home/arendeiro/projects/chipmentation/"
 dataDir <- "/home/arendeiro/data/human/chipmentation/"
 
-counts <- read.csv(paste0(dataDir, "counts_1kb_windows.nodups.tsv"), sep= '\t')
+counts <- read.csv(paste(dataDir, "counts_1kb_windows.nodups.TFs.tsv", sep = ""), sep= '\t')
 
-# exclude samples if needed
-# counts <- counts[ , !grepl(x = names(counts), pattern = "PBMC")]
-# counts <- counts[ , !grepl(x = names(counts), pattern = "IgG")]
-# counts <- counts[ , !grepl(x = names(counts), pattern = "Input")]
-# counts <- counts[ , !grepl(x = names(counts), pattern = "_R1")]
-# counts <- counts[ , !grepl(x = names(counts), pattern = "_R2")]
-# counts <- counts[ , !grepl(x = names(counts), pattern = "PU1")]
-# counts <- counts[ , !grepl(x = names(counts), pattern = "CTCF")]
-# counts <- counts[ , !grepl(x = names(counts), pattern = "cJUN")]
-# counts <- counts[ , !grepl(x = names(counts), pattern = "H3K4me3")]
-# counts <- counts[ , !grepl(x = names(counts), pattern = "H3K27me3")]
-
-
+# exclude samples
+counts <- counts[ , !grepl(x = names(counts), pattern = "PBMC")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "IgG")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "Input")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "_R1")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "_R2")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "PU1")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "CTCF")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "cJUN")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "H3K4me3")]
+counts <- counts[ , !grepl(x = names(counts), pattern = "H3K27me3")]
 # normalize to size 
 rawCounts <- counts
 
@@ -36,7 +34,7 @@ for (sample in seq(1, length(counts))) {
 
 # correlate
 rawCor <- cor(rawCounts)
-write.table(rawCor, paste(projectDir, "results/correlations_1kb_raw.tsv", sep = ""))
+write.table(rawCor, paste(projectDir, "results/correlations_10kb_raw.tsv", sep = ""))
 
 # scatterplot 
 pdf(paste(projectDir, "results/plots/correlations_1kb_windows_scatter_mergedReplicates.pdf", sep = ""), height = 11, width = 7)

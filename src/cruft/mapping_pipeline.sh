@@ -13,7 +13,6 @@
 
 # *** setup environment ***
 # load the required environmental modules that your script depends upon
-module load java/jdk/1.7.0_65 
 module load FastQC/0.11.2
 module load trimmomatic/0.32
 module load samtools
@@ -38,6 +37,7 @@ PROJECTDIR=/home/arendeiro/data/human/chipmentation
 GENOMEREF=/fhgfs/prod/ngs_resources/genomes/hg19/forBowtie2/hg19
 PRESEQ=/home/arendeiro/.local/software/preseq-0.1.0/preseq
 PICARDDIR=/cm/shared/apps/picard-tools/1.118/
+HOMERDIR=/home/arendeiro/.local/software/homer-4.6/bin
 
 ### Start work on samples 
 # Fastqc on raw data
@@ -62,18 +62,13 @@ MINLEN:36
 # Map with bowtie2 end-to-end sensitive settings
 echo "Mapping: " $SAMPLE_NAME
 mkdir -p $PROJECTDIR/mapped/
-bowtie2 --very-sensitive -p 16 -x $GENOMEREF $PROJECTDIR/raw/$SAMPLE_NAME.trimmed.fastq | \
-samtools view -S -b - | \
-samtools sort - $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted
+bowtie2 --very-sensitive -p 16 -x $GENOMEREF $PROJECTDIR/raw/$SAMPLE_NAME.trimmed.fastq | samtools view -S -b - | samtools sort - $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted
 
 # Shift reads from tagmentation samples
 if [[ $SAMPLE_NAME == *ATAC-seq* ]] || [[ $SAMPLE_NAME == *_CM_* ]]
     then
     echo "Shifting reads for sample:" $SAMPLE_NAME
-    samtools view -h $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.bam | \
-    python2.7 projects/chipmentation/src/scripts/shift_reads.py | \
-    samtools view -S -b - | \
-    samtools sort - $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted
+    samtools view -h $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.bam | python2.7 projects/chipmentation/src/scripts/shift_reads.py | samtools view -S -b - | samtools sort - $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted
 fi
 
 # Mark duplicates
@@ -87,8 +82,7 @@ if [[ $SAMPLE_NAME == *ATAC-seq* ]] || [[ $SAMPLE_NAME == *_CM_* ]]
     VALIDATION_STRINGENCY=LENIENT \
     TMP_DIR=$TMPDIR
 
-    samtools sort $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.notsorted.bam \
-    $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup
+    samtools sort $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.notsorted.bam $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup
 
     if [[ -s $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.notsorted.bam ]]
         then
@@ -103,8 +97,7 @@ else
     VALIDATION_STRINGENCY=LENIENT \
     TMP_DIR=$TMPDIR
 
-    samtools sort $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.notsorted.bam \
-    $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup
+    samtools sort $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.notsorted.bam $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup
     
     if [[ -s $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.notsorted.bam ]]
         then
@@ -116,19 +109,30 @@ fi
 if [[ $SAMPLE_NAME == *ATAC-seq* ]] || [[ $SAMPLE_NAME == *_CM_* ]]
     then
     echo "QC: " $SAMPLE_NAME
-    $PRESEQ c_curve -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.bam \
-    -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_c_curve.txt
-
-    $PRESEQ lc_extrap -e 1e8 -s 2e6 -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.bam \
-    -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_lc_extrap.txt
+    $PRESEQ c_curve -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.bam -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_c_curve.txt
+    $PRESEQ lc_extrap -e 1e8 -s 2e6 -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.bam -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_lc_extrap.txt
 else
     echo "QC: " $SAMPLE_NAME
-    $PRESEQ c_curve -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam \
-    -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_c_curve.txt
-
-    $PRESEQ lc_extrap -e 1e8 -s 2e6 -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam \
-    -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_lc_extrap.txt
+    $PRESEQ c_curve -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_c_curve.txt
+    $PRESEQ lc_extrap -e 1e8 -s 2e6 -B $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam -o $PROJECTDIR/mapped/$SAMPLE_NAME_qc_lc_extrap.txt
 fi
 
+# HOMER
+# make tag dirs
+mkdir -p $PROJECTDIR/homer/${SAMPLE_NAME}_homer
+if [[ $SAMPLE_NAME == *ATAC-seq* ]] || [[ $SAMPLE_NAME == *_CM_* ]]
+    then
+    echo "Making tag directory for sample: " $SAMPLE_NAME
+    $HOMERDIR/makeTagDirectory $PROJECTDIR/homer/${SAMPLE_NAME}_homer $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.shifted.dup.bam
+    # make UCSC tracks
+    echo "Making tracks for sample: " $SAMPLE_NAME
+    $HOMERDIR/makeUCSCfile $PROJECTDIR/homer/${SAMPLE_NAME}_homer -name $SAMPLE_NAME -o auto
+else
+    echo "Making tag directory for sample: " $SAMPLE_NAME
+    $HOMERDIR/makeTagDirectory $PROJECTDIR/homer/${SAMPLE_NAME}_homer $PROJECTDIR/mapped/$SAMPLE_NAME.trimmed.bowtie2.sorted.dup.bam
+    # make UCSC tracks
+    echo "Making tracks for sample: " $SAMPLE_NAME
+    $HOMERDIR/makeUCSCfile $PROJECTDIR/homer/${SAMPLE_NAME}_homer -name $SAMPLE_NAME -o auto
+fi
 
 date

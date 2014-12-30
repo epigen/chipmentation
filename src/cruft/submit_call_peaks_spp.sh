@@ -30,12 +30,12 @@ date
 PROJECTDIR=/home/arendeiro/data/human/chipmentation
 
 ### Get sample info from arguments
-SAMPLE=$1
-CONTROL=$2
+SAMPLE_NAME=$1
+CONTROL_NAME=$2
 
 ### Call Peaks
 mkdir -p $PROJECTDIR/spp_peaks/
 
-Rscript /home/arendeiro/projects/chipmentation/src/scripts/spp_peak_calling.R $SAMPLE $CONTROL
+Rscript /home/arendeiro/projects/chipmentation/src/scripts/call_peaks_spp.R $SAMPLE_NAME $CONTROL_NAME
 
 date

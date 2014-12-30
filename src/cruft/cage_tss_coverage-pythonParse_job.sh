@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --partition=mediumq
+#SBATCH --partition=shortq
 #SBATCH --ntasks=1
-#SBATCH --time=48:00:00
+#SBATCH --time=10:00:00
 
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=32000
+#SBATCH --mem-per-cpu=4000
 #SBATCH --nodes=1
 
 #SBATCH --job-name=cageParsePeaksCoverage
@@ -24,7 +24,6 @@ date
 
 ### Get sample info from arguments
 CAGE=$1
-TECH=$2
 CAGEDIR=/fhgfs/groups/lab_bock/shared/data/cage_tss/
 
 ### Specify paths
@@ -32,9 +31,9 @@ CAGEDIR=/fhgfs/groups/lab_bock/shared/data/cage_tss/
 ### Start work
 source /home/arendeiro/venv/bin/activate
 
-echo $TECH
-echo "Running python parseBedCoverage.py $TECH"
-python /home/arendeiro/projects/chipmentation/src/lib/parseBedCoverage-peaks-strand.py $CAGEDIR/$CAGE.120bpSlop.${TECH}coverage.bed
+echo $CAGE
+echo "Running python /home/arendeiro/projects/chipmentation/src/lib/parseBedCoverage.py $CAGE"
+python /home/arendeiro/projects/chipmentation/src/lib/parseBedCoverage-peaks-strand.py $CAGE
 
 deactivate
 

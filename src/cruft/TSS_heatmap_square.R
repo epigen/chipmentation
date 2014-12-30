@@ -1,11 +1,5 @@
-###
-# This script computes clusters of regions around CAGE TSSs based on different types of signals.
-# 
-# Posteriorly, it calculates the percentage of TATA- or CpG-annotated TSSs within each cluster.
-# It also calculates enrichment of genomic features in each cluster using LOLA.
-### 
 
-
+R
 library(ggplot2)
 library(gplots)
 require(made4)
@@ -132,7 +126,7 @@ signals = c(
 cage = 6
 selclus = 5
 
-# Get original TATA and CpG annotation (permissive set)
+
 annot = read.table("/home/arendeiro/reference/Homo_sapiens/DPIcluster_hg19_20120116.permissive_set.TATA_CpG_annotated.bed", sep = "\t", header = FALSE)
 
 colnames(annot)[4] = "peak"
@@ -217,6 +211,8 @@ for (signal in signals){
 
 cage = 7
 selclus = 3
+
+
 
 load(paste("/home/arendeiro/projects/chipmentation/results/", cagePeaks[cage], "_kmfit.R"))
 

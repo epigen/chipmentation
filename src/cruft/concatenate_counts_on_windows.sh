@@ -22,21 +22,22 @@ date
 
 ### Specify paths
 PROJECTDIR=/home/arendeiro/data/human/chipmentation
+SAMPLES_FILE=/home/arendeiro/projects/chipmentation/samples_peaks.txt
+PEAKS_FILE_MERGED=/home/arendeiro/projects/chipmentation/samples_peaks_merged.txt
+ALL_SAMPLES=/home/arendeiro/projects/chipmentation/all_samples_for_correlation.txt
 
-# 1kb windows
+cat $SAMPLES_FILE $PEAKS_FILE_MERGED > $ALL_SAMPLES
+
+### 1kb windows
 COUNTS=$PROJECTDIR/counts_1kb_windows.nodups.tsv
-
-# Samples
-ALL_SAMPLES=$1
-
 COUNTER=0
 while read SAMPLE_NAME CONTROL_NAME; do
     echo "Doing sample: " $SAMPLE_NAME "and control: " $CONTROL_NAME
     if [[ $COUNTER == 0 ]]
         then
-        cp $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows_1col.bed $COUNTS
+        cp $PROJECTDIR/bed/correlations_nodups/${SAMPLE_NAME}_1kb_windows_1col.bed $COUNTS
     else
-        paste $COUNTS $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows_1col.bed > tmp
+        paste $COUNTS $PROJECTDIR/bed/correlations_nodups/${SAMPLE_NAME}_1kb_windows_1col.bed > tmp
         mv tmp $COUNTS
     fi
     COUNTER=$[COUNTER + 1]

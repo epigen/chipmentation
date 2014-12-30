@@ -6,8 +6,8 @@
 #SBATCH --mem-per-cpu=48000
 #SBATCH --nodes=1
 
-#SBATCH --job-name=countsOnWindows1kb
-#SBATCH --output=/home/arendeiro/logs/countsOnWindows1kb_%j.log
+#SBATCH --job-name=countsOnWindows10kb
+#SBATCH --output=/home/arendeiro/logs/countsOnWindows10kb_%j.log
 
 # *** setup environment ***
 # load the required environmental modules that your script depends upon
@@ -23,43 +23,37 @@ date
 ### Get sample info from arguments
 SAMPLE_NAME=$1
 
+### Get window info from arguments
+WINDOWS=$2
+
 ### Specify paths
 PROJECTDIR=/home/arendeiro/data/human/chipmentation
-BEDTOOLSDIR=/home/arendeiro/.local/software/bedtools2/bin
-GENOMESIZE=/fhgfs/prod/ngs_resources/genomes/hg19/hg19_chromLengths_sorted.txt
 
 mkdir -p $PROJECTDIR/bed
 mkdir -p $PROJECTDIR/bed/correlations
 
-# to make windows run:
-# bedtools makewindows -g $GENOMESIZE -w 1000 > /home/arendeiro/reference/Homo_sapiens/1kb_windows.bed
-# bedtools makewindows -g $GENOMESIZE -w 10000 > /home/arendeiro/reference/Homo_sapiens/10kb_windows.bed
-WINDOWS=/home/arendeiro/reference/Homo_sapiens/10kb_windows.bed
-
-# 10kb windows
-echo "Counting reads on ChIP sample: " $SAMPLE_NAME
-bedtools bamtobed -i $PROJECTDIR/mapped/merged/$SAMPLE_NAME.bam | \
-bedtools intersect -c -a $WINDOWS -b stdin | \
-bedtools sort \
-> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows.bed
-
-cut -f 4 $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows.bed | \
-sed "1s/^/$SAMPLE_NAME\n/" \
-> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_10kb_windows_1col.bed
-
-
-WINDOWS=/home/arendeiro/reference/Homo_sapiens/1kb_windows.bed
 # needs a lot of memory with 1kb windows
-echo "Counting reads on ChIP sample: " $SAMPLE_NAME
-bedtools bamtobed -i $PROJECTDIR/mapped/merged/$SAMPLE_NAME.bam | \
-bedtools intersect -c -a $WINDOWS -b stdin | \
-bedtools sort \
-> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed
-
-cut -f 4 $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed | \
-sed "1s/^/$SAMPLE_NAME\n/" \
-> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows_1col.bed
-
+if [[ $SAMPLE_NAME == *Encode* ]]; then
+	echo "Counting reads on Encode sample: " $SAMPLE_NAME
+	bedtools bamtobed -i $PROJECTDIR/../encode/chip-seq/mapped/merged/${SAMPLE_NAME}.nodups.bam | \
+	bedtools intersect -c -a $WINDOWS -b stdin | \
+	bedtools sort \
+	> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed
+	
+	cut -f 4 $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed | \
+	sed "1s/^/$SAMPLE_NAME\n/" \
+	> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows_1col.bed
+else
+	echo "Counting reads on chipmentation sample: " $SAMPLE_NAME
+	bedtools bamtobed -i $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.nodups.bam | \
+	bedtools intersect -c -a $WINDOWS -b stdin | \
+	bedtools sort \
+	> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed
+	
+	cut -f 4 $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows.bed | \
+	sed "1s/^/$SAMPLE_NAME\n/" \
+	> $PROJECTDIR/bed/correlations/${SAMPLE_NAME}_1kb_windows_1col.bed
+fi
 
 
 date

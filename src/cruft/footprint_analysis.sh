@@ -28,15 +28,15 @@ hostname
 date
 
 ### Get sample info from arguments
+# SAMPLE_NAME=PU1_K562_10mio_CM
+# CONTROL_NAME=IgG_K562_10mio_CM
 SAMPLE_NAME=$1
-CONTROL_NAME=IgG_K562_10mio_CM
+CONTROL_NAME=$2
 if [[ $SAMPLE_NAME == *CTCF* ]]; then
     ENCODE_SAMPLE=wgEncodeHaibTfbsK562CtcfcPcr1xAln
 elif [[ $SAMPLE_NAME == *PU1* ]]; then
     ENCODE_SAMPLE=wgEncodeHaibTfbsK562Pu1Pcr1xAln
 fi
-CHIP_SAMPLE=${SAMPLE_NAME/CM/ChIP}
-DNase_SAMPLE=DNase_UWashington_K562_mergedReplicates
 
 ### Specify paths
 SAMPLES_FILE=/home/arendeiro/projects/chipmentation/samples_peaks.txt
@@ -44,6 +44,9 @@ PROJECTDIR=/home/arendeiro/data/human/chipmentation
 GENOMESIZE=/fhgfs/prod/ngs_resources/genomes/hg19/hg19_chromLengths_sorted.txt
 GENOMEREF=/fhgfs/prod/ngs_resources/genomes/hg19/forBowtie2/hg19.fa
 CONSERVATION=/home/arendeiro/reference/Homo_sapiens/phyloP/placentalMammals
+
+CHIP_SAMPLE=${SAMPLE_NAME/CM/ChIP}
+DNase_SAMPLE=DNase_UWashington_K562_mergedReplicates
 
 ### Start work on samples 
 
@@ -53,6 +56,7 @@ annotatePeaks.pl $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.nar
 awk -v OFS='\t' '{print $2, $3, $4, $1, $6, $5}' | \
 python /home/arendeiro/projects/chipmentation/src/lib/fix_bedfile_genome_boundaries.py | \
 sortBed > $PROJECTDIR/bed/${SAMPLE_NAME}.motifStrand.bed
+
 
 # get motif score (and other annotation) for each peak
 annotatePeaks.pl $PROJECTDIR/peaks/${SAMPLE_NAME}_peaks/${SAMPLE_NAME}_peaks.narrowPeak hg19 \
@@ -90,6 +94,7 @@ sbatch /home/arendeiro/jobScripts/bedToolsCoverage.job.sh \
 $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.5prime.bed \
 $PROJECTDIR/bed/${SAMPLE_NAME}.motifStrand.bed \
 $PROJECTDIR/bed/${SAMPLE_NAME}_peak_coverage_CM.bed
+
 # get read count of IgG in windows
 echo "Getting read counts for sample: " $CONTROL_NAME
 sbatch /home/arendeiro/jobScripts/bedToolsCoverage.job.sh \
@@ -183,8 +188,7 @@ done
 date
 
 
-# # PLOT CO-BINDING
-# R
+# # Plot 
 # bedDir = "/home/arendeiro/data/human/chipmentation/bed/"
 # resultsDir = "/home/arendeiro/projects/chipmentation/results/"
 # plotsDir = "/home/arendeiro/projects/chipmentation/results/plots/"

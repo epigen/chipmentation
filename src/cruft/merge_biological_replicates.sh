@@ -60,9 +60,3 @@ samtools flagstat $PROJECTDIR/mapped/merged/${SAMPLE_NAME}.bam > $PROJECTDIR/map
 date
 
 
-####
-#
-# After this, samples are renamed to $SAMPLE_NAME.bam!
-#
-####
-
