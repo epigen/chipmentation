@@ -31,7 +31,8 @@ from plotly.graph_objs import Data, Heatmap, Layout, Figure
 global v # verbose
 # Define variables
 v = True
-signals = ["CTCF_K562_10mio_CM", "PU1_K562_10mio_CM"]
+signals = { "CTCF_K562_10mio_CM" : ["CTCF_K562_10mio_CM", "CTCF_K562_10mio_ChIP"],
+            "PU1_K562_10mio_CM" : ["PU1_K562_10mio_CM", "PU1_K562_10mio_ChIP"]}
 bamFilePath = "/home/arendeiro/data/human/chipmentation/mapped/merged"
 peakFilePath = "/home/arendeiro/data/human/chipmentation/bed"
 coverageFilePath = "/home/arendeiro/data/human/chipmentation/bed/newPython" # output
@@ -49,13 +50,13 @@ windowWidth = abs(windowRange[0]) + abs(windowRange[1])
 
 def bedToolsInterval2GenomicInterval(bedtool):
     """
-    Given a pybedtools.BedTool object returns, dictionary of HTSeq.GenomicInterval objects.
+    Given a pybedtools.BedTool object, returns dictionary of HTSeq.GenomicInterval objects.
     """
     intervals = OrderedDict()
     for iv in bedtool:
-        if iv.strand == "+" or iv.strand == 0:
+        if iv.strand == "+" or iv.strand == 0 or iv.strand == str(0):
             intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end, "+")
-        elif iv.strand == "-" or iv.strand == 1:
+        elif iv.strand == "-" or iv.strand == 0 or iv.strand == str(1):
             intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end, "-")
         else:
             intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end)
@@ -95,14 +96,14 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
             # get position in relative to window
             if orientation:
                 if feature.strand == "+" or feature.strand == ".":
-                    start_in_window = aln.iv.start - feature.start
-                    end_in_window   = aln.iv.end   - feature.start
+                    start_in_window = aln.iv.start - feature.start - 1
+                    end_in_window   = aln.iv.end   - feature.start - 1
                 else:
-                    start_in_window = feature.length - abs(feature.start - aln.iv.end)
-                    end_in_window   = feature.length - abs(feature.start - aln.iv.start)
+                    start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
+                    end_in_window   = feature.length - abs(feature.start - aln.iv.start) - 1
             else:
-                start_in_window = aln.iv.start - feature.start
-                end_in_window   = aln.iv.end   - feature.start
+                start_in_window = aln.iv.start - feature.start - 1
+                end_in_window   = aln.iv.end   - feature.start - 1
             
             # check fragment is within window; this is because of fragmentsize adjustment
             if start_in_window < 0 or end_in_window > feature.length:
@@ -114,7 +115,7 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
             else:
                 if aln.iv.strand == "+":
                     profile[0][start_in_window : end_in_window] += 1
-                else:
+                elif aln.iv.strand == "-":
                     profile[1][start_in_window : end_in_window] += 1
         
         # append feature profile to dict
@@ -141,7 +142,7 @@ def exportToJavaTreeView(df, filename):
 # save dicts with coverage and average profiles
 rawSignals = OrderedDict()
 aveSignals = OrderedDict()
-for signal in signals:
+for signal in signals.keys():
     # Load peak file from bed files, centered on motif
 
     ## TODO: modify pipeline so that slop is done here
@@ -153,38 +154,48 @@ for signal in signals:
         if interval.length < windowWidth:
             peaks.pop(name)
 
-    # Load bam
-    bamfile = HTSeq.BAM_Reader(os.path.join(bamFilePath, signal + ".bam"))
+    # Subset
+    # i=0
+    # d = dict()
+    # for name, peak in peaks.iteritems():
+    #     if i < 500:
+    #         d[name] = peak
+    #         i+=1
+    # peaks = d
 
-    # Get dataframe of signal coverage in bed regions, append to dict
-    cov = coverage(bamfile, peaks, fragmentsize, strand_specific=True)
+    for sample in signals[signal]:
+        # Load bam
+        bamfile = HTSeq.BAM_Reader(os.path.join(bamFilePath, sample + ".bam"))
 
-    # Make multiindex dataframe
-    levels = [cov.keys(), ["+", "-"]]
-    labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0,1)]]
-    index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
-    df = pd.DataFrame(np.vstack(cov.values()), index=index)
-    df.columns = range(windowRange[0], windowRange[1])
+        # Get dataframe of signal coverage in bed regions, append to dict
+        cov = coverage(bamfile, peaks, fragmentsize, strand_specific=True)
 
-    # For strand_specific=False
-    #cov = coverage(bamfile, peaks, fragmentsize)
-    #df = pd.DataFrame(cov).T
-    #df.columns = range(windowRange[0], windowRange[1])
+        # Make multiindex dataframe
+        levels = [cov.keys(), ["+", "-"]]
+        labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0,1)]]
+        index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
+        df = pd.DataFrame(np.vstack(cov.values()), index=index)
+        df.columns = range(windowRange[0], windowRange[1])
 
-    # append to dict   
-    rawSignals[signal] = df
+        # For strand_specific=False
+        #cov = coverage(bamfile, peaks, fragmentsize)
+        #df = pd.DataFrame(cov).T
+        #df.columns = range(windowRange[0], windowRange[1])
 
-    # Save as csv
-    df.to_csv(os.path.join(coverageFilePath, "{0}.tssSignal_{1}bp.csv".format(signal, str(windowWidth))), index=False)
+        # append to dict   
+        rawSignals[sample] = df
 
-    # Get average profiles and append to dict
-    ave = {
-        "signal" : signal,
-        "average" : df.apply(np.mean, axis=0),                              # both strands
-        "positive" : df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),    # positive strand
-        "negative" : df.ix[range(1, len(df), 2)].apply(np.mean, axis=0)     # negative strand
-    }
-    aveSignals[signal] = pd.DataFrame(ave)
+        # Save as csv
+        df.to_csv(os.path.join(coverageFilePath, "{0}.tssSignal_{1}bp.csv".format(sample, str(windowWidth))), index=False)
+
+        # Get average profiles and append to dict
+        ave = {
+            "signal" : sample,
+            "average" : df.apply(np.mean, axis=0),                              # both strands
+            "positive" : df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),    # positive strand
+            "negative" : df.ix[range(1, len(df), 2)].apply(np.mean, axis=0)     # negative strand
+        }
+        aveSignals[sample] = pd.DataFrame(ave)
 
 
 # serialize with pickle
@@ -218,7 +229,7 @@ plotFunc = robj.r("""
             theme_bw() +
             theme(legend.title=element_blank()) +
             #scale_colour_manual(values=cbPalette[c("grey", ,3,7)])
-            scale_colour_manual(values=c("grey", "dark blue","dark red")) +
+            scale_colour_manual(values=c("black", "dark blue","dark red")) +
             xlim(c(-200, 200))
 
         

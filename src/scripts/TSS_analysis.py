@@ -109,12 +109,12 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
             
             # get position in relative to window
             if orientation:
-                if feature.strand == "+":
+                if feature.strand == "+" or feature.strand == ".":
                     start_in_window = aln.iv.start - feature.start
                     end_in_window   = aln.iv.end   - feature.start
                 else:
-                    start_in_window = feature.start - aln.iv.end
-                    end_in_window   = feature.start - aln.iv.start
+                    start_in_window = feature.length - abs(feature.start - aln.iv.end)
+                    end_in_window   = feature.length - abs(feature.start - aln.iv.start)
             else:
                 start_in_window = aln.iv.start - feature.start 
                 end_in_window   = aln.iv.end   - feature.start
