@@ -31,11 +31,11 @@ from plotly.graph_objs import Data, Heatmap, Layout, Figure
 global v # verbose
 # Define variables
 v = True
-signals = { "CTCF_K562_10mio_CM" : ["CTCF_K562_10mio_CM", "CTCF_K562_10mio_ChIP"],
-            "PU1_K562_10mio_CM" : ["PU1_K562_10mio_CM", "PU1_K562_10mio_ChIP"]}
+signals = { "CTCF_K562_10mio_CM" : ["CTCF_K562_10mio_CM", "CTCF_K562_10mio_ChIP", "IgG_K562_10mio_CM"],
+            "PU1_K562_10mio_CM" : ["PU1_K562_10mio_CM", "PU1_K562_10mio_ChIP", "IgG_K562_10mio_CM"]} # DNase missing
 bamFilePath = "/home/arendeiro/data/human/chipmentation/mapped/merged"
 peakFilePath = "/home/arendeiro/data/human/chipmentation/bed"
-coverageFilePath = "/home/arendeiro/data/human/chipmentation/bed/newPython" # output
+coverageFilePath = "/home/arendeiro/data/human/chipmentation/bed/newPython" # new output dir
 plotsDir = "/home/arendeiro/"
 
 genome = "hg19"
@@ -78,7 +78,7 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
     i=0
     for name, feature in intervals.iteritems():
         if i%1000 == 0:
-            print(i)
+            print(len(intervals) - i)
         # Initialize empty array for this feature
         if not strand_specific:
             profile = np.zeros(feature.length, dtype=np.int8)

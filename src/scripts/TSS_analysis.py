@@ -9,6 +9,10 @@
 #
 #############################################################################################
 
+# if running on the cluster run
+# module load gcc
+# before importing 
+
 import os
 from collections import OrderedDict
 import HTSeq
@@ -29,15 +33,10 @@ import plotly.plotly as plotly
 from plotly.graph_objs import Data, Heatmap, Layout, Figure
 
 # Define variables
-signals = ["H3K4me3_K562_500k_CM", "H3K4me3_K562_500k_ChIP", "IgG_K562_500k_CM", "DNase..."]
+signals = ["H3K4me3_K562_500k_CM", "H3K4me3_K562_500k_ChIP", "IgG_K562_500k_CM", "DNase_UWashington_K562_mergedReplicates"]
 bamFilePath = "/home/arendeiro/data/human/chipmentation/mapped/merged"
 bedFilePath = "/fhgfs/groups/lab_bock/shared/data/cage_tss/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
 plotsDir = "/home/arendeiro/projects/chipmentation/results/plots"
-
-bamFilePath = "/home/afr/"
-bedFilePath = "/home/afr/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
-signals = ["H3K4me2", "H3K4me3"]
-plotsDir = "/home/afr/"
 
 genome = "hg19"
 windowRange = (-60, 60)
@@ -75,7 +74,7 @@ def bedToolsInterval2GenomicInterval(bedtool):
     """
     intervals = OrderedDict()
     for iv in bedtool:
-        intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end)
+        intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end, iv.strand)
     return intervals
 
 
@@ -87,37 +86,44 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
     intervals - dict with HTSeq.GenomicInterval objects as values
     fragmentsize - integer
     stranded - boolean
-    duplicates - boolean.
+    duplicates - boolean. intervals.items()[466][1]
     """
     # Loop through TSSs, get coverage, append to dict
+    chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrM', 'chrX']
     cov = OrderedDict()
-
+    #n = len(intervals)
+    i = 1
     for name, feature in intervals.iteritems():
+        print(i)
         # Initialize empty array for this feature
         if not strand_specific:
             profile = np.zeros(feature.length, dtype=np.int8)
         else:
             profile = np.zeros((2, feature.length), dtype=np.int8)
-                    
+
+        # Check if feature is in bam index 
+        if feature.chrom not in chroms or feature.chrom == "chrM":
+            #i+=1
+            continue
+
         # Fetch alignments in feature window
         for aln in bam[feature]:
             # check if duplicate
             if not duplicates and aln.pcr_or_optical_duplicate:
                 continue
-
             aln.iv.length = fragmentsize # adjust to size
-            
+
             # get position in relative to window
             if orientation:
                 if feature.strand == "+" or feature.strand == ".":
-                    start_in_window = aln.iv.start - feature.start
-                    end_in_window   = aln.iv.end   - feature.start
+                    start_in_window = aln.iv.start - feature.start - 1
+                    end_in_window   = aln.iv.end   - feature.start - 1
                 else:
-                    start_in_window = feature.length - abs(feature.start - aln.iv.end)
-                    end_in_window   = feature.length - abs(feature.start - aln.iv.start)
+                    start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
+                    end_in_window   = feature.length - abs(feature.start - aln.iv.start) - 1
             else:
-                start_in_window = aln.iv.start - feature.start 
-                end_in_window   = aln.iv.end   - feature.start
+                start_in_window = aln.iv.start - feature.start - 1
+                end_in_window   = aln.iv.end   - feature.start - 1
             
             # check fragment is within window; this is because of fragmentsize adjustment
             if start_in_window <= 0 or end_in_window > feature.length:
@@ -131,9 +137,10 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
                     profile[0][start_in_window : end_in_window] += 1
                 else:
                     profile[1][start_in_window : end_in_window] += 1
-        
+            
         # append feature profile to dict
         cov[name] = profile
+        i+=1
     return cov
 
 
@@ -143,11 +150,12 @@ def exportToJavaTreeView(df, filename):
     df - pandas.DataFrame object
     filename - string.    
     """
+    cols = ["X" + str(x) for x in df.columns]
+    df.columns = cols
     df["X"] = df.index
     df["NAME"] = df.index
     df["GWEIGHT"] = 1
-    df.columns = ["X" + str(x) for x in df.columns]
-    df = df[["X", "NAME", "GWEIGHT"] + ["X" + str(x) for x in df.columns]]
+    df = df[["X", "NAME", "GWEIGHT"] + cols]
     df.to_csv(filename, sep="\t", index=False)
     
 
@@ -181,7 +189,7 @@ for signal in signals:
     #cov = coverage(bamfile, tsss, fragmentsize)
     #df = pd.DataFrame(cov).T
     #df.columns = range(windowRange[0], windowRange[1])
-    
+
     # append to dict   
     rawSignals[signal] = df
 
@@ -219,8 +227,8 @@ plotFunc = robj.r("""
             #scale_colour_manual(values=cbPalette[c("grey", ,3,7)])
             scale_colour_manual(values=c("grey", "dark blue","dark red"))
         
-        ggsave(filename = paste0(plotsDir, "/tss_signal.pdf"), plot = p, height = 2, width = 7)
-        ggsave(filename = paste0(plotsDir, "/tss_signal.wide.pdf"), plot = p, height = 2, width = 4)
+        ggsave(filename = paste0(plotsDir, "/tss_signal.pdf"), plot = p, height = 4, width = 4)
+        ggsave(filename = paste0(plotsDir, "/tss_signal.wide.pdf"), plot = p, height = 4, width = 6)
     }
 """)
 
@@ -234,21 +242,23 @@ plotFunc(aveSignals_R, plotsDir)
 
 # Loop through raw signals, normalize, k-means cluster, save pickle, plot heatmap, export cdt
 for signal in signals:
+    print(signal)
     exportName = "{0}.tssSignal_{1}bp.kmeans_{2}k".format(signal, str(windowWidth), n_clusters)
-    
+        
     df = rawSignals[signal]
 
-    # join strand signal (plus - minus)
-    df = df.xs('+',level="strand") - df.xs('-',level="strand")
+    # join strand signal (plus + minus)
+    df = df.xs('+', level="strand") + df.xs('-', level="strand")
 
-    # scale row signal to 0:1 (normalization)
+        # scale row signal to 0:1 (normalization)
     dfNorm = df.apply(lambda x : (x - min(x)) / (max(x) - min(x)), axis=1)
+    dfNorm.replace("inf", 0, inplace=True)
 
     clust = k_means(dfNorm,
         n_clusters,
         n_init=25,
         max_iter=10000,
-        n_jobs=2
+        n_jobs=-1
     ) # returns centroid, label, inertia
     
     # save object
@@ -267,4 +277,6 @@ for signal in signals:
     plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".pdf"))
     
     # Export as cdt
-    exportToJavaTreeView(df, os.path.join(plotsDir, exportName + ".cdt"))
+    #exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + ".cdt"))
+
+
