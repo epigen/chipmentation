@@ -9,10 +9,6 @@
 #
 #############################################################################################
 
-# if running on the cluster run
-# module load gcc
-# before importing 
-
 import os
 from collections import OrderedDict
 import HTSeq
@@ -91,19 +87,20 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
     # Loop through TSSs, get coverage, append to dict
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrM', 'chrX']
     cov = OrderedDict()
-    #n = len(intervals)
-    i = 1
+    n = len(intervals)
+    i = 0
     for name, feature in intervals.iteritems():
-        print(i)
+        if i % 1000 == 0:
+            print(n - i)
         # Initialize empty array for this feature
         if not strand_specific:
-            profile = np.zeros(feature.length, dtype=np.int8)
+            profile = np.zeros(feature.length, dtype=np.float64)
         else:
-            profile = np.zeros((2, feature.length), dtype=np.int8)
+            profile = np.zeros((2, feature.length), dtype=np.float64)
 
         # Check if feature is in bam index 
         if feature.chrom not in chroms or feature.chrom == "chrM":
-            #i+=1
+            i+=1
             continue
 
         # Fetch alignments in feature window
@@ -144,6 +141,35 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
     return cov
 
 
+def plotHeatmap(df, filename):
+    """
+    """
+    # Plot with matplotlib
+    plt.figure(num=None, figsize=(8, 6), dpi=80, facecolor='w', edgecolor='k')
+    ax = plt.imshow(df, interpolation='nearest', aspect='auto', vmin=0, vmax=0.5).get_axes()
+    # ax.set_xticks(arange(0, len(df.columns), inter))
+    # ax.set_yticks(arange(0, len(df.index), inter))
+    # ax.set_xticklabels(df.columns[::inter], rotation='vertical')
+    # ax.set_yticklabels(df.index[::inter], rotation='horizontal')
+    # ax.set_xlabel(desc[axis][0])
+    # ax.set_ylabel(desc[axis][1])
+    #ax.set_title("zf epigenetic proteins - " + plotName)
+    ax.grid('off')
+    plt.colorbar(orientation="vertical")#, label="n. of " + desc[axis][2] + "s")
+    plt.savefig(filename, dpi=600, bbox_inches='tight')
+    plt.close()
+
+
+
+    import matplotlib.pyplot as plt
+    import numpy as np
+    column_labels = list('ABCD')
+    row_labels = list('WXYZ')
+    data = np.random.rand(4,4)
+    fig, ax = plt.subplots()
+    heatmap = ax.pcolor(data, cmap=plt.cm.Blues)
+
+
 def exportToJavaTreeView(df, filename):
     """
     Export cdt file of cluster to view in JavaTreeView
@@ -158,6 +184,12 @@ def exportToJavaTreeView(df, filename):
     df = df[["X", "NAME", "GWEIGHT"] + cols]
     df.to_csv(filename, sep="\t", index=False)
     
+def normalize(x):
+    """
+    .
+    """
+    return (x - min(x)) / (max(x) - min(x))
+
 
 # Load TSSs from bed file, transform by window width
 tsss = pybedtools.BedTool(bedFilePath).slop(genome=genome, b=windowWidth/2)
@@ -182,8 +214,7 @@ for signal in signals:
     levels = [cov.keys(), ["+", "-"]] 
     labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0,1)]]
     index = pd.MultiIndex(labels=labels, levels=levels, names=["tss", "strand"])
-    df = pd.DataFrame(np.vstack(cov.values()), index=index)
-    df.columns = range(windowRange[0], windowRange[1] + 1)
+    df = pd.DataFrame(np.vstack(cov.values()), index=index, columns=range(windowRange[0], windowRange[1] + 1))
 
     # For strand_specific=False
     #cov = coverage(bamfile, tsss, fragmentsize)
@@ -240,20 +271,27 @@ aveSignals_R = robj.conversion.py2ri(aveSignals)
 # run the plot function on the dataframe
 plotFunc(aveSignals_R, plotsDir)
 
+# save object
+pickle.dump(rawSignals,
+    open(os.path.join(plotsDir, "..", "TSS_allSignals.pickl"), "wb"),
+    protocol = pickle.HIGHEST_PROTOCOL
+)
+
 # Loop through raw signals, normalize, k-means cluster, save pickle, plot heatmap, export cdt
 for signal in signals:
-    print(signal)
+    print("Clustering based on %s" % signal)
     exportName = "{0}.tssSignal_{1}bp.kmeans_{2}k".format(signal, str(windowWidth), n_clusters)
-        
+
     df = rawSignals[signal]
 
     # join strand signal (plus + minus)
-    df = df.xs('+', level="strand") + df.xs('-', level="strand")
+    df = df.sum(axis=0, level="tss")
 
-        # scale row signal to 0:1 (normalization)
-    dfNorm = df.apply(lambda x : (x - min(x)) / (max(x) - min(x)), axis=1)
-    dfNorm.replace("inf", 0, inplace=True)
+    # scale row signal to 0:1 (normalization)
+    dfNorm = df.apply(normalize, axis=1)
+    dfNorm.replace(["inf", "NaN"], 0, inplace=True)
 
+    # cluster
     clust = k_means(dfNorm,
         n_clusters,
         n_init=25,
@@ -261,22 +299,40 @@ for signal in signals:
         n_jobs=-1
     ) # returns centroid, label, inertia
     
+    # keep dataframe with assigned cluster and row index
+    clustOrder = pd.DataFrame(clust[1],
+        columns=["cluster"],
+        index = dfNorm.index.values)
+
     # save object
     pickle.dump(clust,
         open(os.path.join(bamFilePath, exportName + ".pickl"), "wb"),
         protocol = pickle.HIGHEST_PROTOCOL
     )
-
-    # Sort dataframe by cluster order 
-    dfNorm["cluster"] = clust[1] # clust[1] <- label from k-means clustering
-    dfNorm.sort_index(by="cluster", axis=0, inplace=True)
-    dfNorm.drop("cluster", axis=1, inplace=True)
-
-    # Plot heatmap
-    data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
-    plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".pdf"))
+    df2 = dfNorm
     
-    # Export as cdt
-    #exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + ".cdt"))
+    # Sort all signals by dataframe by cluster order 
+    for s in signals:
+        print("Exporting heatmaps for %s" % s)
+        if signal != s:
+            df = rawSignals[s]
+            df = df.xs('+', level="strand") + df.xs('-', level="strand")
+
+            # scale row signal to 0:1 (normalization)
+            df2 = df.apply(lambda x : (x - min(x)) / (max(x) - min(x)), axis=1)
+            df2.replace("inf", 0, inplace=True)
+        
+        # now sort by clust order
+        dfNorm = pd.merge(dfNorm, clustOrder, on=None, left_index=True, right_index=True) # get common rows (should be all)
+        dfNorm.sort_index(by="cluster", axis=0, inplace=True)
+        dfNorm.drop("cluster", axis=1, inplace=True)
+
+        # Plot heatmap
+        #data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
+        #plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".plotly.pdf"))
+        plotHeatmap(dfNorm, os.path.join(plotsDir, exportName + "." + s + "_signal.matplotlib.pdf"))
+        
+        # Export as cdt
+        exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "." + s + "_signal.cdt"))
 
 
