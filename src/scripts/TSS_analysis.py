@@ -46,7 +46,7 @@ windowWidth = abs(windowRange[0]) + abs(windowRange[1])
 
 def loadBed(filename):
     """
-    Parses bed file and returns dict of featureName:HTSeq.GenomicInterval objects
+    Parses bed file and returns dict of featureName:HTSeq.GenomicInterval objects.
     filename - string.
     """
     from HTSeq import GenomicInterval
@@ -67,7 +67,10 @@ def loadBed(filename):
 def bedToolsInterval2GenomicInterval(bedtool):
     """
     Given a pybedtools.BedTool object returns, dictionary of HTSeq.GenomicInterval objects.
+    bedtool - a pybedtools.BedTool with intervals.
     """
+    from warnings import warn
+    warn("Function is deprecated!")
     intervals = OrderedDict()
     for iv in bedtool:
         intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end, iv.strand)
@@ -77,12 +80,12 @@ def bedToolsInterval2GenomicInterval(bedtool):
 def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, strand_specific=False):
     """
     Gets read coverage in bed regions.
-    Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array
+    Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
     bam - HTSeq.BAM_Reader object. Must be sorted and indexed with .bai file!
-    intervals - dict with HTSeq.GenomicInterval objects as values
-    fragmentsize - integer
-    stranded - boolean
-    duplicates - boolean. intervals.items()[466][1]
+    intervals - dict with HTSeq.GenomicInterval objects as values.
+    fragmentsize - integer.
+    stranded - boolean.
+    duplicates - boolean.
     """
     # Loop through TSSs, get coverage, append to dict
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrM', 'chrX']
@@ -143,37 +146,22 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
 
 def plotHeatmap(df, filename):
     """
+    Plot heatmap for data in dataframe using matplotlib.pyplot.imshow.
+    df - pandas.DataFrame with numerical values.
+    filename - string with path and filename to save pdf to.
     """
-    # Plot with matplotlib
     plt.figure(num=None, figsize=(8, 6), dpi=80, facecolor='w', edgecolor='k')
     ax = plt.imshow(df, interpolation='nearest', aspect='auto', vmin=0, vmax=0.5).get_axes()
-    # ax.set_xticks(arange(0, len(df.columns), inter))
-    # ax.set_yticks(arange(0, len(df.index), inter))
-    # ax.set_xticklabels(df.columns[::inter], rotation='vertical')
-    # ax.set_yticklabels(df.index[::inter], rotation='horizontal')
-    # ax.set_xlabel(desc[axis][0])
-    # ax.set_ylabel(desc[axis][1])
-    #ax.set_title("zf epigenetic proteins - " + plotName)
     ax.grid('off')
-    plt.colorbar(orientation="vertical")#, label="n. of " + desc[axis][2] + "s")
+    plt.colorbar(orientation="vertical")
     plt.savefig(filename, dpi=600, bbox_inches='tight')
     plt.close()
 
 
-
-    import matplotlib.pyplot as plt
-    import numpy as np
-    column_labels = list('ABCD')
-    row_labels = list('WXYZ')
-    data = np.random.rand(4,4)
-    fig, ax = plt.subplots()
-    heatmap = ax.pcolor(data, cmap=plt.cm.Blues)
-
-
 def exportToJavaTreeView(df, filename):
     """
-    Export cdt file of cluster to view in JavaTreeView
-    df - pandas.DataFrame object
+    Export cdt file of cluster to view in JavaTreeView.
+    df - pandas.DataFrame object with numeric data.
     filename - string.    
     """
     cols = ["X" + str(x) for x in df.columns]
@@ -186,7 +174,8 @@ def exportToJavaTreeView(df, filename):
     
 def normalize(x):
     """
-    .
+    Implements standardization of data.
+    x - numerical iterable (e.g. list, numpy.array).
     """
     return (x - min(x)) / (max(x) - min(x))
 
@@ -309,21 +298,20 @@ for signal in signals:
         open(os.path.join(bamFilePath, exportName + ".pickl"), "wb"),
         protocol = pickle.HIGHEST_PROTOCOL
     )
-    df2 = dfNorm
-    
+
     # Sort all signals by dataframe by cluster order 
     for s in signals:
         print("Exporting heatmaps for %s" % s)
-        if signal != s:
-            df = rawSignals[s]
-            df = df.xs('+', level="strand") + df.xs('-', level="strand")
+        df = rawSignals[s]
+        df = df.xs('+', level="strand") + df.xs('-', level="strand")
 
-            # scale row signal to 0:1 (normalization)
-            df2 = df.apply(lambda x : (x - min(x)) / (max(x) - min(x)), axis=1)
-            df2.replace("inf", 0, inplace=True)
-        
+        # scale row signal to 0:1 (normalization)
+        dfNorm = df.apply(lambda x : (x - min(x)) / (max(x) - min(x)), axis=1)
+        dfNorm.replace("inf", 0, inplace=True)
+
         # now sort by clust order
         dfNorm = pd.merge(dfNorm, clustOrder, on=None, left_index=True, right_index=True) # get common rows (should be all)
+        dfNorm.replace(["inf", "NaN"], 0, inplace=True)
         dfNorm.sort_index(by="cluster", axis=0, inplace=True)
         dfNorm.drop("cluster", axis=1, inplace=True)
 
@@ -334,5 +322,3 @@ for signal in signals:
         
         # Export as cdt
         exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "." + s + "_signal.cdt"))
-
-
