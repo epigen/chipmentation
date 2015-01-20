@@ -14,6 +14,8 @@ import rpy2.robjects.pandas2ri # for R dataframe conversion
 import itertools
 import cPickle as pickle
 
+from matplotlib import pyplot as plt
+
 def makeWindows(windowWidth, genome):
     """Generate 1kb windows genome-wide."""
     w = BedTool.window_maker(BedTool(), genome=genome, w=windowWidth)
@@ -86,52 +88,52 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True):
 
 
 def main(args):
-args.plots_dir = os.path.abspath(args.plots_dir)
+    args.plots_dir = os.path.abspath(args.plots_dir)
 
-# Get sample names
-names = list()
-for bam in args.bamfiles:
-    names.append(re.sub("\.bam", "", os.path.basename(bam)))
+    # Get sample names
+    names = list()
+    for bam in args.bamfiles:
+        names.append(re.sub("\.bam", "", os.path.basename(bam)))
 
-    # Get genome-wide windows
-    print("Making %ibp windows genome-wide" % args.window_width)
-    #windows = makeWindows(args.window_width, args.genome)
-    windows = makeWindows(args.window_width, {'chr1': (0, 249250621)})
+        # Get genome-wide windows
+        print("Making %ibp windows genome-wide" % args.window_width)
+        #windows = makeWindows(args.window_width, args.genome)
+        windows = makeWindows(args.window_width, {'chr1': (0, 249250621)})
 
-    # Loop through all signals, compute distances, plot
-    for bam in xrange(len(args.bamfiles)):
-        print("Sample " + names[bam])
-        # Load bam
-        bamfile = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[bam]))
-        # Get dataframe of bam coverage in bed regions, append to dict
+        # Loop through all signals, compute distances, plot
+        for bam in xrange(len(args.bamfiles)):
+            print("Sample " + names[bam])
+            # Load bam
+            bamfile = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[bam]))
+            # Get dataframe of bam coverage in bed regions, append to dict
 
-        #dists = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=False)
-        #pickle.dump(dists, open(names[bam] + ".counts.pickle", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        distsPos, distsNeg = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=True)
-        pickle.dump((distsPos, distsNeg), open(names[bam] + ".countsStranded.pickle", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+            #dists = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=False)
+            #pickle.dump(dists, open(names[bam] + ".counts.pickle", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+            distsPos, distsNeg = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=True)
+            pickle.dump((distsPos, distsNeg), open(names[bam] + ".countsStranded.pickle", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
 
-        x = range(1, 200)
-        y = [dists[i] for i in x]
-        plt.scatter(x, y)
-        p20 = np.poly1d(np.polyfit(x, y, 20))
-        p50 = np.poly1d(np.polyfit(x, y, 50))
-        p100 = np.poly1d(np.polyfit(x, y, 100))
+            x = range(1, 200)
+            y = [dists[i] for i in x]
+            plt.scatter(x, y)
+            p20 = np.poly1d(np.polyfit(x, y, 20))
+            p50 = np.poly1d(np.polyfit(x, y, 50))
+            p100 = np.poly1d(np.polyfit(x, y, 100))
 
-        plt.plot(x, p20(x), '-', x, p50(x), '--', x, p100(x), '.')
-        plt.savefig(os.path.join(args.plots_dir, names[bam] + ".fit.pdf"))
-        plt.close()
+            plt.plot(x, p20(x), '-', x, p50(x), '--', x, p100(x), '.')
+            plt.savefig(os.path.join(args.plots_dir, names[bam] + ".fit.pdf"))
+            plt.close()
 
-        x = np.array(range(1, 200))
-        y = np.array([dists[i] for i in x])
+            x = np.array(range(1, 200))
+            y = np.array([dists[i] for i in x])
 
-        from scipy.interpolate import spline
-        x_smooth = np.linspace(x.min(), x.max(), 200)
-        y_smooth = spline(x, y, x_smooth)
+            from scipy.interpolate import spline
+            x_smooth = np.linspace(x.min(), x.max(), 200)
+            y_smooth = spline(x, y, x_smooth)
 
-        plt.plot(x, y, 'o', x_smooth, y_smooth, '-')
+            plt.plot(x, y, 'o', x_smooth, y_smooth, '-')
 
-        plt.savefig(os.path.join(args.plots_dir, names[bam] + ".pdf"))
-        plt.close()
+            plt.savefig(os.path.join(args.plots_dir, names[bam] + ".pdf"))
+            plt.close()
 
 
 
@@ -177,8 +179,8 @@ time = x
 signal = distsReg
 
 # get frequencies from decomposed fft
-W = fftfreq(signal.size, d=time[1]-time[0])
-f_signal = fft(signal)
+W =  np.fft.fftfreq(signal.size, d=time[1]-time[0])
+f_signal = np.fft.fft(signal)
 
 # signal is now in Hz    
 cut_f_signal = f_signal.copy()
@@ -187,7 +189,7 @@ cut_f_signal[(W < 0.1)] = 0
 cut_f_signal[(W > 0.15)] = 0
 
 # inverse fourier to get filtered frequency
-cut_signal = ifft(cut_f_signal)
+cut_signal = np.fft.ifft(cut_f_signal)
 
 # plot transformations
 plt.subplot(221)
@@ -337,4 +339,3 @@ if __name__ == '__main__':
     )
 
     main(args)
-
