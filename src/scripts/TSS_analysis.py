@@ -16,7 +16,7 @@ import pybedtools
 import numpy as np
 import pandas as pd
 
-from ggplot import ggplot, aes, stat_smooth, facet_wrap, xlab, ylab, theme_bw, theme
+#from ggplot import ggplot, aes, stat_smooth, facet_wrap, xlab, ylab, theme_bw, theme
 
 import rpy2.robjects as robj # for ggplot in R
 import rpy2.robjects.pandas2ri # for R dataframe conversion
@@ -25,8 +25,8 @@ from rpy2.robjects.packages import importr
 from sklearn.cluster import k_means 
 import cPickle as pickle
 
-import plotly.plotly as plotly
-from plotly.graph_objs import Data, Heatmap, Layout, Figure
+#import plotly.plotly as plotly
+#from plotly.graph_objs import Data, Heatmap, Layout, Figure
 
 # Define variables
 signals = ["H3K4me3_K562_500k_CM", "H3K4me3_K562_500k_ChIP", "IgG_K562_500k_CM", "DNase_UWashington_K562_mergedReplicates"]
@@ -40,7 +40,7 @@ fragmentsize = 1
 duplicates = True
 n_clusters = 5
 
-plotly.sign_in("afrendeiro", "iixmygxac1")
+#plotly.sign_in("afrendeiro", "iixmygxac1")
 windowWidth = abs(windowRange[0]) + abs(windowRange[1])
 
 
@@ -49,6 +49,8 @@ def loadBed(filename):
     Parses bed file and returns dict of featureName:HTSeq.GenomicInterval objects.
     filename - string.
     """
+    from warnings import warn
+    warn("Function is deprecated!")
     from HTSeq import GenomicInterval
 
     features = OrderedDict()
@@ -69,8 +71,6 @@ def bedToolsInterval2GenomicInterval(bedtool):
     Given a pybedtools.BedTool object returns, dictionary of HTSeq.GenomicInterval objects.
     bedtool - a pybedtools.BedTool with intervals.
     """
-    from warnings import warn
-    warn("Function is deprecated!")
     intervals = OrderedDict()
     for iv in bedtool:
         intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end, iv.strand)
@@ -236,7 +236,7 @@ plotFunc = robj.r("""
 
     #cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
    
-    function(df, plotsDir){
+    function(df, plotsDir){{
         p = ggplot(df, aes(x, value, colour = variable)) +
             stat_smooth(method = "gam", formula = y ~ s(x, k = 20), se = FALSE) + 
             facet_wrap(~signal) +
@@ -247,10 +247,11 @@ plotFunc = robj.r("""
             #scale_colour_manual(values=cbPalette[c("grey", ,3,7)])
             scale_colour_manual(values=c("grey", "dark blue","dark red"))
         
-        ggsave(filename = paste0(plotsDir, "/tss_signal.pdf"), plot = p, height = 4, width = 4)
-        ggsave(filename = paste0(plotsDir, "/tss_signal.wide.pdf"), plot = p, height = 4, width = 6)
-    }
-""")
+        ggsave(filename = paste0(plotsDir, "/tssSignals_{0}bp.pdf"), plot = p, height = 4, width = 4)
+        ggsave(filename = paste0(plotsDir, "/tssSignals_{0}bp.wide.pdf"), plot = p, height = 4, width = 6)
+    }}
+    """.format(str(windowWidth))
+)
 
 gr = importr('grDevices')
 # convert the pandas dataframe to an R dataframe
@@ -262,7 +263,7 @@ plotFunc(aveSignals_R, plotsDir)
 
 # save object
 pickle.dump(rawSignals,
-    open(os.path.join(plotsDir, "..", "TSS_allSignals.pickl"), "wb"),
+    open(os.path.join(plotsDir, "..", "tssSignals_{0}bp.pickl").format(str(windowWidth)), "wb"),
     protocol = pickle.HIGHEST_PROTOCOL
 )
 
@@ -276,7 +277,7 @@ for signal in signals:
     # join strand signal (plus + minus)
     df = df.sum(axis=0, level="tss")
 
-    # scale row signal to 0:1 (normalization)
+    # scale row signal to 0:1 (standardization)
     dfNorm = df.apply(normalize, axis=1)
     dfNorm.replace(["inf", "NaN"], 0, inplace=True)
 
@@ -295,7 +296,7 @@ for signal in signals:
 
     # save object
     pickle.dump(clust,
-        open(os.path.join(bamFilePath, exportName + ".pickl"), "wb"),
+        open(os.path.join(plotsDir, "..", exportName + ".pickl"), "wb"),
         protocol = pickle.HIGHEST_PROTOCOL
     )
 
@@ -305,7 +306,7 @@ for signal in signals:
         df = rawSignals[s]
         df = df.xs('+', level="strand") + df.xs('-', level="strand")
 
-        # scale row signal to 0:1 (normalization)
+        # scale row signal to 0:1 (standardization)
         dfNorm = df.apply(lambda x : (x - min(x)) / (max(x) - min(x)), axis=1)
         dfNorm.replace("inf", 0, inplace=True)
 

@@ -5,9 +5,8 @@ import os, re
 from pybedtools import BedTool
 import HTSeq
 import numpy as np
-import pandas as pd
 import string
-
+import random
 import itertools
 import cPickle as pickle
 
@@ -63,12 +62,14 @@ def bedToolsInterval2GenomicInterval(bedtool):
     return intervals
 
 
-def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True):
+def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, permutate=False):
     """ Gets read coverage in bed regions, returns dict with region:count.
     bam=Bam object from HTSeq.BAM_Reader.
     intervals=dict with HTSeq.GenomicInterval objects as values.
     fragmentsize=integer.
     duplicates=boolean.
+    orientation=boolean.
+    permutate=boolean.
     """
     if orientation:
         distsPos = dict()
@@ -76,11 +77,25 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True):
     else:
         dists = dict()
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
-    for name, feature in itertools.islice(intervals.items(), 0, None, 10000):
+    
+    for name, feature in intervals.iteritems():
         if feature.chrom not in chroms:
             continue
+
+        # Fetch all alignments in feature window
+        alnsInWindow = bam[feature]
+
+        if permutate:
+            # randomize each alignment's position in window
+            alns = list()
+            for aln in alnsInWindow:
+                aln.iv.start = random.randrange(feature.start, feature.end)
+                aln.iv.length = fragmentsize
+                alns.append(aln)
+            alnsInWindow = alns
+
         # Fetch alignments in feature window
-        for aln1, aln2 in itertools.combinations(bam[feature], 2):
+        for aln1, aln2 in itertools.combinations(alnsInWindow, 2):
             # check if duplicate
             if not duplicates and (aln1.pcr_or_optical_duplicate or aln2.pcr_or_optical_duplicate):
                 continue
@@ -118,7 +133,7 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True):
         return dists
 
 
-def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, strand_specific=False):
+def coverage(bam, intervals, fragmentsize, orientation=False, duplicates=True, strand_specific=False):
     """
     Gets read coverage in bed regions.
     Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
@@ -256,6 +271,7 @@ def extractPattern(dists):
     #plt.plot(mirrored)
     #return mirrored
 
+
 def correlatePatternProfile(pattern, profile, step=1):
     """
     Fits a sliding window of len(pattern) through a profile and calculates the Pearson
@@ -269,17 +285,18 @@ def correlatePatternProfile(pattern, profile, step=1):
         return None
     else:
         R = list()
-        for bp in xrange(0, len(profile), step):
-            if bp + len(pattern) <= len(profile):
-                R.append(pearsonr(pattern, profile[bp:bp+len(pattern)])[0])
+        bp = 0
+        while bp + len(pattern) <= len(profile):
+            R.append(pearsonr(pattern, profile[bp:bp+len(pattern)])[0])
+            i += 1
         return np.array(R)
 
 
 def exportWigFile():
+    """.
     """
-    """
+    pass
 
-    return 
 
 def main(args):
     args.plots_dir = os.path.abspath(args.plots_dir)
@@ -292,21 +309,30 @@ def main(args):
     ### Loop through all signals, compute distances, plot
     # Get genome-wide windows
     print("Making %ibp windows genome-wide" % args.window_width)
-    #windows = makeGenomeWindows(args.window_width, args.genome)
-    windows = makeGenomeWindows(args.window_width, {'chr1': (0, 249250621)}, step=args.window_step)
+    windows = makeGenomeWindows(args.window_width, args.genome)
+    #windows = makeGenomeWindows(args.window_width, {'chr1': (0, 249250621)}, step=args.window_step)
 
     signals = dict()
+    permutatedSignals = dict()
     for bam in xrange(len(args.bamfiles)):
         print("Sample " + names[bam])
+        
         # Load bam
         bamfile = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[bam]))
-        # Get dataframe of bam coverage in bed regions, append to dict
 
-        #dists = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=False)
-        #pickle.dump(dists, open(os.path.join(args.results_dir, names[bam] + ".counts.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        distsPos, distsNeg = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=True)
-        pickle.dump((distsPos, distsNeg), open(os.path.join(args.results_dir, names[bam] + ".countsStranded.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        signals[bam] = (distsPos, distsNeg)
+        # Get dict of distances between reads genome-wide
+        dists = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=False)
+        pickle.dump(dists, open(os.path.join(args.results_dir, names[bam] + ".counts.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        signals[bam] = dists
+        #distsPos, distsNeg = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=True)
+        #pickle.dump((distsPos, distsNeg), open(os.path.join(args.results_dir, names[bam] + ".countsStranded.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        #signals[bam] = (distsPos, distsNeg)
+
+        # Get dict of distances between permutated reads genome-wide
+        permutedDists = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=False, permutate=True)
+        pickle.dump(permutedDists, open(os.path.join(args.results_dir, names[bam] + ".countsPermuted.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        permutatedSignals[bam] = dists
+
 
     ### For each signal extract most abundant periodic signal, correlate it with read coverage on each strand
     # generate windows genome-wide (or under 3K4 peaks)
@@ -325,6 +351,9 @@ def main(args):
         pattern = extractPattern(dists)
         pickle.dump(pattern, open(os.path.join(args.results_dir, names[bam] + ".pattern.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
 
+        permutedPattern = extractPattern(permutedDists)
+        pickle.dump(permutedPattern, open(os.path.join(args.results_dir, names[bam] + ".patternPermuted.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+
         # calculate read coverage in H3K4me3 peaks
         bamfile = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[bam]))
         peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=names[bam]))
@@ -342,14 +371,18 @@ def main(args):
         for peak, reads in cov.items()[:20]:
             R[peak] = correlatePatternProfile(pattern, reads)
 
-        # plot apttern for 20 peaks
+        # plot pattern for 20 peaks
         for i in xrange(len(R)):
             plt.subplot(2,10,i)
             plt.plot(R.values()[i])
 
         # concatenate all peaks
         [i for l in R.values() for i in l]
-        
+
+
+        # export wig file with correlations
+        for name, _ in R.items():
+            exportWigFile(peaks[name], R[name], pattern)        
 
 
         # with paralelization

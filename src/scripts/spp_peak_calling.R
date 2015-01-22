@@ -7,16 +7,10 @@ args <- commandArgs(TRUE)
 sample = args[1]
 input = args[2]
 
-sample_name = strsplit(basename(sample), split="\\.")[[1]][1]
-input_name = strsplit(basename(input), split="\\.")[[1]][1]
+sample_name = args[3]
+input_name = args[4]
 
-print(paste("SAMPLE:", sample_name))
-print(paste("INPUT:", input_name))
-
-dataDir = '/home/arendeiro/data/human/chipmentation'
-
-#sample = 'H3K4me3_K562_500k_CM'
-#input = 'IgG_K562_500k_CM'
+outputDir = args[5]
 
 # The following section shows how to initialize a cluster of 8 nodes for parallel processing
 # see "snow" package manual for details.
@@ -25,7 +19,6 @@ cluster <- makeCluster(8);
 
 chip.data <- read.bam.tags(sample)
 input.data <- read.bam.tags(input)
-
 
 # get binding info from cross-correlation profile
 # srange gives the possible range for the size of the protected region;
@@ -39,7 +32,7 @@ binding.characteristics <- get.binding.characteristics(chip.data, srange = c(50,
 print(paste("binding peak separation distance =",binding.characteristics$peak$x))
 
 # plot cross-correlation profile
-pdf(file = paste0(dataDir, "/", sample_name, ".crosscorrelation.pdf"), width = 5, height = 5)
+pdf(file = paste0(outputDir, "/", sample_name, ".crosscorrelation.pdf"), width = 5, height = 5)
 par(mar = c(3.5,3.5,1.0,0.5), mgp = c(2,0.65,0), cex = 0.8);
 plot(binding.characteristics$cross.correlation, type = 'l', xlab = "strand shift", ylab = "cross-correlation");
 abline(v = binding.characteristics$peak$x, lty = 2, col = 2)
@@ -90,16 +83,16 @@ bp <- find.binding.positions(signal.data=chip.data,control.data=input.data,fdr=f
 print(paste("detected",sum(unlist(lapply(bp$npl,function(d) length(d$x)))),"peaks"));
   
 # output detected binding positions
-output.binding.results(bp, paste(dataDir, "/spp_peaks/", sample_name, ".binding.positions.txt", sep = ""));
+output.binding.results(bp, paste0(dataDir, "/spp_peaks/", sample_name, ".binding.positions.txt", sep = ""));
 
 bp <- find.binding.positions(signal.data=chip.data,control.data=input.data,fdr=fdr,method=tag.lwcc,whs=detection.window.halfsize,cluster=cluster)
 # output narrowPeaks
-write.narrowpeak.binding(bp, paste(dataDir, "/spp_peaks/", sample_name, ".narrowPeak", sep = ""))
+write.narrowpeak.binding(bp, paste0(dataDir, "/spp_peaks/", sample_name, ".narrowPeak", sep = ""))
 
 
 bp <- add.broad.peak.regions(chip.data,input.data,bp,window.size=1000,z.thr=3)
 # output narrowPeaks and broad peaks toghether
-write.narrowpeak.binding(bp, paste(dataDir, "/spp_peaks/", sample_name, ".narrow+BroadPeak", sep = ""))
+write.narrowpeak.binding(bp, paste0(dataDir, "/", sample_name, ".narrow+BroadPeak"))
 
 
 
