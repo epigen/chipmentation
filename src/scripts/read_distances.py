@@ -16,8 +16,7 @@ from collections import Counter, OrderedDict
 
 from scipy.stats.stats import pearsonr
 
-
-def makeWindows(windowWidth, genome, step=None):
+def makeGenomeWindows(windowWidth, genome, step=None):
     """Generate windows genome-wide."""
     if step == None:
         step = windowWidth
@@ -35,12 +34,41 @@ def makeWindows(windowWidth, genome, step=None):
     return windows
 
 
+def makeBedWindows(windowWidth, bedtool, step=None):
+    """Generate windows within specified regions (e.g. from bed file)."""
+    if step == None:
+        step = windowWidth
+    w = BedTool.window_maker(BedTool(), b=bedtool, w=windowWidth, s=step)
+    windows = dict()
+    for interval in w:
+        feature = HTSeq.GenomicInterval(
+            interval.chrom,
+            interval.start,
+            interval.end
+        )
+        name = string.join(interval.fields, sep="_")
+        windows[name] = feature
+
+    return windows
+
+
+def bedToolsInterval2GenomicInterval(bedtool):
+    """
+    Given a pybedtools.BedTool object returns, dictionary of HTSeq.GenomicInterval objects.
+    bedtool - a pybedtools.BedTool with intervals.
+    """
+    intervals = OrderedDict()
+    for iv in bedtool:
+        intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end, iv.strand)
+    return intervals
+
+
 def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True):
     """ Gets read coverage in bed regions, returns dict with region:count.
-    bam - Bam object from HTSeq.BAM_Reader.
-    intervals - dict with HTSeq.GenomicInterval objects as values.
-    fragmentsize - integer.
-    duplicates - boolean.
+    bam=Bam object from HTSeq.BAM_Reader.
+    intervals=dict with HTSeq.GenomicInterval objects as values.
+    fragmentsize=integer.
+    duplicates=boolean.
     """
     if orientation:
         distsPos = dict()
@@ -94,11 +122,11 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
     """
     Gets read coverage in bed regions.
     Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
-    bam - HTSeq.BAM_Reader object. Must be sorted and indexed with .bai file!
-    intervals - dict with HTSeq.GenomicInterval objects as values.
-    fragmentsize - integer.
-    stranded - boolean.
-    duplicates - boolean.
+    bam=HTSeq.BAM_Reader object. Must be sorted and indexed with .bai file!
+    intervals=dict with HTSeq.GenomicInterval objects as values.
+    fragmentsize=integer.
+    stranded=boolean.
+    duplicates=boolean.
     """
     # Loop through TSSs, get coverage, append to dict
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrM', 'chrX']
@@ -161,10 +189,10 @@ def extractPattern(dists):
     """
     Extracts most abundant frequency from raw data.
     Returns mirrored pattern.
-    dists - dict of distances:counts.
+    dists=dict of distances:counts.
     """
-    #dists = pickle.load(open("DNase_UWashington_K562_mergedReplicates.counts.pickle", "r"))
-    #dists = pickle.load(open("H3K4me3_K562_500k_CM.counts.pickle", "r"))
+    #dists = pickle.load(open(os.path.join(args.results_dir, "DNase_UWashington_K562_mergedReplicates.counts.pickle"), "r"))
+    #dists = pickle.load(open(os.path.join(args.results_dir, "H3K4me3_K562_500k_CM.counts.pickle"), "r"))
 
     # restrict to signal
     x = range(30, 130)
@@ -199,8 +227,8 @@ def extractPattern(dists):
         plt.plot(time, cut_signal)
         freqs.append(np.abs(cut_f_signal).max())
 
-        # get frequency of signal with highest amplitude
-        top = np.arange(0.01, len(x)/10., 0.01)[freqs.index(max(freqs))]
+    # get frequency of signal with highest amplitude
+    top = np.arange(0.01, len(x)/10., 0.01)[freqs.index(max(freqs))]
 
     # signal is now in Hz
     cut_f_signal = f_signal.copy()
@@ -228,20 +256,44 @@ def extractPattern(dists):
     #plt.plot(mirrored)
     #return mirrored
 
+def correlatePatternProfile(pattern, profile, step=1):
+    """
+    Fits a sliding window of len(pattern) through a profile and calculates the Pearson
+    correlation between the pattern and each window.
+    Returns array with correlation values of dimensions (((profile - pattern) + 1) / step).
+    profile=np.array.
+    pattern=np.array.
+    """
+
+    if (((len(profile) - len(pattern)) + 1) / step) <= 0:
+        return None
+    else:
+        R = list()
+        for bp in xrange(0, len(profile), step):
+            if bp + len(pattern) <= len(profile):
+                R.append(pearsonr(pattern, profile[bp:bp+len(pattern)])[0])
+        return np.array(R)
+
+
+def exportWigFile():
+    """
+    """
+
+    return 
 
 def main(args):
     args.plots_dir = os.path.abspath(args.plots_dir)
 
     ### Get sample names
     names = list()
-    for bam in args.bamfiles:
-        names.append(re.sub("\.bam", "", os.path.basename(bam)))
+    for bamfile in args.bamfiles:
+        names.append(re.sub("\.bam", "", os.path.basename(bamfile)))
 
     ### Loop through all signals, compute distances, plot
     # Get genome-wide windows
     print("Making %ibp windows genome-wide" % args.window_width)
-    #windows = makeWindows(args.window_width, args.genome)
-    windows = makeWindows(args.window_width, {'chr1': (0, 249250621)}, step=args.window_step)
+    #windows = makeGenomeWindows(args.window_width, args.genome)
+    windows = makeGenomeWindows(args.window_width, {'chr1': (0, 249250621)}, step=args.window_step)
 
     signals = dict()
     for bam in xrange(len(args.bamfiles)):
@@ -251,9 +303,9 @@ def main(args):
         # Get dataframe of bam coverage in bed regions, append to dict
 
         #dists = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=False)
-        #pickle.dump(dists, open(names[bam] + ".counts.pickle", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        #pickle.dump(dists, open(os.path.join(args.results_dir, names[bam] + ".counts.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
         distsPos, distsNeg = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=True)
-        pickle.dump((distsPos, distsNeg), open(names[bam] + ".countsStranded.pickle", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        pickle.dump((distsPos, distsNeg), open(os.path.join(args.results_dir, names[bam] + ".countsStranded.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
         signals[bam] = (distsPos, distsNeg)
 
     ### For each signal extract most abundant periodic signal, correlate it with read coverage on each strand
@@ -267,34 +319,54 @@ def main(args):
         for y in inp:
             count += Counter(y)
         dists = dict(count)
-        #dists = pickle.load(open("H3K4me3_K562_500k_CM.counts.pickle", "r"))
+        #dists = pickle.load(open(os.path.join(args.results_dir, "H3K4me3_K562_500k_CM.counts.pickle"), "r"))
 
         # extract most abundant periodic pattern from signal
         pattern = extractPattern(dists)
-        pickle.dump(pattern, open(names[bam] + ".pattern.pickle", "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        pickle.dump(pattern, open(os.path.join(args.results_dir, names[bam] + ".pattern.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
 
-        # get read coverage in sliding windows.
-        # Load bam
+        # calculate read coverage in H3K4me3 peaks
         bamfile = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[bam]))
+        peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=names[bam]))
+        peaks = bedToolsInterval2GenomicInterval(peaks)
+        #peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
+        cov = coverage(bamfile, peaks, args.fragment_size)
+        pickle.dump(cov, open(os.path.join(args.results_dir, names[bam] + ".peakCoverage.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        #cov = pickle.load(open(os.path.join(args.results_dir, names[bam] + ".peakCoverage.pickle"), "r"))
+
+        #cov = {name : reads for name, reads in cov.items() if len(reads) >= 1000}         # filter out peaks smaller than 1kb
+
+        # Correlate coverage and signal pattern
+        R = OrderedDict()
+        #for peak, coverage in cov.iteritems():
+        for peak, reads in cov.items()[:20]:
+            R[peak] = correlatePatternProfile(pattern, reads)
+
+        # plot apttern for 20 peaks
+        for i in xrange(len(R)):
+            plt.subplot(2,10,i)
+            plt.plot(R.values()[i])
+
+        # concatenate all peaks
+        [i for l in R.values() for i in l]
         
-        # make windows with width of pattern
-        windows = makeWindows(len(pattern), genome={'chr1': (0, 249250621)}, step=1)
 
-        # calculate read density in windows
-        cov = coverage(bamfile, windows, args.fragment_size)
 
-        # correlate pattern and reads
-        R = dict()
-        for name, profile in cov.iteritems():
-            if len(profile) == len(pattern):
-                R[name] = pearsonr(pattern, profile)[0]
+        # with paralelization
+        import multiprocessing as mp
+        pool = mp.Pool()
+        R = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in cov.values()[:50]]
 
-        # Get regions by quantiles of correlation
+        for i in xrange(len(R)):
+            plt.plot(R[i])
+
+        # Get regions in extreme quantiles of correlation 
 
         # Check for enrichment in ...
 
         # mnase signal
         # nucleosomes
+        # clusters of CM signal around TSSs
 
 
 
@@ -307,6 +379,7 @@ if __name__ == '__main__':
 
     ### Global options
     # positional arguments
+    parser.add_argument(dest='results_dir', type=str, help='Directory to save data to.')
     parser.add_argument(dest='plots_dir', type=str, help='Directory to save plots to.')
     parser.add_argument('bamfiles', nargs = '*', help = 'bamFiles')
     # optional arguments
@@ -319,7 +392,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     args = parser.parse_args(
-        ["projects/chipmentation/results/plots",
+        ["projects/chipmentation/results",
+        "projects/chipmentation/results/plots",
         "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
         "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
         "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
