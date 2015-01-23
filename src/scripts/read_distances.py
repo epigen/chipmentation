@@ -16,7 +16,9 @@ from collections import Counter, OrderedDict
 from scipy.stats.stats import pearsonr
 
 def makeGenomeWindows(windowWidth, genome, step=None):
-    """Generate windows genome-wide."""
+    """
+    Generate windows genome-wide.
+    """
     if step == None:
         step = windowWidth
     w = BedTool.window_maker(BedTool(), genome=genome, w=windowWidth, s=step)
@@ -34,7 +36,9 @@ def makeGenomeWindows(windowWidth, genome, step=None):
 
 
 def makeBedWindows(windowWidth, bedtool, step=None):
-    """Generate windows within specified regions (e.g. from bed file)."""
+    """
+    Generate windows within specified regions (e.g. from bed file).
+    """
     if step == None:
         step = windowWidth
     w = BedTool.window_maker(BedTool(), b=bedtool, w=windowWidth, s=step)
@@ -63,7 +67,8 @@ def bedToolsInterval2GenomicInterval(bedtool):
 
 
 def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, permutate=False):
-    """ Gets read coverage in bed regions, returns dict with region:count.
+    """
+    Gets read coverage in bed regions, returns dict with region:count.
     bam=Bam object from HTSeq.BAM_Reader.
     intervals=dict with HTSeq.GenomicInterval objects as values.
     fragmentsize=integer.
@@ -78,28 +83,25 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, p
         dists = dict()
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
     
+    #for name, feature in intervals.iteritems():
     for name, feature in itertools.islice(intervals.items(), 0, None, 10):
         if feature.chrom not in chroms:
             continue
-
         # Fetch all alignments in feature window
         alnsInWindow = bam[feature]
-
         if permutate:
             # randomize each alignment's position in window
             alns = list()
             for aln in alnsInWindow:
-                aln.iv.start = random.randrange(feature.start, feature.end)
-                aln.iv.length = fragmentsize
+                aln.iv.start_d = random.randrange(feature.start, feature.end)
                 alns.append(aln)
             alnsInWindow = alns
 
-        # Fetch alignments in feature window
+        # Measure distance between reads in window, pairwisely
         for aln1, aln2 in itertools.combinations(alnsInWindow, 2):
             # check if duplicate
             if not duplicates and (aln1.pcr_or_optical_duplicate or aln2.pcr_or_optical_duplicate):
                 continue
-
             # check if in same strand
             if not orientation and aln1.iv.strand != aln2.iv.strand:
                 continue
@@ -130,6 +132,7 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, p
     if orientation:
         return (distsPos, distsNeg)
     else:
+        #plt.plot(dists.keys(), dists.values(), 'o')
         return dists
 
 
@@ -248,7 +251,7 @@ def extractPattern(dists):
     cut_f_signal = f_signal.copy()
 
     # plt.plot(W, abs(cut_f_signal), 'o')
-    
+
     # select frequency of 1/10bp = 0.1Hz
     cut_f_signal[(W < top)] = 0
     cut_f_signal[(W > top)] = 0
@@ -309,8 +312,8 @@ def main(args):
 
     ### Get sample names
     names = list()
-    for bamfile in args.bamfiles:
-        names.append(re.sub("\.bam", "", os.path.basename(bamfile)))
+    for i in args.bamfiles:
+        names.append(re.sub("\.bam", "", os.path.basename(i)))
 
     ### Loop through all signals, compute distances, plot
     # Get genome-wide windows
@@ -320,30 +323,30 @@ def main(args):
 
     signals = dict()
     permutatedSignals = dict()
-    for bam in xrange(len(args.bamfiles)):
-        print("Sample " + names[bam])
+    for i in xrange(len(args.bamfiles)):
+        print("Sample " + names[i])
         
         # Load bam
-        bamfile = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[bam]))
+        bam = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[i]))
 
         # Get dict of distances between reads genome-wide
-        dists = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=False)
-        pickle.dump(dists, open(os.path.join(args.results_dir, names[bam] + ".counts.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        signals[bam] = dists
-        #distsPos, distsNeg = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=True)
-        #pickle.dump((distsPos, distsNeg), open(os.path.join(args.results_dir, names[bam] + ".countsStranded.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        #signals[bam] = (distsPos, distsNeg)
+        dists = distances(bam, windows, args.fragment_size, args.duplicates, orientation=False)
+        pickle.dump(dists, open(os.path.join(args.results_dir, names[i] + ".counts.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        signals[i] = dists
+        #distsPos, distsNeg = distances(bam, windows, args.fragment_size, args.duplicates, orientation=True)
+        #pickle.dump((distsPos, distsNeg), open(os.path.join(args.results_dir, names[i] + ".countsStranded.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        #signals[i] = (distsPos, distsNeg)
 
         # Get dict of distances between permutated reads genome-wide
-        permutedDists = distances(bamfile, windows, args.fragment_size, args.duplicates, orientation=False, permutate=True)
-        pickle.dump(permutedDists, open(os.path.join(args.results_dir, names[bam] + ".countsPermuted.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        permutatedSignals[bam] = dists
+        permutedDists = distances(bam, windows, args.fragment_size, args.duplicates, orientation=False, permutate=True)
+        pickle.dump(permutedDists, open(os.path.join(args.results_dir, names[i] + ".countsPermuted.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        permutatedSignals[i] = dists
 
 
     ### For each signal extract most abundant periodic signal, correlate it with read coverage on each strand
     # generate windows genome-wide (or under 3K4 peaks)
-    for bam in xrange(len(args.bamfiles)):
-        distsPos, distsNeg = signals[bam]
+    for i in xrange(len(args.bamfiles)):
+        distsPos, distsNeg = signals[i]
 
         # sum strands count
         inp = [dict(x) for x in (distsPos, distsNeg)]
@@ -355,19 +358,19 @@ def main(args):
 
         # extract most abundant periodic pattern from signal
         pattern = extractPattern(dists)
-        pickle.dump(pattern, open(os.path.join(args.results_dir, names[bam] + ".pattern.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        pickle.dump(pattern, open(os.path.join(args.results_dir, names[i] + ".pattern.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
 
         permutedPattern = extractPattern(permutedDists)
-        pickle.dump(permutedPattern, open(os.path.join(args.results_dir, names[bam] + ".patternPermuted.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        pickle.dump(permutedPattern, open(os.path.join(args.results_dir, names[i] + ".patternPermuted.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
 
         # calculate read coverage in H3K4me3 peaks
-        bamfile = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[bam]))
-        peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=names[bam]))
+        bam = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[i]))
+        peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=names[i]))
         peaks = bedToolsInterval2GenomicInterval(peaks)
         #peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
-        cov = coverage(bamfile, peaks, args.fragment_size)
-        pickle.dump(cov, open(os.path.join(args.results_dir, names[bam] + ".peakCoverage.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        #cov = pickle.load(open(os.path.join(args.results_dir, names[bam] + ".peakCoverage.pickle"), "r"))
+        cov = coverage(bam, peaks, args.fragment_size)
+        pickle.dump(cov, open(os.path.join(args.results_dir, names[i] + ".peakCoverage.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        #cov = pickle.load(open(os.path.join(args.results_dir, names[i] + ".peakCoverage.pickle"), "r"))
 
         #cov = {name : reads for name, reads in cov.items() if len(reads) >= 1000}         # filter out peaks smaller than 1kb
 
