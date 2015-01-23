@@ -15,6 +15,8 @@ from collections import Counter, OrderedDict
 
 from scipy.stats.stats import pearsonr
 
+import csv
+
 def makeGenomeWindows(windowWidth, genome, step=None):
     """
     Generate windows genome-wide.
@@ -136,7 +138,7 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, p
         return dists
 
 
-def coverage(bam, intervals, fragmentsize, orientation=False, duplicates=True, strand_specific=False):
+def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicates=True, strand_specific=False):
     """
     Gets read coverage in bed regions.
     Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
@@ -148,7 +150,7 @@ def coverage(bam, intervals, fragmentsize, orientation=False, duplicates=True, s
     """
     # Loop through TSSs, get coverage, append to dict
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrM', 'chrX']
-    cov = OrderedDict()
+    coverage = OrderedDict()
     n = len(intervals)
     i = 0
     for name, feature in intervals.iteritems():
@@ -198,9 +200,9 @@ def coverage(bam, intervals, fragmentsize, orientation=False, duplicates=True, s
                     profile[1][start_in_window : end_in_window] += 1
             
         # append feature profile to dict
-        cov[name] = profile
+        coverage[name] = profile
         i+=1
-    return cov
+    return coverage
 
 
 def extractPattern(dists):
@@ -237,31 +239,37 @@ def extractPattern(dists):
 
     # plot all frequencies, ask what is the amplitude of the signals
     freqs = list()
-    for i in np.arange(0.01, len(x)/10., 0.01):
+    for i in np.arange(0, len(x)/10., 0.01):
+        if i == 0:
+            continue
         cut_f_signal = f_signal.copy()
-        cut_f_signal[((W != i) & (W != -i))] = 0
+        cut_f_signal[((W < i) | (W > i))] = 0
         cut_signal = np.fft.ifft(cut_f_signal)
         plt.plot(time, cut_signal)
         freqs.append(np.abs(cut_f_signal).max())
 
     # get frequency of signal with highest amplitude
-    top = np.arange(0.01, len(x)/10., 0.01)[freqs.index(max(freqs))]
+    top = np.arange(0, len(x)/10., 0.01)[freqs.index(max(freqs)) + 1]
 
     # signal is now in Hz
     cut_f_signal = f_signal.copy()
 
-    # plt.plot(W, abs(cut_f_signal), 'o')
-
     # select frequency of 1/10bp = 0.1Hz
-    cut_f_signal[(W < top)] = 0
-    cut_f_signal[(W > top)] = 0
-
-    # plt.plot(W, abs(cut_f_signal), 'o')
+    #cut_f_signal[(W < top)] = 0
+    #cut_f_signal[(W > top)] = 0
+    cut_f_signal[((W < top) | (W > top))] = 0
 
     # inverse fourier to get filtered frequency
     cut_signal = np.fft.ifft(cut_f_signal)
 
-    # plt.plot(W, abs(cut_signal), '-')
+    plt.subplot(221)
+    plt.plot(time, signal, '-')
+    plt.subplot(222)
+    plt.plot(W, abs(f_signal), 'o')
+    plt.subplot(223)
+    plt.plot(W, abs(cut_f_signal), 'o')
+    plt.subplot(224)
+    plt.plot(time, cut_signal, '-')
 
     # Extract pattern
     extracted = cut_signal.real
@@ -294,17 +302,25 @@ def correlatePatternProfile(pattern, profile, step=1):
         return None
     else:
         R = list()
-        bp = 0
-        while bp + len(pattern) <= len(profile):
-            R.append(pearsonr(pattern, profile[bp:bp+len(pattern)])[0])
+        i = 0
+        while i + len(pattern) <= len(profile):
+            R.append(pearsonr(pattern, profile[i:i+len(pattern)])[0])
             i += 1
         return np.array(R)
 
 
-def exportWigFile():
-    """.
+def exportWigFile(intervals, profiles, offset, filename, trackname):
     """
-    pass
+    Exports a wig file track with scores contained in profile, .
+    """
+    with open(filename, 'w') as handle:
+        track = 'track type=wiggle_0 name="{0}" description="{0}" visibility=dense autoScale=off\n'.format(trackname)
+        handle.write(track)
+        for i in xrange(len(profiles)):
+            header = "fixedStep  chrom={0}  start={1}  step=1\n".format(intervals[i].chrom, intervals[i].start + offset)
+            handle.write(header)    
+            for j in xrange(len(profiles[i])):
+                handle.write(str(abs(profiles[i][j])) + "\n")
 
 
 def main(args):
@@ -319,7 +335,7 @@ def main(args):
     # Get genome-wide windows
     print("Making %ibp windows genome-wide" % args.window_width)
     #windows = makeGenomeWindows(args.window_width, args.genome)
-    windows = makeGenomeWindows(args.window_width, {'chr1': (0, 249250621)}, step=args.window_step)
+    windows = makeGenomeWindows(args.window_width, {'chr1': (0, 249250621)}, step=args.window_step) # only chromosome 1
 
     signals = dict()
     permutatedSignals = dict()
@@ -329,86 +345,120 @@ def main(args):
         # Load bam
         bam = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[i]))
 
-        # Get dict of distances between reads genome-wide
-        dists = distances(bam, windows, args.fragment_size, args.duplicates, orientation=False)
-        pickle.dump(dists, open(os.path.join(args.results_dir, names[i] + ".counts.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        signals[i] = dists
-        #distsPos, distsNeg = distances(bam, windows, args.fragment_size, args.duplicates, orientation=True)
-        #pickle.dump((distsPos, distsNeg), open(os.path.join(args.results_dir, names[i] + ".countsStranded.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        #signals[i] = (distsPos, distsNeg)
+        ### Get dict of distances between reads genome-wide
+        # dists = distances(bam, windows, args.fragment_size, args.duplicates, orientation=False)
+        # pickle.dump(dists, open(os.path.join(args.results_dir, names[i] + ".counts.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        # signals[i] = dists
+        distsPos, distsNeg = distances(bam, windows, args.fragment_size, args.duplicates, orientation=True)
+        pickle.dump((distsPos, distsNeg), open(os.path.join(args.results_dir, names[i] + ".countsStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        signals[i] = (distsPos, distsNeg)
 
-        # Get dict of distances between permutated reads genome-wide
-        permutedDists = distances(bam, windows, args.fragment_size, args.duplicates, orientation=False, permutate=True)
-        pickle.dump(permutedDists, open(os.path.join(args.results_dir, names[i] + ".countsPermuted.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        permutatedSignals[i] = dists
-
+        ### Get dict of distances between permutated reads genome-wide
+        # permutedDists = distances(bam, windows, args.fragment_size, args.duplicates, orientation=False, permutate=True)
+        # pickle.dump(permutedDists, open(os.path.join(args.results_dir, names[i] + ".countsPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        # permutatedSignals[i] = dists
+        permutedDistsPos, permutedDistsNeg = distances(bam, windows, args.fragment_size, args.duplicates, orientation=True, permutate=True)
+        pickle.dump((permutedDistsPos, permutedDistsNeg), open(os.path.join(args.results_dir, names[i] + ".countsPermutedStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        permutatedSignals[i] = (permutedDistsPos, permutedDistsNeg)
 
     ### For each signal extract most abundant periodic signal, correlate it with read coverage on each strand
     # generate windows genome-wide (or under 3K4 peaks)
-    for i in xrange(len(args.bamfiles)):
-        distsPos, distsNeg = signals[i]
+    for index in xrange(len(args.bamfiles)):
+        distsPos, distsNeg = signals[index]
+        # dists = pickle.load(open(os.path.join(args.results_dir, names[i] + ".counts.pickle"), "r"))
+        # permutedDists = pickle.load(open(os.path.join(args.results_dir, names[i] + ".countsPermuted.pickle"), "r"), protocol=pickle.HIGHEST_PROTOCOL)
+        # distsPos, distsNeg = pickle.load(open(os.path.join(args.results_dir, names[i] + ".countsStranded.pickle"), "r"))
+        # permutedDistsPos, permutedDistsNeg = pickle.load(open(os.path.join(args.results_dir, names[i] + ".countsPermutedStranded.pickle"), "r"), protocol=pickle.HIGHEST_PROTOCOL)
 
-        # sum strands count
-        inp = [dict(x) for x in (distsPos, distsNeg)]
-        count = Counter()
-        for y in inp:
-            count += Counter(y)
-        dists = dict(count)
-        #dists = pickle.load(open(os.path.join(args.results_dir, "H3K4me3_K562_500k_CM.counts.pickle"), "r"))
+        ### extract most abundant periodic pattern from signal
+        # pattern = extractPattern(dists)
+        # pickle.dump(pattern, open(os.path.join(args.results_dir, names[index] + ".pattern.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        
+        patternPos = extractPattern(distsPos)
+        patternNeg = extractPattern(distsNeg)
+        pickle.dump((patternPos, patternNeg), open(os.path.join(args.results_dir, names[index] + ".patternStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-        # extract most abundant periodic pattern from signal
-        pattern = extractPattern(dists)
-        pickle.dump(pattern, open(os.path.join(args.results_dir, names[i] + ".pattern.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
+        # permutedPattern = extractPattern(permutedDists)
+        permutedPatternPos = extractPattern(permutedDistsPos)
+        permutedPatternNeg = extractPattern(permutedDistsNeg)
 
-        permutedPattern = extractPattern(permutedDists)
-        pickle.dump(permutedPattern, open(os.path.join(args.results_dir, names[i] + ".patternPermuted.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-
-        # calculate read coverage in H3K4me3 peaks
-        bam = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[i]))
-        peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=names[i]))
+        ### calculate read coverage in H3K4me3 peaks
+        bam = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[index]))
+        peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=names[1]))
         peaks = bedToolsInterval2GenomicInterval(peaks)
-        #peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
-        cov = coverage(bam, peaks, args.fragment_size)
-        pickle.dump(cov, open(os.path.join(args.results_dir, names[i] + ".peakCoverage.pickle"), "wb"), protocol = pickle.HIGHEST_PROTOCOL)
-        #cov = pickle.load(open(os.path.join(args.results_dir, names[i] + ".peakCoverage.pickle"), "r"))
+        # peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
+        
+        # coverage = coverageInWindows(bam, peaks, args.fragment_size)
+        # pickle.dump(coverage, open(os.path.join(args.results_dir, names[index] + ".peakCoverage.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        coverage = coverageInWindows(bam, peaks, args.fragment_size, strand_specific=True)
+        pickle.dump(coverage, open(os.path.join(args.results_dir, names[index] + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        
+        # coverage = pickle.load(open(os.path.join(args.results_dir, names[index] + ".peakCoverage.pickle"), "r"))
+        # coverage = pickle.load(open(os.path.join(args.results_dir, names[index] + ".peakCoverageStranded.pickle"), "r"))
 
-        #cov = {name : reads for name, reads in cov.items() if len(reads) >= 1000}         # filter out peaks smaller than 1kb
+        # Filter out peaks smaller than 1kb
+        # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000}
 
-        # Correlate coverage and signal pattern
-        R = OrderedDict()
-        #for peak, coverage in cov.iteritems():
-        for peak, reads in cov.items()[:20]:
-            R[peak] = correlatePatternProfile(pattern, reads)
+        ### Correlate coverage and signal pattern
+        # correlations = {peak : correlatePatternProfile(pattern, reads) for peak, reads in coverage.items()}
+        # pickle.dump(correlations, open(os.path.join(args.results_dir, names[index] + ".peakCorrelation.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-        # plot pattern for 20 peaks
-        for i in xrange(len(R)):
-            plt.subplot(2,10,i)
-            plt.plot(R.values()[i])
+        pattern = patternNeg # choose one pattern <- negative strand
+        correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
+        correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
+        pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.results_dir, names[index] + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-        # concatenate all peaks
-        [i for l in R.values() for i in l]
+        # plot correlations for 20 peaks
+        # for i in xrange(len(correlations)):
+        #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
+        #     plt.plot(correlations.values()[i])
+        
+        # plot concatenation of correlations for some peaks
+        # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
+
+        ### Export wig files with correlations
+        exportWigFile(
+            [peaks[i] for i in correlationsPos.keys()],
+            correlationsPos.values(),
+            len(pattern)/2,
+            os.path.join(args.results_dir, names[index] + ".peakCorrelationPos.wig"),
+            names[index]
+        )
+        exportWigFile(
+            [peaks[i] for i in correlationsNeg.keys()],
+            correlationsNeg.values(),
+            len(pattern)/2,
+            os.path.join(args.results_dir, names[index] + ".peakCorrelationNeg.wig"),
+            names[index]
+        )
 
 
-        # export wig file with correlations
-        for name, _ in R.items():
-            exportWigFile(peaks[name], R[name], pattern)        
-
+        # Winter2013 fig.4 - chr19 comparison
+        # peaksWinter = {"winter" : HTSeq.GenomicInterval("chr19", 37016000, 37022000)}
+        # covWinter = coverageInWindows(bam, peaksWinter, args.fragment_size)
+        # RWinter = OrderedDict()
+        # RWinter["winter"] = correlatePatternProfile(pattern, covWinter["winter"])
+        # exportWigFile(
+        #     [peaksWinter[i] for i in RWinter.keys()],
+        #     RWinter.values(),
+        #     len(pattern)/2,
+        #     os.path.join(args.results_dir, names[index] + ".peakCorrelation.Winter.wig"),
+        #     names[index]
+        # )
 
         # with paralelization
-        import multiprocessing as mp
-        pool = mp.Pool()
-        R = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in cov.values()[:50]]
+        # import multiprocessing as mp
+        # pool = mp.Pool()
+        # correlations = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in coverage.values()[:50]] 
+        # for i in xrange(len(correlations)):
+        #    plt.plot(correlations[i])
 
-        for i in xrange(len(R)):
-            plt.plot(R[i])
-
+        ### TODO:
         # Get regions in extreme quantiles of correlation 
-
         # Check for enrichment in ...
-
-        # mnase signal
-        # nucleosomes
-        # clusters of CM signal around TSSs
+        #     mnase signal
+        #     nucleosomes
+        #     clusters of CM signal around TSSs
 
 
 
@@ -430,17 +480,14 @@ if __name__ == '__main__':
     parser.add_argument('--window-step', dest='window_step', type=int, default=900)
     parser.add_argument('--fragment-size', dest='fragment_size', type=int, default=1)
     parser.add_argument('--genome', dest='genome', type=str, default='hg19')
-
     args = parser.parse_args()
-
-    args = parser.parse_args(
-        ["projects/chipmentation/results",
-        "projects/chipmentation/results/plots",
-        "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
-        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
-        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
-        "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam"
-        ]
-    )
-
+    # args = parser.parse_args(
+    #     ["projects/chipmentation/results",
+    #     "projects/chipmentation/results/plots",
+    #     "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
+    #     "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
+    #     "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
+    #     "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam"
+    #     ]
+    # )
     main(args)
