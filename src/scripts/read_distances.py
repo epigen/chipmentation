@@ -15,8 +15,6 @@ from collections import Counter, OrderedDict
 
 from scipy.stats.stats import pearsonr
 
-import csv
-
 def makeGenomeWindows(windowWidth, genome, step=None):
     """
     Generate windows genome-wide.
@@ -339,36 +337,36 @@ def main(args):
 
     signals = dict()
     permutatedSignals = dict()
-    for i in xrange(len(args.bamfiles)):
-        print("Sample " + names[i])
+    for index in xrange(len(args.bamfiles)):
+        print("Sample " + names[index])
         
         # Load bam
-        bam = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[i]))
+        bam = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[index]))
 
         ### Get dict of distances between reads genome-wide
         # dists = distances(bam, windows, args.fragment_size, args.duplicates, orientation=False)
-        # pickle.dump(dists, open(os.path.join(args.results_dir, names[i] + ".counts.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-        # signals[i] = dists
+        # pickle.dump(dists, open(os.path.join(args.results_dir, names[index] + ".counts.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        # signals[index] = dists
         distsPos, distsNeg = distances(bam, windows, args.fragment_size, args.duplicates, orientation=True)
-        pickle.dump((distsPos, distsNeg), open(os.path.join(args.results_dir, names[i] + ".countsStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-        signals[i] = (distsPos, distsNeg)
+        pickle.dump((distsPos, distsNeg), open(os.path.join(args.results_dir, names[index] + ".countsStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        signals[index] = (distsPos, distsNeg)
 
         ### Get dict of distances between permutated reads genome-wide
         # permutedDists = distances(bam, windows, args.fragment_size, args.duplicates, orientation=False, permutate=True)
-        # pickle.dump(permutedDists, open(os.path.join(args.results_dir, names[i] + ".countsPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-        # permutatedSignals[i] = dists
+        # pickle.dump(permutedDists, open(os.path.join(args.results_dir, names[index] + ".countsPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        # permutatedSignals[index] = dists
         permutedDistsPos, permutedDistsNeg = distances(bam, windows, args.fragment_size, args.duplicates, orientation=True, permutate=True)
-        pickle.dump((permutedDistsPos, permutedDistsNeg), open(os.path.join(args.results_dir, names[i] + ".countsPermutedStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-        permutatedSignals[i] = (permutedDistsPos, permutedDistsNeg)
+        pickle.dump((permutedDistsPos, permutedDistsNeg), open(os.path.join(args.results_dir, names[index] + ".countsPermutedStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        permutatedSignals[index] = (permutedDistsPos, permutedDistsNeg)
 
     ### For each signal extract most abundant periodic signal, correlate it with read coverage on each strand
     # generate windows genome-wide (or under 3K4 peaks)
     for index in xrange(len(args.bamfiles)):
         distsPos, distsNeg = signals[index]
-        # dists = pickle.load(open(os.path.join(args.results_dir, names[i] + ".counts.pickle"), "r"))
-        # permutedDists = pickle.load(open(os.path.join(args.results_dir, names[i] + ".countsPermuted.pickle"), "r"), protocol=pickle.HIGHEST_PROTOCOL)
-        # distsPos, distsNeg = pickle.load(open(os.path.join(args.results_dir, names[i] + ".countsStranded.pickle"), "r"))
-        # permutedDistsPos, permutedDistsNeg = pickle.load(open(os.path.join(args.results_dir, names[i] + ".countsPermutedStranded.pickle"), "r"), protocol=pickle.HIGHEST_PROTOCOL)
+        # dists = pickle.load(open(os.path.join(args.results_dir, names[index] + ".counts.pickle"), "r"))
+        # permutedDists = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsPermuted.pickle"), "r"), protocol=pickle.HIGHEST_PROTOCOL)
+        # distsPos, distsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsStranded.pickle"), "r"))
+        # permutedDistsPos, permutedDistsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsPermutedStranded.pickle"), "r"), protocol=pickle.HIGHEST_PROTOCOL)
 
         ### extract most abundant periodic pattern from signal
         # pattern = extractPattern(dists)
@@ -400,7 +398,7 @@ def main(args):
         # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000}
 
         ### Correlate coverage and signal pattern
-        # correlations = {peak : correlatePatternProfile(pattern, reads) for peak, reads in coverage.items()}
+        # correlations = {peak : correlatePatternProfile(pattern, reads) for peak, reads in coverage.items()[:20]}
         # pickle.dump(correlations, open(os.path.join(args.results_dir, names[index] + ".peakCorrelation.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
         pattern = patternNeg # choose one pattern <- negative strand
@@ -481,13 +479,13 @@ if __name__ == '__main__':
     parser.add_argument('--fragment-size', dest='fragment_size', type=int, default=1)
     parser.add_argument('--genome', dest='genome', type=str, default='hg19')
     args = parser.parse_args()
-    # args = parser.parse_args(
-    #     ["projects/chipmentation/results",
-    #     "projects/chipmentation/results/plots",
-    #     "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
-    #     "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
-    #     "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
-    #     "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam"
-    #     ]
-    # )
+    args = parser.parse_args(
+        ["projects/chipmentation/results",
+        "projects/chipmentation/results/plots",
+        "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
+        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
+        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
+        "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam"
+        ]
+    )
     main(args)
