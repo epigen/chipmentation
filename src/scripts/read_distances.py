@@ -78,7 +78,7 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, p
         dists = dict()
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
     
-    for name, feature in intervals.iteritems():
+    for name, feature in itertools.islice(intervals.items(), 0, None, 10):
         if feature.chrom not in chroms:
             continue
 
@@ -236,8 +236,7 @@ def extractPattern(dists):
     freqs = list()
     for i in np.arange(0.01, len(x)/10., 0.01):
         cut_f_signal = f_signal.copy()
-        cut_f_signal[(W < i)] = 0
-        cut_f_signal[(W > i)] = 0
+        cut_f_signal[((W != i) & (W != -i))] = 0
         cut_signal = np.fft.ifft(cut_f_signal)
         plt.plot(time, cut_signal)
         freqs.append(np.abs(cut_f_signal).max())
@@ -247,12 +246,19 @@ def extractPattern(dists):
 
     # signal is now in Hz
     cut_f_signal = f_signal.copy()
+
+    # plt.plot(W, abs(cut_f_signal), 'o')
+    
     # select frequency of 1/10bp = 0.1Hz
     cut_f_signal[(W < top)] = 0
     cut_f_signal[(W > top)] = 0
 
+    # plt.plot(W, abs(cut_f_signal), 'o')
+
     # inverse fourier to get filtered frequency
     cut_signal = np.fft.ifft(cut_f_signal)
+
+    # plt.plot(W, abs(cut_signal), '-')
 
     # Extract pattern
     extracted = cut_signal.real
@@ -309,8 +315,8 @@ def main(args):
     ### Loop through all signals, compute distances, plot
     # Get genome-wide windows
     print("Making %ibp windows genome-wide" % args.window_width)
-    windows = makeGenomeWindows(args.window_width, args.genome)
-    #windows = makeGenomeWindows(args.window_width, {'chr1': (0, 249250621)}, step=args.window_step)
+    #windows = makeGenomeWindows(args.window_width, args.genome)
+    windows = makeGenomeWindows(args.window_width, {'chr1': (0, 249250621)}, step=args.window_step)
 
     signals = dict()
     permutatedSignals = dict()
