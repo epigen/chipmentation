@@ -11,9 +11,13 @@ import itertools
 import cPickle as pickle
 
 from matplotlib import pyplot as plt
+import seaborn as sns
 from collections import Counter, OrderedDict
 
 from scipy.stats.stats import pearsonr
+import statsmodels.nonparametric.kde as kde
+from scipy import signal
+
 
 def makeGenomeWindows(windowWidth, genome, step=None):
     """
@@ -55,15 +59,38 @@ def makeBedWindows(windowWidth, bedtool, step=None):
     return windows
 
 
-def bedToolsInterval2GenomicInterval(bedtool):
+def bedToolsInterval2GenomicInterval(bedtool , strand=True):
     """
     Given a pybedtools.BedTool object returns, dictionary of HTSeq.GenomicInterval objects.
     bedtool - a pybedtools.BedTool with intervals.
     """
     intervals = OrderedDict()
-    for iv in bedtool:
-        intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end, iv.strand)
+    if strand:
+        for iv in bedtool:
+            intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end, iv.strand)
+    else:
+        for iv in bedtool:
+            intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end)
+
     return intervals
+
+
+def bedToolsInterval2GenomicInterval_noFormat(bedtool):
+    """
+    Given a pybedtools.BedTool object returns, dictionary of HTSeq.GenomicInterval objects.
+    bedtool - a pybedtools.BedTool with intervals.
+    """
+    windows = dict()
+    for interval in w:
+        feature = HTSeq.GenomicInterval(
+            interval.chrom,
+            interval.start,
+            interval.end
+        )
+        name = string.join(interval.fields, sep="_")
+        windows[name] = feature
+
+    return windows
 
 
 def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, permutate=False):
@@ -136,7 +163,7 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, p
         return dists
 
 
-def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicates=True, strand_specific=False):
+def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicates=True, strand_specific=False, permutate=False):
     """
     Gets read coverage in bed regions.
     Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
@@ -165,8 +192,17 @@ def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicate
             i+=1
             continue
 
-        # Fetch alignments in feature window
-        for aln in bam[feature]:
+        # Fetch all alignments in feature window
+        alnsInWindow = bam[feature]
+        if permutate:
+            # randomize each alignment's position in window
+            alns = list()
+            for aln in alnsInWindow:
+                aln.iv.start_d = random.randrange(feature.start, feature.end)
+                alns.append(aln)
+            alnsInWindow = alns
+
+        for aln in alnsInWindow:
             # check if duplicate
             if not duplicates and aln.pcr_or_optical_duplicate:
                 continue
@@ -321,6 +357,82 @@ def exportWigFile(intervals, profiles, offset, filename, trackname):
                 handle.write(str(abs(profiles[i][j])) + "\n")
 
 
+def fitKDE(X, bandwidth):
+    """
+    Fit gaussian kernel density estimator to array, return
+    X=numerical iterable.
+    bandwidth=kernel bandwidth - float.
+    """
+    return kde.kdensity(range(len(x)), bw=bandwidth, weights=x)[0]
+
+
+def fitRegression(X, degree):
+    """
+    Fit regression with degree.
+    X=numerical iterable.
+    degree=int.
+    """
+    coeffs = np.poly1d(np.polyfit(range(len(X)), X, degree))
+    return np.polyval(coeffs, range(len(X)))
+
+
+def findPeaks(X, peakWidth):
+    """
+    """
+    peaks = signal.find_peaks_cwt(X, widths=np.array([peakWidth]))
+    return {peak : (peak - peakWidth/2, peak + peakWidth/2) for peak in peaks}
+
+
+def binarize(X):
+    maximas = np.r_[True, X[1:] > X[:-1]] & np.r_[X[:-1] > X[1:], True]
+    profile = list()
+    prev_max = 0
+    for i in range(len(X)):
+        if maximas[i] == True and X[i] > 0 and any(n < 0 for n in X[prev_max : i]): # watch out for namespace pollution with np.any
+            # if from i to next_max there is no neg, then is max
+            for j in range(i, len(X)):
+                if maximas[j] == True and maximas[j] > 0:
+                    next_max = j
+                    break
+
+            if not any(n > 0 for n in X[i : next_max]):
+                profile.append(1)
+                prev_max = i
+            else:
+                profile.append(0)
+        else:
+            profile.append(0)
+    return np.array(profile)
+
+
+def score(peak, correlation):
+    return sum(correlation)
+
+
+def exportBedFile(intervals, peaks, offset, filename, trackname, strand="."):
+    """
+    Exports a bed file track.
+    """
+    if len(intervals) != len(peaks):
+        raise
+
+    with open(filename, 'w') as handle:
+        track = 'track name="{0}" description="{0}" visibility=pack autoScale=off colorByStrand="255,0,0 0,0,255"\n'.format(trackname)
+        handle.write(track)
+        for name, peak in peaks.items():
+            for center, tup in peak.items():
+                ### TODO: check peak boundaries
+                entry = "{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n".format(
+                    intervals[name].chrom,
+                    intervals[name].start + offset + tup[0],
+                    intervals[name].start + offset + tup[1],
+                    name,
+                    1,      # score
+                    strand  # strand
+                )
+                handle.write(entry)
+
+
 def main(args):
     args.plots_dir = os.path.abspath(args.plots_dir)
 
@@ -332,8 +444,8 @@ def main(args):
     ### Loop through all signals, compute distances, plot
     # Get genome-wide windows
     print("Making %ibp windows genome-wide" % args.window_width)
-    #windows = makeGenomeWindows(args.window_width, args.genome)
-    windows = makeGenomeWindows(args.window_width, {'chr1': (0, 249250621)}, step=args.window_step) # only chromosome 1
+    windows = makeGenomeWindows(args.window_width, args.genome)
+    #windows = makeGenomeWindows(args.window_width, {'chr1': (0, 249250621)}, step=args.window_step) # only chromosome 1
 
     signals = dict()
     permutatedSignals = dict()
@@ -359,14 +471,30 @@ def main(args):
         pickle.dump((permutedDistsPos, permutedDistsNeg), open(os.path.join(args.results_dir, names[index] + ".countsPermutedStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
         permutatedSignals[index] = (permutedDistsPos, permutedDistsNeg)
 
+        # calculate distances in non-dhs regions for DNase-data
+        if index == 0:
+            # get windows not overlapping with DHS
+            dhs = BedTool(os.path.join("/home", "arendeiro", "wgEncodeOpenChromDnaseK562Pk.narrowPeak"))
+            w = BedTool.window_maker(BedTool(), genome={'chr1': (0, 249250621)}, w=args.window_width, s=args.window_width)
+            w = bedToolsInterval2GenomicInterval_noFormat(w.intersect(b=dhs,v=True))
+            
+            # compute distances
+            distsPos, distsNeg = distances(bam, w, args.fragment_size, args.duplicates, orientation=True)
+            pickle.dump((distsPos, distsNeg), open(os.path.join(args.results_dir, names[index] + ".countsStranded-nonDHS.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            permutedDistsPos, permutedDistsNeg = distances(bam, w, args.fragment_size, args.duplicates, orientation=True, permutate=True)
+            pickle.dump((permutedDistsPos, permutedDistsNeg), open(os.path.join(args.results_dir, names[index] + ".countsPermutedStranded-nonDHS.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
+            # dhs = bedToolsInterval2GenomicInterval(dhs)
+            # { name : window for name, window in windows.items() for _, dh in dhs.items() if not window.overlaps(dh) }
+
     ### For each signal extract most abundant periodic signal, correlate it with read coverage on each strand
     # generate windows genome-wide (or under 3K4 peaks)
     for index in xrange(len(args.bamfiles)):
         distsPos, distsNeg = signals[index]
         # dists = pickle.load(open(os.path.join(args.results_dir, names[index] + ".counts.pickle"), "r"))
-        # permutedDists = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsPermuted.pickle"), "r"), protocol=pickle.HIGHEST_PROTOCOL)
+        # permutedDists = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsPermuted.pickle"), "r"))
         # distsPos, distsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsStranded.pickle"), "r"))
-        # permutedDistsPos, permutedDistsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsPermutedStranded.pickle"), "r"), protocol=pickle.HIGHEST_PROTOCOL)
+        # permutedDistsPos, permutedDistsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsPermutedStranded.pickle"), "r"))
 
         ### extract most abundant periodic pattern from signal
         # pattern = extractPattern(dists)
@@ -374,6 +502,7 @@ def main(args):
         
         patternPos = extractPattern(distsPos)
         patternNeg = extractPattern(distsNeg)
+        # pattern = extractPattern(Counter(distsPos) + Counter(distsNeg))
         pickle.dump((patternPos, patternNeg), open(os.path.join(args.results_dir, names[index] + ".patternStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
         # permutedPattern = extractPattern(permutedDists)
@@ -401,11 +530,15 @@ def main(args):
         # correlations = {peak : correlatePatternProfile(pattern, reads) for peak, reads in coverage.items()[:20]}
         # pickle.dump(correlations, open(os.path.join(args.results_dir, names[index] + ".peakCorrelation.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-        pattern = patternNeg # choose one pattern <- negative strand
+        # convolve pattern signals
+        # np.convolve(patternPos, patternNeg)
+
+        pattern = patternNeg # choose one pattern (e.g. negative strand)
         correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
         correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
         pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.results_dir, names[index] + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-
+        # correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".peakCorrelationStranded.pickle"), "r"))
+        
         # plot correlations for 20 peaks
         # for i in xrange(len(correlations)):
         #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
@@ -420,14 +553,83 @@ def main(args):
             correlationsPos.values(),
             len(pattern)/2,
             os.path.join(args.results_dir, names[index] + ".peakCorrelationPos.wig"),
-            names[index]
+            names[index] + " raw absolute correlation - positive strand"
         )
         exportWigFile(
             [peaks[i] for i in correlationsNeg.keys()],
             correlationsNeg.values(),
             len(pattern)/2,
             os.path.join(args.results_dir, names[index] + ".peakCorrelationNeg.wig"),
-            names[index]
+            names[index] + " raw absolute correlation - negative strand"
+        )
+
+        # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
+        
+        # X = abs(correlationsPos.values()[1])
+        # for bandwidth in xrange(1, 10):
+        #     density = kde.kdensity(range(len(X)), bw=bandwidth / 10., weights=X)[0]
+        #     plt.plot(density * 100)
+
+        # for degree in xrange(10, 50):
+        #     coeffs = np.poly1d(np.polyfit(range(len(X)), X, 50))
+        #     plt.plot(np.polyval(coeffs, range(len(X))) * 2)
+
+        # # smooth with interpolate
+        # from scipy.interpolate import interp1d
+        # for degree in xrange(2, 15):
+        #     xn_ax = interp1d(range(len(X)), X, kind=degree)
+        #     plt.plot(xn_ax(X))
+
+        # # find local minima
+        # mins = np.r_[True, X[1:] < X[:-1]] & np.r_[X[:-1] < X[1:], True]
+
+        # min_index = [np.where(X==X[x]) for x in mins]
+
+        # [np.mean(x - 1, x + 1) for x in mins if x == True]
+
+
+        # # find peaks
+        # X = [abs(i) for l in correlationsPos.values() for i in l]
+        # corPeaks = findPeaks(np.array(X), 50)
+
+        # plt.plot(X)
+        # plt.plot(corPeaks.keys(), [0.2] * len(corPeaks.keys()), 'o')
+        # for center, peak in corPeaks.items():
+        #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
+
+
+        ### Find correlation peaks
+        # i = 0
+        corPeaksPos = dict()
+        for name, cor in correlationsPos.items():
+            corPeak = findPeaks(abs(cor), 50)
+            corPeaksPos[name] = corPeak
+            # plt.subplot(5,2,i)
+            # plt.plot(abs(cor))
+            # plt.plot(corPeak.keys(), [0.2] * len(corPeak.keys()), 'o')
+            # for center, peak in corPeak.items():
+            #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
+            # i += 1
+
+        exportBedFile(
+            {name : peaks[name] for name, peak in corPeaksPos.items()},
+            corPeaksPos,
+            len(pattern)/2,
+            os.path.join(args.results_dir, names[index] + ".correlationPeaksPos.bed"),
+            names[index] + " correlation peaks - positive strand"
+        )
+
+        corPeaksNeg = dict()
+        for name, cor in correlationsNeg.items():
+            corPeak = findPeaks(abs(cor), 50)
+            corPeaksNeg[name] = corPeak
+
+        exportBedFile(
+            {name : peaks[name] for name, peak in corPeaksNeg.items()},
+            corPeaksNeg,
+            len(pattern)/2,
+            os.path.join(args.results_dir, names[index] + ".correlationPeaksNeg.bed"),
+            names[index] + " correlation peaks - negative strand"
         )
 
 
@@ -485,7 +687,10 @@ if __name__ == '__main__':
         "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
         "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
         "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
-        "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam"
+        "data/human/chipmentation/mapped/merged/H3K27me3_K562_10k500k_CM.bam",
+        "data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
+        "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam",
+        "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam"
         ]
     )
     main(args)
