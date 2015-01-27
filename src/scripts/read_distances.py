@@ -239,7 +239,7 @@ def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicate
     return coverage
 
 
-def extractPattern(dists, drange, filePrefix):
+def extractPattern(dists, distRange, filePrefix):
     """
     Extracts most abundant frequency from raw data.
     Returns mirrored pattern.
@@ -254,7 +254,7 @@ def extractPattern(dists, drange, filePrefix):
     plt.plot(y, 'o', p1(x), "-")    
     
     # restrict to signal
-    x = drange
+    x = distRange
     y = [dists[i] for i in x]
     p1 = np.poly1d(np.polyfit(x, y, 1)) # fit linear regression
     m , b = p1.coeffs
@@ -281,20 +281,22 @@ def extractPattern(dists, drange, filePrefix):
     f_signal = np.fft.fft(signal)
 
     # plot all frequencies, ask what is the amplitude of the signals
-    freqs = list()
+    freqs = dict()
     for i in np.arange(0, len(x)/10., 0.01):
         if i == 0:
             continue
-        cut_f_signal = f_signal.copy()
-        cut_f_signal[((W < i) | (W > i))] = 0
-        cut_signal = np.fft.ifft(cut_f_signal)
-        plt.plot(time, cut_signal)
-        freqs.append(np.abs(cut_f_signal).max())
+        else:
+            cut_f_signal = f_signal.copy()
+            cut_f_signal[((W < i) | (W > i))] = 0
+            cut_signal = np.fft.ifft(cut_f_signal)
+            plt.plot(time, cut_signal)
+            if 0.05 <= i <= 0.4:
+                freqs[i] = np.abs(cut_f_signal).max()
     plt.savefig(filePrefix + ".fft_frequencies.pdf")
     plt.close()
 
     # get frequency of signal with highest amplitude
-    top = np.arange(0, len(x)/10., 0.01)[freqs.index(max(freqs)) + 1]
+    top = max(freqs, key=freqs.get)
 
     # signal is now in Hz
     cut_f_signal = f_signal.copy()
@@ -313,7 +315,7 @@ def extractPattern(dists, drange, filePrefix):
     plt.plot(W, abs(cut_f_signal), 'o')
     plt.subplot(224)
     plt.plot(time, cut_signal, '-')
-    plt.savefig(filePrefix + ".fft_filter_ifft.pdf")
+    plt.savefig(filePrefix + ".fft_filter-{0}bp_ifft.pdf".format(int(1/top)))
     plt.close()
 
     return cut_signal.real
@@ -477,7 +479,7 @@ def main(args):
     # generate windows genome-wide (or under 3K4 peaks)
     for index in xrange(len(args.bamfiles)):
         distsPos, distsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsStranded.pickle"), "r"))
-        #permutedDistsPos, permutedDistsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsPermutedStranded.pickle"), "r"))
+        permutedDistsPos, permutedDistsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsPermutedStranded.pickle"), "r"))
 
         ### extract most abundant periodic pattern from signal
         # for DNase, extract from a different window (70-150bp)
@@ -485,15 +487,18 @@ def main(args):
             patternPos = extractPattern(distsPos, range(70, 150), os.path.join(args.plots_dir, names[index] + "_posStrand"))
             patternNeg = extractPattern(distsNeg, range(70, 150), os.path.join(args.plots_dir, names[index] + "_negStrand"))
             pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(70, 150), os.path.join(args.plots_dir, names[index] + "_bothStrands"))
+
+            permutedPatternPos = extractPattern(permutedDistsPos, range(70, 150), os.path.join(args.plots_dir, names[index] + "_posStrand_permuted"))
+            permutedPatternNeg = extractPattern(permutedDistsNeg, range(70, 150), os.path.join(args.plots_dir, names[index] + "_negStrand_permuted"))
+            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(70, 150), os.path.join(args.plots_dir, names[index] + "_bothStrands_permuted"))
         else:
             patternPos = extractPattern(distsPos, range(30, 130), os.path.join(args.plots_dir, names[index] + "_posStrand"))
             patternNeg = extractPattern(distsNeg, range(30, 130), os.path.join(args.plots_dir, names[index] + "_negStrand"))
             pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(30, 130), os.path.join(args.plots_dir, names[index] + "_bothStrands"))
         
-        # permutedPattern = extractPattern(permutedDists)
-        permutedPatternPos = extractPattern(permutedDistsPos, os.path.join(args.plots_dir, names[index] + "_posStrand_permuted"))
-        permutedPatternNeg = extractPattern(permutedDistsNeg, os.path.join(args.plots_dir, names[index] + "_negStrand_permuted"))
-        permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), os.path.join(args.plots_dir, names[index] + "_bothStrands_permuted"))
+        permutedPatternPos = extractPattern(permutedDistsPos, range(30, 130), os.path.join(args.plots_dir, names[index] + "_posStrand_permuted"))
+        permutedPatternNeg = extractPattern(permutedDistsNeg, range(30, 130), os.path.join(args.plots_dir, names[index] + "_negStrand_permuted"))
+        permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(30, 130), os.path.join(args.plots_dir, names[index] + "_bothStrands_permuted"))
 
         ### calculate read coverage in H3K4me3 peaks
         bam = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[index]))
@@ -666,7 +671,10 @@ if __name__ == '__main__':
         "data/human/chipmentation/mapped/merged/H3K27me3_K562_10k500k_CM.bam",
         "data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
         "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam",
-        "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam"
+        "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam",
+        "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
+        "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
+
         ]
     )
     main(args)
