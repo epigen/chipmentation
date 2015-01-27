@@ -1,8 +1,0 @@
-PU1_K562_10mio_ChIP_CM15-5_R1.trimmed.bowtie2.sorted.nodups.bam IgG_K562_10mio_ChIP_CM15-8_R1.trimmed.bowtie2.sorted.dup.bam
-PU1_K562_10mio_ChIP_CM16-4_R2.trimmed.bowtie2.sorted.nodups.bam IgG_K562_10mio_ChIP_CM16-6_R2.trimmed.bowtie2.sorted.dup.bam
-PU1_K562_10mio_CM_CM15-1_R1.trimmed.bowtie2.sorted.shifted.nodups.bam IgG_K562_10mio_CM_CM15-4_R1.trimmed.bowtie2.sorted.shifted.dup.bam
-PU1_K562_10mio_CM_CM16-1_R2.trimmed.bowtie2.sorted.shifted.nodups.bam IgG_K562_10mio_CM_CM16-3_R2.trimmed.bowtie2.sorted.shifted.dup.bam
-CTCF_K562_10mio_ChIP_CM15-6_R1.trimmed.bowtie2.sorted.nodups.bam IgG_K562_10mio_ChIP_CM15-8_R1.trimmed.bowtie2.sorted.dup.bam
-CTCF_K562_10mio_ChIP_CM16-5_R2.trimmed.bowtie2.sorted.nodups.bam IgG_K562_10mio_ChIP_CM16-6_R2.trimmed.bowtie2.sorted.dup.bam
-CTCF_K562_10mio_CM_CM15-2_R1.trimmed.bowtie2.sorted.shifted.nodups.bam IgG_K562_10mio_CM_CM15-4_R1.trimmed.bowtie2.sorted.shifted.dup.bam
-CTCF_K562_10mio_CM_CM16-2_R2.trimmed.bowtie2.sorted.shifted.nodups.bam IgG_K562_10mio_CM_CM16-3_R2.trimmed.bowtie2.sorted.shifted.dup.bam
