@@ -18,6 +18,45 @@ from scipy.stats.stats import pearsonr
 import statsmodels.nonparametric.kde as kde
 from scipy import signal
 
+from hmmlearn import hmm
+
+class WinterHMM(object):
+    """docstring for WinterHMM"""
+    def __init__(self):
+        super(WinterHMM, self).__init__()
+        self.states = ["BAC", 1,2,3, "+", 4,5,6,7,8,9,10,11, "-"]
+        self.hidden = ["OUT", "IN"]
+        self.transitionProbs = np.array([
+            [0.5] + [0] * 3 + [0.25] + [0] * 9 + [0.25],
+            [0] + [0] * 3 + [1] + [0] * 9 + [0],
+            [0.5] + [0] * 3 + [0.5] + [0.5] * 9 + [0],
+            [0] + [0] * 3 + [0] + [0] * 9 + [1],
+            [0.5] + [0.5] * 3 + [0] + [0] * 9 + [0]
+        ])
+        self.emissionProbs = np.array([[1, 0]] + [[0, 1]] * len(self.states))
+        self.startProbs = np.array([0.3, 0, 0.3, 0, 0.3])
+
+    def buildModel(self):
+        """
+        """
+        self.model = hmm.GaussianHMM(n_components=len(self.hidden))
+        self.model.n_features = len(self.states)
+        self.model.startprob = self.startProbs
+        self.model.transmat = self.transitionProbs
+
+    def sampleData(self, n):
+        """
+        """
+        self.model.means_ = np.random.randn(len(hidden), len(states))
+        self.model.covars_ = np.array([np.random.random(len(hidden))] * len(states))
+        return self.model.sample(n)
+
+    def train(self, data):
+        return self.model.fit(data)
+
+    def predict(self, observations):
+        return self.model.predict(observations)
+
 
 def makeGenomeWindows(windowWidth, genome, step=None):
     """
@@ -585,7 +624,24 @@ def main(args):
         #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
 
 
-        ### Find correlation peaks
+        ### Binarize data for HMM
+        s = dict()
+        for name, cor in correlationsPos.items()[:1]:
+            b = binarize(cor)
+            s[name] = b
+            x = range(len(cor))
+            plt.plot(
+                x, cor, '-',
+                x, b * 0.4, 'o'
+            )
+        ### HMM
+        m = WinterHMM()
+        m.buildModel()
+        m.predict(s.values())
+
+        
+
+        ### Find correlation peaks (broadish regions around region of high pattern-reads correlation)
         # i = 0
         corPeaksPos = dict()
         for name, cor in correlationsPos.items():
@@ -669,7 +725,7 @@ if __name__ == '__main__':
     parser.add_argument('--genome', dest='genome', type=str, default='hg19')
     args = parser.parse_args()
     args = parser.parse_args(
-        ["projects/chipmentation/results",
+        ["projects/chipmentation/results/periodicity",
         "projects/chipmentation/results/plots/periodicity",
         "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
         "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
