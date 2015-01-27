@@ -246,12 +246,16 @@ def extractPattern(dists, distRange, filePrefix):
     dists=dict of distances:counts.
     """
     plt.close()
+    plt.figure(0)
     plt.subplot(211)
     x = dists.keys()
     y = [dists[i] for i in x]
     p1 = np.poly1d(np.polyfit(x, y, 1)) # fit linear regression
     m , b = p1.coeffs
-    plt.plot(y, 'o', p1(x), "-")    
+    plt.plot(
+        x, y, 'o',
+        x, p1(x), "-"
+    )    
     
     # restrict to signal
     x = distRange
@@ -263,7 +267,7 @@ def extractPattern(dists, distRange, filePrefix):
         x, y, 'o',
         x, p1(x), "-"
     )
-    plt.savefig(filePrefix + ".read_distances.pdf")
+    plt.savefig(filePrefix + ".read_distances.pdf", bbox_inches='tight')
     plt.close()
 
     # measure distance to regression in that point
@@ -282,6 +286,7 @@ def extractPattern(dists, distRange, filePrefix):
 
     # plot all frequencies, ask what is the amplitude of the signals
     freqs = dict()
+    plt.figure(1)
     for i in np.arange(0, len(x)/10., 0.01):
         if i == 0:
             continue
@@ -292,7 +297,7 @@ def extractPattern(dists, distRange, filePrefix):
             plt.plot(time, cut_signal)
             if 0.05 <= i <= 0.4:
                 freqs[i] = np.abs(cut_f_signal).max()
-    plt.savefig(filePrefix + ".fft_frequencies.pdf")
+    plt.savefig(filePrefix + ".fft_frequencies.pdf", bbox_inches='tight')
     plt.close()
 
     # get frequency of signal with highest amplitude
@@ -307,6 +312,7 @@ def extractPattern(dists, distRange, filePrefix):
     # inverse fourier to get filtered frequency
     cut_signal = np.fft.ifft(cut_f_signal)
 
+    plt.figure(2)
     plt.subplot(221)
     plt.plot(time, signal, '-')
     plt.subplot(222)
@@ -315,7 +321,7 @@ def extractPattern(dists, distRange, filePrefix):
     plt.plot(W, abs(cut_f_signal), 'o')
     plt.subplot(224)
     plt.plot(time, cut_signal, '-')
-    plt.savefig(filePrefix + ".fft_filter-{0}bp_ifft.pdf".format(int(1/top)))
+    plt.savefig(filePrefix + ".fft_filter-{0}bp_ifft.pdf".format(int(1/top)), bbox_inches='tight')
     plt.close()
 
     return cut_signal.real
@@ -484,21 +490,21 @@ def main(args):
         ### extract most abundant periodic pattern from signal
         # for DNase, extract from a different window (70-150bp)
         if index == 0:
-            patternPos = extractPattern(distsPos, range(70, 150), os.path.join(args.plots_dir, names[index] + "_posStrand"))
-            patternNeg = extractPattern(distsNeg, range(70, 150), os.path.join(args.plots_dir, names[index] + "_negStrand"))
-            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(70, 150), os.path.join(args.plots_dir, names[index] + "_bothStrands"))
+            patternPos = extractPattern(distsPos, range(70, 110), os.path.join(args.plots_dir, names[index] + "_posStrand"))
+            patternNeg = extractPattern(distsNeg, range(70, 110), os.path.join(args.plots_dir, names[index] + "_negStrand"))
+            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(70, 110), os.path.join(args.plots_dir, names[index] + "_bothStrands"))
 
-            permutedPatternPos = extractPattern(permutedDistsPos, range(70, 150), os.path.join(args.plots_dir, names[index] + "_posStrand_permuted"))
-            permutedPatternNeg = extractPattern(permutedDistsNeg, range(70, 150), os.path.join(args.plots_dir, names[index] + "_negStrand_permuted"))
-            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(70, 150), os.path.join(args.plots_dir, names[index] + "_bothStrands_permuted"))
+            permutedPatternPos = extractPattern(permutedDistsPos, range(70, 110), os.path.join(args.plots_dir, names[index] + "_posStrand_permuted"))
+            permutedPatternNeg = extractPattern(permutedDistsNeg, range(70, 110), os.path.join(args.plots_dir, names[index] + "_negStrand_permuted"))
+            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(70, 110), os.path.join(args.plots_dir, names[index] + "_bothStrands_permuted"))
         else:
-            patternPos = extractPattern(distsPos, range(30, 130), os.path.join(args.plots_dir, names[index] + "_posStrand"))
-            patternNeg = extractPattern(distsNeg, range(30, 130), os.path.join(args.plots_dir, names[index] + "_negStrand"))
-            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(30, 130), os.path.join(args.plots_dir, names[index] + "_bothStrands"))
+            patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.plots_dir, names[index] + "_posStrand"))
+            patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.plots_dir, names[index] + "_negStrand"))
+            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.plots_dir, names[index] + "_bothStrands"))
         
-        permutedPatternPos = extractPattern(permutedDistsPos, range(30, 130), os.path.join(args.plots_dir, names[index] + "_posStrand_permuted"))
-        permutedPatternNeg = extractPattern(permutedDistsNeg, range(30, 130), os.path.join(args.plots_dir, names[index] + "_negStrand_permuted"))
-        permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(30, 130), os.path.join(args.plots_dir, names[index] + "_bothStrands_permuted"))
+            permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.plots_dir, names[index] + "_posStrand_permuted"))
+            permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.plots_dir, names[index] + "_negStrand_permuted"))
+            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.plots_dir, names[index] + "_bothStrands_permuted"))
 
         ### calculate read coverage in H3K4me3 peaks
         bam = HTSeq.BAM_Reader(os.path.abspath(args.bamfiles[index]))
