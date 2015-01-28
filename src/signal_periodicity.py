@@ -18,49 +18,131 @@ from scipy.stats.stats import pearsonr
 import statsmodels.nonparametric.kde as kde
 from scipy import signal
 
-from hmmlearn import hmm
+import yahmm
 
 class WinterHMM(object):
-    """docstring for WinterHMM"""
+    """
+    Class to model the Hidden Markov model described in the Winter 2013 paper.
+    """
     def __init__(self):
         super(WinterHMM, self).__init__()
-        self.states = ["BAC", 1,2,3, "+", 4,5,6,7,8,9,10,11, "-"]
-        self.hidden = ["OUT", "IN"]
-        self.transitionProbs = np.array([
-            [0.5] + [0] * 3 + [0.25] + [0] * 9 + [0.25],
-            [0] + [0] * 3 + [1] + [0] * 9 + [0],
-            [0.5] + [0] * 3 + [0.5] + [0.5] * 9 + [0],
-            [0] + [0] * 3 + [0] + [0] * 9 + [1],
-            [0.5] + [0.5] * 3 + [0] + [0] * 9 + [0]
-        ])
-        self.emissionProbs = np.array([[1, 0]] + [[0, 1]] * len(self.states))
-        self.startProbs = np.array([0.3, 0, 0.3, 0, 0.3])
+        background = yahmm.DiscreteDistribution({
+            1: 0.33,
+            0: 0.33,
+            -1 : 0.33
+        })
+        pos = yahmm.DiscreteDistribution({
+            1: 0.7,
+            0: 0.2,
+            -1 : 0.1
+        })
+        neg = yahmm.DiscreteDistribution({
+            1: 0.1,
+            0: 0.1,
+            -1 : 0.8
+        })
+        zero = yahmm.DiscreteDistribution({
+            1: 0,
+            0: 1,
+            -1 : 0
+        })
 
-    def buildModel(self):
-        """
-        """
-        self.model = hmm.GaussianHMM(n_components=len(self.hidden))
-        self.model.n_features = len(self.states)
-        self.model.startprob = self.startProbs
-        self.model.transmat = self.transitionProbs
+        # Create states
+        b = yahmm.State(background, name="B")
+        in1 = yahmm.State(zero, name="in1")
+        in2 = yahmm.State(zero, name="in2")
+        in3 = yahmm.State(zero, name="in3")
+        in4 = yahmm.State(zero, name="in4")
+        minus = yahmm.State(neg, name="-")
+        in5 = yahmm.State(zero, name="in5")
+        in6 = yahmm.State(zero, name="in6")
+        in7 = yahmm.State(zero, name="in7")
+        in8 = yahmm.State(zero, name="in8")
+        in9 = yahmm.State(zero, name="in9")
+        in10 = yahmm.State(zero, name="in10")
+        in11 = yahmm.State(zero, name="in11")
+        plus = yahmm.State(pos, name="+")
 
-    def sampleData(self, n):
-        """
-        """
-        self.model.means_ = np.random.randn(len(hidden), len(states))
-        self.model.covars_ = np.array([np.random.random(len(hidden))] * len(states))
-        return self.model.sample(n)
+        self.model = yahmm.Model(name="winter-2013")
 
-    def train(self, data):
-        return self.model.fit(data)
+        self.model.add_state(b)
+        self.model.add_state(in1)
+        self.model.add_state(in2)
+        self.model.add_state(in3)
+        self.model.add_state(in4)
+        self.model.add_state(minus)
+        self.model.add_state(in5)
+        self.model.add_state(in6)
+        self.model.add_state(in7)
+        self.model.add_state(in8)
+        self.model.add_state(in9)
+        self.model.add_state(in10)
+        self.model.add_state(in11)
+        self.model.add_state(plus)
+
+        self.model.add_transition(self.model.start, b, 1)
+
+        self.model.add_transition(b, b, 0.5)
+        self.model.add_transition(b, minus, 0.25)
+        self.model.add_transition(b, plus, 0.25)
+
+        self.model.add_transition(in1, in2, 1)
+        self.model.add_transition(in2, in3, 1)
+        self.model.add_transition(in3, in4, 1)
+        self.model.add_transition(in4, minus, 1)
+
+        self.model.add_transition(minus, b, 0.25)
+        self.model.add_transition(minus, in5, 0.25)
+
+        self.model.add_transition(in5, in6, 1)
+        self.model.add_transition(in6, in7, 1)
+        self.model.add_transition(in7, in8, 1)
+        self.model.add_transition(in8, in9, 1)
+        self.model.add_transition(in9, in10, 1)
+        self.model.add_transition(in10, in11, 1)
+        self.model.add_transition(in11, plus, 1)
+
+        self.model.add_transition(plus, b, 0.50)
+        self.model.add_transition(plus, in1, 0.50)
+
+        self.model.bake()
+
+
+    def draw(self):
+        """
+        Draws the Markov chain of the model.
+        """
+        return self.model.draw(node_size=400, labels={state.name : str(state.name) for state in self.model.states}, font_size=20)
+
+
+    def train(self, sequences, **kwargs):
+        """
+        Train model with given data.
+        """
+        self.model.train(sequences)
+
 
     def predict(self, observations):
-        return self.model.predict(observations)
+        """
+        Predict hidden states from observations.
+        """
+        logp, chain = self.model.maximum_a_posteriori(observations)
+        return [state.name for num, state in chain][1:-1] # strip begin and end states
+        #model.forward(observations)
+        #model.backward(observations)
+        #model.forward_backward(observations)
+        #-model.log_probability(observations)
+        #logp, chain = self.model.maximum_a_posteriori(observations)
+        #return (logp, [(num, name.name) for num, name in chain])
 
 
 def makeGenomeWindows(windowWidth, genome, step=None):
     """
-    Generate windows genome-wide.
+    Generate windows genome-wide for a given genome with width=windowWidth and
+    return dictionary of HTSeq.GenomicInterval objects.
+
+    windowWidth=int.
+    genome=str.
     """
     if step == None:
         step = windowWidth
@@ -80,7 +162,11 @@ def makeGenomeWindows(windowWidth, genome, step=None):
 
 def makeBedWindows(windowWidth, bedtool, step=None):
     """
-    Generate windows within specified regions (e.g. from bed file).
+    Generate windows with width=windowWidth given a pybedtools.BedTool object and
+    return dictionary of HTSeq.GenomicInterval objects.
+
+    windowWidth=int.
+    bedtool=pybedtools.BedTool object.
     """
     if step == None:
         step = windowWidth
@@ -100,8 +186,9 @@ def makeBedWindows(windowWidth, bedtool, step=None):
 
 def bedToolsInterval2GenomicInterval(bedtool , strand=True):
     """
-    Given a pybedtools.BedTool object returns, dictionary of HTSeq.GenomicInterval objects.
-    bedtool - a pybedtools.BedTool with intervals.
+    Given a pybedtools.BedTool object, return dictionary of HTSeq.GenomicInterval objects.
+
+    bedtool=pybedtools.BedTool object.
     """
     intervals = OrderedDict()
     if strand:
@@ -116,8 +203,9 @@ def bedToolsInterval2GenomicInterval(bedtool , strand=True):
 
 def bedToolsInterval2GenomicInterval_noFormat(bedtool):
     """
-    Given a pybedtools.BedTool object returns, dictionary of HTSeq.GenomicInterval objects.
-    bedtool - a pybedtools.BedTool with intervals.
+    Given a pybedtools.BedTool object, return dictionary of HTSeq.GenomicInterval objects.
+
+    bedtool=pybedtools.BedTool object.
     """
     windows = dict()
     for interval in w:
@@ -134,13 +222,15 @@ def bedToolsInterval2GenomicInterval_noFormat(bedtool):
 
 def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, permutate=False):
     """
-    Gets read coverage in bed regions, returns dict with region:count.
-    bam=Bam object from HTSeq.BAM_Reader.
-    intervals=dict with HTSeq.GenomicInterval objects as values.
-    fragmentsize=integer.
-    duplicates=boolean.
-    orientation=boolean.
-    permutate=boolean.
+    Gets pairwise distance between reads in intervals. Returns dict with distance:count.
+    If permutate=True, it will randomize the reads in each interval along it.
+
+    bam=HTSeq.BAM_Reader object.
+    intervals=dict - HTSeq.GenomicInterval objects as values.
+    fragmentsize=int.
+    duplicates=bool.
+    orientation=bool.
+    permutate=bool.
     """
     if orientation:
         distsPos = dict()
@@ -204,13 +294,14 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, p
 
 def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicates=True, strand_specific=False, permutate=False):
     """
-    Gets read coverage in bed regions.
-    Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
-    bam=HTSeq.BAM_Reader object. Must be sorted and indexed with .bai file!
-    intervals=dict with HTSeq.GenomicInterval objects as values.
-    fragmentsize=integer.
-    stranded=boolean.
-    duplicates=boolean.
+    Gets read coverage in intervals. Returns dict of regionName:numpy.array if strand_specific=False,
+    a dict of "+" and "-" keys with regionName:numpy.array.
+
+    bam=HTSeq.BAM_Reader object - Must be sorted and indexed with .bai file!
+    intervals=dict - HTSeq.GenomicInterval objects as values.
+    fragmentsize=int.
+    stranded=bool.
+    duplicates=bool.
     """
     # Loop through TSSs, get coverage, append to dict
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrM', 'chrX']
@@ -280,9 +371,13 @@ def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicate
 
 def extractPattern(dists, distRange, filePrefix):
     """
-    Extracts most abundant frequency from raw data.
-    Returns mirrored pattern.
-    dists=dict of distances:counts.
+    Performs the fast Fourier transform (fft) on a dict of x:y values in several frequencies, and
+    returns the signal of the most abundant (highest signal amplitude) frequency through inverse fft.
+    Produces plots of the process.
+
+    dists=dict - distances:counts, both int.
+    distRange=int - indexes of subset of dists to extract pattern from.
+    filePrefix=str - prefix of files to save plots to (should include paths).
     """
     plt.close()
     plt.figure(0)
@@ -371,6 +466,7 @@ def correlatePatternProfile(pattern, profile, step=1):
     Fits a sliding window of len(pattern) through a profile and calculates the Pearson
     correlation between the pattern and each window.
     Returns array with correlation values of dimensions (((profile - pattern) + 1) / step).
+
     profile=np.array.
     pattern=np.array.
     """
@@ -389,6 +485,12 @@ def correlatePatternProfile(pattern, profile, step=1):
 def exportWigFile(intervals, profiles, offset, filename, trackname):
     """
     Exports a wig file track with scores contained in profile, .
+
+    intervals=iterable with HTSeq.GenomicInterval objects.
+    profiles=iterable with scores to write.
+    offset=int.
+    filename=str.
+    trackname=str.
     """
     with open(filename, 'w') as handle:
         track = 'track type=wiggle_0 name="{0}" description="{0}" visibility=dense autoScale=off\n'.format(trackname)
@@ -403,6 +505,7 @@ def exportWigFile(intervals, profiles, offset, filename, trackname):
 def fitKDE(X, bandwidth):
     """
     Fit gaussian kernel density estimator to array, return
+
     X=numerical iterable.
     bandwidth=kernel bandwidth - float.
     """
@@ -412,6 +515,7 @@ def fitKDE(X, bandwidth):
 def fitRegression(X, degree):
     """
     Fit regression with degree.
+
     X=numerical iterable.
     degree=int.
     """
@@ -421,43 +525,85 @@ def fitRegression(X, degree):
 
 def findPeaks(X, peakWidth):
     """
+    Find peaks of local maxima with width peakWidth and returns them with that width.
+
+    X=dict with iterable with numerical values as dict values.
+    peakWidth=integer.
     """
     peaks = signal.find_peaks_cwt(X, widths=np.array([peakWidth]))
     return {peak : (peak - peakWidth/2, peak + peakWidth/2) for peak in peaks}
 
 
 def binarize(X):
+    """
+    Convert a numerical iterable (X) in a np.array with binary values by finding local maximas (1)
+    and setting the rest to zeros (0). Local maximas are required to be higher than 0.05, and have negative
+    values between them.
+
+    X=iterable with numerical values.
+    """
     maximas = np.r_[True, X[1:] > X[:-1]] & np.r_[X[:-1] > X[1:], True]
-    profile = list()
+    binary = list()
     prev_max = 0
-    for i in range(len(X)):
-        if maximas[i] == True and X[i] > 0 and any(n < 0 for n in X[prev_max : i]): # watch out for namespace pollution with np.any
+    for i in xrange(len(X)):
+        if maximas[i] == True and X[i] > 0.05 and any(n < 0 for n in X[prev_max : i]): # watch out for namespace pollution with np.any
             # if from i to next_max there is no neg, then is max
-            for j in range(i, len(X)):
-                if maximas[j] == True and maximas[j] > 0:
+            for j in xrange(i, len(X)):
+                if maximas[j] == True and X[j] > 0.05:
                     next_max = j
                     break
 
             if not any(n > 0 for n in X[i : next_max]):
-                profile.append(1)
+                binary.append(1)
                 prev_max = i
             else:
-                profile.append(0)
+                binary.append(0)
         else:
-            profile.append(0)
-    return np.array(profile)
+            binary.append(0)
+    return np.array(binary)
 
 
-def score(peak, correlation):
-    return sum(correlation)
+def getConsensus(seq1, seq2):
+    """
+    Given two binary (1, 0) sequences, return one sequence with:
+    1 if only one of them is 1, 0 otherwise.
+
+    seq1,seq2=iterables with binary numerical values (0 or 1).
+    """
+    if not len(seq1) == len(seq2):
+        return None
+    else:
+        binary = list()
+        for i in xrange(len(seq1)):
+            if seq1[i] == np.nan or seq1[i] == np.nan:
+                binary.append(0)
+            else:
+                if seq1[i] == 1:
+                    if seq2[i] == 1:
+                        binary.append(0)
+                    else:
+                        binary.append(1)
+                else:
+                    if seq2[i] == 1:
+                        binary.append(-1)
+                    else:
+                        binary.append(0)
+        return np.array(binary)
 
 
 def exportBedFile(intervals, peaks, offset, filename, trackname, strand="."):
     """
     Exports a bed file track.
+
+    intervals=iterable with HTSeq.GenomicInterval objects.
+    peaks=dict with tuple of start,end positions.
+    offset=int.
+    filename=str.
+    trackname=str.
+    strand=str.
     """
     if len(intervals) != len(peaks):
-        raise
+        raise TypeError("Intervals and peaks sequences have different lengths.")
 
     with open(filename, 'w') as handle:
         track = 'track name="{0}" description="{0}" visibility=pack autoScale=off colorByStrand="255,0,0 0,0,255"\n'.format(trackname)
@@ -480,9 +626,7 @@ def main(args):
     args.plots_dir = os.path.abspath(args.plots_dir)
 
     ### Get sample names
-    names = list()
-    for i in args.bamfiles:
-        names.append(re.sub("\.bam", "", os.path.basename(i)))
+    names = [re.sub("\.bam", "", os.path.basename(name)) for name in args.bamfiles]
 
     ### Loop through all signals, compute distances, plot
     # Get genome-wide windows
@@ -526,11 +670,11 @@ def main(args):
         distsPos, distsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsStranded.pickle"), "r"))
         permutedDistsPos, permutedDistsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".countsPermutedStranded.pickle"), "r"))
 
-        ### extract most abundant periodic pattern from signal
+        ### Extract most abundant periodic pattern from signal
         # for DNase, extract from a different window (70-150bp)
         if index == 0:
             patternPos = extractPattern(distsPos, range(70, 110), os.path.join(args.plots_dir, names[index] + "_posStrand"))
-            patternNeg = extractPattern(distsNeg, range(70, 110), os.path.join(args.plots_dir, names[index] + "_negStrand"))
+            patternNeg = extractPattern(distsNeg, range(70, 110), os.path.join(args.plots_dir, names[index] + "-_negStrand"))
             pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(70, 110), os.path.join(args.plots_dir, names[index] + "_bothStrands"))
 
             permutedPatternPos = extractPattern(permutedDistsPos, range(70, 110), os.path.join(args.plots_dir, names[index] + "_posStrand_permuted"))
@@ -554,7 +698,7 @@ def main(args):
         coverage = coverageInWindows(bam, peaks, args.fragment_size, strand_specific=True)
         pickle.dump(coverage, open(os.path.join(args.results_dir, names[index] + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
         
-        # coverage = pickle.load(open(os.path.join(args.results_dir, names[index] + ".peakCoverageStranded.pickle"), "r"))
+        coverage = pickle.load(open(os.path.join(args.results_dir, names[index] + ".peakCoverageStranded.pickle"), "r"))
 
         # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
 
@@ -563,17 +707,43 @@ def main(args):
         correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
         correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
         pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.results_dir, names[index] + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-        # correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".peakCorrelationStranded.pickle"), "r"))
         
-        # plot correlations for 20 peaks
-        # for i in xrange(len(correlations)):
-        #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
-        #     plt.plot(correlations.values()[i])
+        correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.results_dir, names[index] + ".peakCorrelationStranded.pickle"), "r"))
         
-        # plot concatenation of correlations for some peaks
-        # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
+        ### Binarize data for HMM
+        # binarize data strand-wise
+        pos = dict()
+        for name, cor in correlationsPos.items():
+            b = binarize(cor)
+            pos[name] = b
 
-        ### Export wig files with correlations
+        neg = dict()
+        for name, cor in correlationsNeg.items():
+            b = binarize(cor)
+            neg[name] = b
+
+        # join strands in one sequence
+        binary = {peak : getConsensus(pos[peak], neg[peak]) for peak in pos.keys()}
+
+        # get zeroes for rest of the genome
+
+        ### HMM
+        model = WinterHMM()
+        ## Train
+        model.train(binary.values()[:10000]) # subset data for training
+        # see new probabilities
+        [(s.name, s.distribution) for s in model.model.states]
+        # save model with trained parameters
+        pickle.dump(model, open(os.path.join(args.results_dir, "hmm_trained_with_" + names[index] + ".pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        ## Predict
+        hmmOutput = {peak : model.predict(sequence) for peak, sequence in binary.items()}
+
+        ### TODO:
+        ## Get DARNS from hmmOutput
+        ### Output bed/wig
+
+
+        ## Export wig files with raw correlations 
         exportWigFile(
             [peaks[i] for i in correlationsPos.keys()],
             correlationsPos.values(),
@@ -588,7 +758,56 @@ def main(args):
             os.path.join(args.results_dir, names[index] + ".peakCorrelationNeg.wig"),
             names[index] + " raw absolute correlation - negative strand"
         )
+        ## Export wig files with correlations peaks
 
+        ## Export wig files with DARNS
+
+        ## Export bed files with DARNS
+
+
+        ### Genome arithmetics with DARNS:
+        ## Plot :
+        # distances between DARNS borders
+        # distances between DARNS centers
+        # DARNS length
+
+
+
+        # ### Find correlation peaks (broadish regions around region of high pattern-reads correlation)
+        # # i = 0
+        # corPeaksPos = dict()
+        # for name, cor in correlationsPos.items():
+        #     corPeak = findPeaks(abs(cor), 50)
+        #     corPeaksPos[name] = corPeak
+        #     # plt.subplot(5,2,i)
+        #     # plt.plot(abs(cor))
+        #     # plt.plot(corPeak.keys(), [0.2] * len(corPeak.keys()), 'o')
+        #     # for center, peak in corPeak.items():
+        #     #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
+        #     # i += 1
+
+        # exportBedFile(
+        #     {name : peaks[name] for name, peak in corPeaksPos.items()},
+        #     corPeaksPos,
+        #     len(pattern)/2,
+        #     os.path.join(args.results_dir, names[index] + ".correlationPeaksPos.bed"),
+        #     names[index] + " correlation peaks - positive strand"
+        # )
+
+        # corPeaksNeg = dict()
+        # for name, cor in correlationsNeg.items():
+        #     corPeak = findPeaks(abs(cor), 50)
+        #     corPeaksNeg[name] = corPeak
+
+        # exportBedFile(
+        #     {name : peaks[name] for name, peak in corPeaksNeg.items()},
+        #     corPeaksNeg,
+        #     len(pattern)/2,
+        #     os.path.join(args.results_dir, names[index] + ".correlationPeaksNeg.bed"),
+        #     names[index] + " correlation peaks - negative strand"
+        # )
+
+        ##### ALTERNATIVE WAYS TO HANDLE CORRELATIONS
         # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
         
         # X = abs(correlationsPos.values()[1])
@@ -623,57 +842,15 @@ def main(args):
         # for center, peak in corPeaks.items():
         #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
 
-
-        ### Binarize data for HMM
-        s = dict()
-        for name, cor in correlationsPos.items()[:1]:
-            b = binarize(cor)
-            s[name] = b
-            x = range(len(cor))
-            plt.plot(
-                x, cor, '-',
-                x, b * 0.4, 'o'
-            )
-        ### HMM
-        m = WinterHMM()
-        m.buildModel()
-        m.predict(s.values())
-
         
+        # plot correlations for 20 peaks
+        # for i in xrange(len(correlations)):
+        #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
+        #     plt.plot(correlations.values()[i])
+        
+        # plot concatenation of correlations for some peaks
+        # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
 
-        ### Find correlation peaks (broadish regions around region of high pattern-reads correlation)
-        # i = 0
-        corPeaksPos = dict()
-        for name, cor in correlationsPos.items():
-            corPeak = findPeaks(abs(cor), 50)
-            corPeaksPos[name] = corPeak
-            # plt.subplot(5,2,i)
-            # plt.plot(abs(cor))
-            # plt.plot(corPeak.keys(), [0.2] * len(corPeak.keys()), 'o')
-            # for center, peak in corPeak.items():
-            #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
-            # i += 1
-
-        exportBedFile(
-            {name : peaks[name] for name, peak in corPeaksPos.items()},
-            corPeaksPos,
-            len(pattern)/2,
-            os.path.join(args.results_dir, names[index] + ".correlationPeaksPos.bed"),
-            names[index] + " correlation peaks - positive strand"
-        )
-
-        corPeaksNeg = dict()
-        for name, cor in correlationsNeg.items():
-            corPeak = findPeaks(abs(cor), 50)
-            corPeaksNeg[name] = corPeak
-
-        exportBedFile(
-            {name : peaks[name] for name, peak in corPeaksNeg.items()},
-            corPeaksNeg,
-            len(pattern)/2,
-            os.path.join(args.results_dir, names[index] + ".correlationPeaksNeg.bed"),
-            names[index] + " correlation peaks - negative strand"
-        )
 
 
         # Winter2013 fig.4 - chr19 comparison
@@ -724,19 +901,4 @@ if __name__ == '__main__':
     parser.add_argument('--fragment-size', dest='fragment_size', type=int, default=1)
     parser.add_argument('--genome', dest='genome', type=str, default='hg19')
     args = parser.parse_args()
-    args = parser.parse_args(
-        ["projects/chipmentation/results/periodicity",
-        "projects/chipmentation/results/plots/periodicity",
-        "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
-        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
-        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
-        "data/human/chipmentation/mapped/merged/H3K27me3_K562_10k500k_CM.bam",
-        "data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
-        "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam",
-        "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam",
-        "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
-        "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
-
-        ]
-    )
     main(args)
