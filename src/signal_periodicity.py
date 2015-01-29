@@ -38,8 +38,8 @@ class WinterHMM(object):
         })
         neg = yahmm.DiscreteDistribution({
             1: 0.1,
-            0: 0.1,
-            -1 : 0.8
+            0: 0.2,
+            -1 : 0.7
         })
         zero = yahmm.DiscreteDistribution({
             1: 0,
@@ -48,12 +48,13 @@ class WinterHMM(object):
         })
 
         # Create states
-        b = yahmm.State(background, name="B")
+        b = yahmm.State(background, name="B")        
+        minus = yahmm.State(neg, name="-")
         in1 = yahmm.State(zero, name="in1")
         in2 = yahmm.State(zero, name="in2")
         in3 = yahmm.State(zero, name="in3")
+        plus = yahmm.State(pos, name="+")
         in4 = yahmm.State(zero, name="in4")
-        minus = yahmm.State(neg, name="-")
         in5 = yahmm.State(zero, name="in5")
         in6 = yahmm.State(zero, name="in6")
         in7 = yahmm.State(zero, name="in7")
@@ -61,7 +62,6 @@ class WinterHMM(object):
         in9 = yahmm.State(zero, name="in9")
         in10 = yahmm.State(zero, name="in10")
         in11 = yahmm.State(zero, name="in11")
-        plus = yahmm.State(pos, name="+")
 
         self.model = yahmm.Model(name="winter-2013")
 
@@ -80,30 +80,38 @@ class WinterHMM(object):
         self.model.add_state(in11)
         self.model.add_state(plus)
 
-        self.model.add_transition(self.model.start, b, 1)
+        self.model.add_transition(self.model.start, b, 0.5)     # start in background
+        self.model.add_transition(self.model.start, minus, 0.25)# start in minus
+        self.model.add_transition(self.model.start, plus, 0.25) # start in plus
 
-        self.model.add_transition(b, b, 0.5)
-        self.model.add_transition(b, minus, 0.25)
-        self.model.add_transition(b, plus, 0.25)
+        self.model.add_transition(b, b, 0.5)                    # stay in background
+        self.model.add_transition(b, minus, 0.25)               # enter in minus
+        self.model.add_transition(b, plus, 0.25)                # enter in plus
 
-        self.model.add_transition(in1, in2, 1)
-        self.model.add_transition(in2, in3, 1)
-        self.model.add_transition(in3, in4, 1)
-        self.model.add_transition(in4, minus, 1)
+        self.model.add_transition(minus, b, 0.25)               # can exit from plus
+        self.model.add_transition(minus, in1, 0.25)
+        self.model.add_transition(minus, plus, 0.25)
 
-        self.model.add_transition(minus, b, 0.25)
-        self.model.add_transition(minus, in5, 0.25)
+        self.model.add_transition(in1, in2, 0.5)                # states 1-3 can go directly to plus or follow a string 1 to 4
+        self.model.add_transition(in1, plus, 0.5)       
+        self.model.add_transition(in2, in3, 0.5)
+        self.model.add_transition(in2, plus, 0.5)
+        self.model.add_transition(in3, in4, 0.5)
+        self.model.add_transition(in3, plus, 0.5)
 
+        self.model.add_transition(plus, b, 0.50)                # can exit from plus
+        self.model.add_transition(plus, in4, 0.50)
+        self.model.add_transition(in4, in5, 1)                  # string of 4 to 8 at least
         self.model.add_transition(in5, in6, 1)
         self.model.add_transition(in6, in7, 1)
         self.model.add_transition(in7, in8, 1)
-        self.model.add_transition(in8, in9, 1)
-        self.model.add_transition(in9, in10, 1)
-        self.model.add_transition(in10, in11, 1)
-        self.model.add_transition(in11, plus, 1)
-
-        self.model.add_transition(plus, b, 0.50)
-        self.model.add_transition(plus, in1, 0.50)
+        self.model.add_transition(in8, in9, 0.5)                # states 8-11 can go directly to minus
+        self.model.add_transition(in8, minus, 0.5)
+        self.model.add_transition(in9, in10, 0.5)
+        self.model.add_transition(in9, minus, 0.5)
+        self.model.add_transition(in10, in11, 0.5)
+        self.model.add_transition(in10, minus, 0.5)
+        self.model.add_transition(in11, minus, 1)
 
         self.model.bake()
 
@@ -115,7 +123,7 @@ class WinterHMM(object):
         return self.model.draw(node_size=400, labels={state.name : str(state.name) for state in self.model.states}, font_size=20)
 
 
-    def train(self, sequences, **kwargs):
+    def train(self, sequences):
         """
         Train model with given data.
         """
@@ -134,6 +142,19 @@ class WinterHMM(object):
         #-model.log_probability(observations)
         #logp, chain = self.model.maximum_a_posteriori(observations)
         #return (logp, [(num, name.name) for num, name in chain])
+
+
+    def retrieveProbabilities(self, observations):
+        """
+        Retrieve the posterior probabilities of being in a "nucleossome" state for a sequence of observations.
+        """
+        trans, ems = self.model.forward_backward(observations)
+        ems = np.exp(ems)
+        self.probs = ems/np.sum(ems, axis=1)[:, np.newaxis] # probs of all states
+        background_state = 0
+        prob_nucleossome = 1 - self.probs[ : , background_state] # prob of all states but background
+        return prob_nucleossome
+        # raise NotImplemented("Function not implemented yet.")
 
 
 def makeGenomeWindows(windowWidth, genome, step=None):
@@ -482,26 +503,6 @@ def correlatePatternProfile(pattern, profile, step=1):
         return np.array(R)
 
 
-def exportWigFile(intervals, profiles, offset, filename, trackname):
-    """
-    Exports a wig file track with scores contained in profile, .
-
-    intervals=iterable with HTSeq.GenomicInterval objects.
-    profiles=iterable with scores to write.
-    offset=int.
-    filename=str.
-    trackname=str.
-    """
-    with open(filename, 'w') as handle:
-        track = 'track type=wiggle_0 name="{0}" description="{0}" visibility=dense autoScale=off\n'.format(trackname)
-        handle.write(track)
-        for i in xrange(len(profiles)):
-            header = "fixedStep  chrom={0}  start={1}  step=1\n".format(intervals[i].chrom, intervals[i].start + offset)
-            handle.write(header)    
-            for j in xrange(len(profiles[i])):
-                handle.write(str(abs(profiles[i][j])) + "\n")
-
-
 def fitKDE(X, bandwidth):
     """
     Fit gaussian kernel density estimator to array, return
@@ -589,6 +590,106 @@ def getConsensus(seq1, seq2):
                     else:
                         binary.append(0)
         return np.array(binary)
+
+
+def getDARNS(intervals, hmmOutput):
+    """
+    Returns list of HTSeq.GenomicInterval objects for all DARNS in hmmOutput (a dict of name:sequence).
+    DARNS are stretches of sequences which belong to the "nucleosome" states (see WinterHMM object definition).
+
+    DARNS cannot:
+        - start at the last element of the sequence.
+        - be of length <= 1
+
+    intervals=dict - name:HTSeq.GenomicInterval objects.
+    hmmOutput=dict - name:iterable with sequence from HMM.
+    """
+    outside = ["B"]
+    DARNS = list()
+    for name, sequence in hmmOutput.items():
+        DARN = False
+        for i in xrange(len(sequence)):
+            if not DARN and sequence[i] not in outside and i != len(sequence):
+                DARN = True
+                DARN_start = i
+            if DARN and sequence[i] in outside and i - DARN_start > 1:
+                DARN = False
+                DARN_end = i
+                DARNS.append([
+                    intervals[name].chrom,
+                    intervals[name].start + DARN_start,
+                    intervals[name].start + DARN_end,
+                    name + "_DARN{0}".format(i)
+                ])
+    return DARNS
+
+
+
+def getDARNSlimits(sequence):
+    """
+    sequence=iterable with sequence from HMM.
+    """
+    outside = ["B"]
+    DARN = False
+    starts = list()
+    ends = list()
+    for i in xrange(len(sequence)):
+        if not DARN and sequence[i] not in outside:
+            DARN = True
+            starts.append(i)
+        if DARN and sequence[i] in outside:
+            DARN = False
+            ends.append(i)
+    return zip(starts, ends)
+
+
+def measureDARNS(DARNS):
+    """
+    Computes distributions of DARNS attributes: width, interdistance, distance between midpoints.
+
+    DARNS=iterable of list with [chrom, start, end, name] of DARN.
+    """
+    chrom, start, end, name = range(4)
+    width = lambda x: x[end] - x[start]
+    widths = Counter()
+    distances = Counter()
+    midDistances = Counter()
+
+    for d1, d2 in itertools.permutations(DARNS, 2):
+        if d1[chrom] == d2[chrom]:
+            # widths
+            widths[width(d1)] += 1
+            widths[width(d2)] += 1
+            
+            # distance end-to-end
+            if d1[end] <= d2[start]:
+                distances[abs(d2[start] - d1[end])] += 1
+            else:
+                distances[d1[start] - d2[end]] += 1
+
+            # distance midpoint-midpoint
+            midDistances[abs((d1[end] - d1[start]) - (d2[end] - d2[start]))] += 1
+    return (widths, distances, midDistances)
+
+
+def exportWigFile(intervals, profiles, offset, filename, trackname):
+    """
+    Exports a wig file track with scores contained in profile, .
+
+    intervals=iterable with HTSeq.GenomicInterval objects.
+    profiles=iterable with scores to write.
+    offset=int.
+    filename=str.
+    trackname=str.
+    """
+    with open(filename, 'w') as handle:
+        track = 'track type=wiggle_0 name="{0}" description="{0}" visibility=dense autoScale=off\n'.format(trackname)
+        handle.write(track)
+        for i in xrange(len(profiles)):
+            header = "fixedStep  chrom={0}  start={1}  step=1\n".format(intervals[i].chrom, intervals[i].start + offset)
+            handle.write(header)    
+            for j in xrange(len(profiles[i])):
+                handle.write(str(abs(profiles[i][j])) + "\n")
 
 
 def exportBedFile(intervals, peaks, offset, filename, trackname, strand="."):
@@ -730,17 +831,62 @@ def main(args):
         ### HMM
         model = WinterHMM()
         ## Train
-        model.train(binary.values()[:10000]) # subset data for training
+        model.train(binary.values()[:100]) # subset data for training
         # see new probabilities
         [(s.name, s.distribution) for s in model.model.states]
         # save model with trained parameters
         pickle.dump(model, open(os.path.join(args.results_dir, "hmm_trained_with_" + names[index] + ".pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        model = pickle.load(open(os.path.join(args.results_dir, "hmm_trained_with_" + names[index] + ".pickle"), "r"))
         ## Predict
         hmmOutput = {peak : model.predict(sequence) for peak, sequence in binary.items()}
 
-        ### TODO:
         ## Get DARNS from hmmOutput
+        DARNS = getDARNS(peaks, hmmOutput)
+
+        ## Plot attributes
+        widths, distances, midDistances = measureDARNS(DARNS)
+
+        plt.plot(widths.keys(), widths.values(), 'o')
+        plt.plot(distances.keys(), distances.values(), 'o')
+        plt.plot(midDistances.keys(), midDistances.values(), 'o')
+        sns.violinplot(widths)
+
+        ## Get scores from DARNS
+        probs = {peak : model.retrieveProbabilities(sequence) for peak, sequence in binary.items()}
+
+        # plot predicted darns and post probs
+        i = 1
+        sequence = hmmOutput.values()[i]
+
+        limits = getDARNSlimits(sequence)
+        probs = model.retrieveProbabilities(binary.items()[i][1])
+
+        from matplotlib.patches import Rectangle
+        colors = sns.color_palette('deep', n_colors=6, desat=0.5)
+        sns.set_context(rc={"figure.figsize": (14, 6)})
+        sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
+        sns.plt.axhline(y=0.5, c=colors[1], alpha=0.7)
+        sns.plt.xlim([1, len(ada1d_seq)+1])
+        sns.plt.ylim([0,1.2])
+        sns.plt.ylabel(r'posterior probs, $\gamma_k$')
+        sns.plt.xlabel(r'$k$')
+        axis = sns.plt.gca()
+
+        # Plot viterbi predicted TMDs
+        for start, end in limits:
+            axis.add_patch(Rectangle((start+1, 1.075), end-start+1, 0.05, 
+                                     facecolor=colors[0], alpha=0.7))
+            axis.text(480,1.13, 'viterbi')
+
+        # Get indices of states
+        indices = { state.name: i for i, state in enumerate( model.model.states ) }
+
+        sns.plt.plot(range(1, len(sequence)+1), probs, 
+                     c=colors[2], alpha=0.7)
+
         ### Output bed/wig
+
+
 
 
         ## Export wig files with raw correlations 
@@ -901,4 +1047,19 @@ if __name__ == '__main__':
     parser.add_argument('--fragment-size', dest='fragment_size', type=int, default=1)
     parser.add_argument('--genome', dest='genome', type=str, default='hg19')
     args = parser.parse_args()
+    args = parser.parse_args(
+        ["projects/chipmentation/results/periodicity",
+        "projects/chipmentation/results/plots/periodicity",
+        "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
+        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
+        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
+        "data/human/chipmentation/mapped/merged/H3K27me3_K562_10k500k_CM.bam",
+        "data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
+        "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam",
+        "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam",
+        "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
+        "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
+
+        ]
+    )
     main(args)
