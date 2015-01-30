@@ -20,7 +20,196 @@ from scipy import signal
 
 import yahmm
 
+import textwrap
+import subprocess
+
+
 np.set_printoptions(linewidth=200)
+
+
+class DivideAndSlurm(object):
+    """
+    DivideAndSlurm is a class to handle a map-reduce style submission of jobs to a Slurm cluster.
+    Initialize the class with the data to be split, processed in parallel and returned.
+
+    """
+    def __init__(self, data, pickleDir="."):
+        super(DivideAndSlurm, self).__init__()
+
+        # check data is iterable
+        if type(data) == dict:
+            data = data.items()
+        self._data = data
+
+        self.name = str(time.time())
+
+        self.pickleDir = os.path.abspath(pickleDir)
+
+        self.is_ready = self._is_ready()
+
+    def __repr__(self):
+        return "DivideAndSlurm object " + self.name
+
+    def __str__(self):
+        return "DivideAndSlurm object " + self.name
+
+
+    def _chunks(data, n):
+        """ Yield successive n-sized chunks from data.
+        """
+        for i in xrange(0, len(data), n):
+            yield data[i:i+n]
+
+
+    def _slurmHeader(self, jobName, output, queue="shortq", ntasks=1, time="10:00:00", cpusPerTask=16, memPerCpu=2000, nodes=1, userMail=""):
+        command = """            #!/bin/bash
+            #SBATCH --partition={0}
+            #SBATCH --ntasks={1}
+            #SBATCH --time={2}
+
+            #SBATCH --cpus-per-task={3}
+            #SBATCH --mem-per-cpu={4}
+            #SBATCH --nodes={5}
+
+            #SBATCH --job-name={6}
+            #SBATCH --output={7}
+
+            #SBATCH --mail-type=end
+            #SBATCH --mail-user={8}
+
+            # Start running the job
+            hostname
+            date
+
+        """.format(queue, ntasks, time, cpusPerTask, memPerCpu, nodes, jobName, output, userMail)
+
+        return command
+
+
+    def _slurmFooter(self):
+        command = """
+
+            # Job end
+            date
+
+        """
+
+        return command
+
+
+    def _slurmSubmitJob(self, jobFile):
+        """
+        Submit command to shell.
+        """
+        command = "sbatch %s" % jobFile
+        p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
+        return p.communicate()
+
+
+    def split_data(self, fractions):
+        """
+        Split self._data in fractions and create pickle objects with them.
+        """
+        chunkify = lambda lst,n: [lst[i::n] for i in xrange(n)]
+
+        groups = chunkify(self._data, len(self._data) / fractions)
+        ids = [self.name + "_" + str(i) for i in xrange(len(groups))]
+        files = [self.pickleDir + "/" + ID for ID in ids]
+        
+        # keep track of groups in self
+        self.groups = zip(ids, groups, files)
+
+        # serialize groups
+        for i in xrange(len(self.groups)):
+            pickle.dump(self.groups[i][1],                  # actual group of objects
+                open(self.groups[i][2] + ".pickle", 'wb'),  # group pickle file
+                protocol=pickle.HIGHEST_PROTOCOL
+            )
+
+
+    def count_distances(self, bam_file, strand_wise=True, duplicates=True, permute=True, fragment_size=1):
+        """
+        Add task to be performed with data.
+        """
+        self.jobs = list()
+        log = self.name + "_count_distances.log"
+
+        for i in xrange(len(self.groups)):
+            jobFile = self.groups[i][2] + "_count_distances.sh"
+            input_pickle = self.groups[i][2] + ".pickle"
+            output_pickle = self.groups[i][2] + ".output.pickle"
+
+            # assemble command for job
+            task = "python count_distances_parallel.py {0} {1} {2} \\".format(input_pickle, output_pickle, bam_file)
+
+            if strand_wise:
+                task += "--strand-wise \\"
+            if duplicates:
+                task += "--duplicates \\"
+            if duplicates:
+                task += "--permute \\"
+            if fragment_size:
+                task += "--fragment-size "
+
+            # assemble job file
+            job = self._slurmHeader(self.groups[i][0], log) + task + self._slurmFooter()
+
+            # keep track of jobs and their files
+            self.jobs.append((job, jobFile))
+
+            # write job file to disk
+            with open(jobFile, 'w') as handle:
+                handle.write(textwrap.dedent(job))
+
+
+    def submit(self):
+        """
+        Submit slurm jobs with each fraction of data.
+        """
+        jobIDs = list()
+        for job, jobFile in self.jobs:
+            output, err = _slurmSubmitJob(jobFile)
+            jobIDs.append(re.sub("\D", "", output))
+        self.submission_time = time.time()
+        self.jobIDs = jobIDs
+
+
+    def _is_ready(self):
+        """
+        Check if all submitted jobs have been completed.
+        """
+        # check if all ids are missing from squeue
+        for i in xrange(len(self.jobIDs)):
+            p = subprocess.Popen("squeue | grep {0}".format(jobIDs[i]), stdout=subprocess.PIPE, shell=True)
+            output, err = p.communicate()
+            if output.strip() != "":
+                return False
+
+        # check if all output pickles are produced
+        outputPickles = [self.groups[i][2] + ".output.pickle" for i in xrange(len(self.groups))]
+        for i in outputPickles:
+            if not os.path.isfile(i):
+                return False
+
+        # if both are yes, save output already
+        self.output = self._collect_distances()
+        return True
+
+
+    def _collect_distances(self):
+        """
+        If self.is_ready(), return joined data.
+        """
+        if self.is_ready:
+            # load all pickles into list
+            outputs = [pickle.load(open(self.groups[i][2] + ".output.pickle", 'r')) for i in xrange(len(self.groups))]
+            # if all are counters, sum them
+            if all([type(outputs[i]) == collections.Counter for i in range(len(outputs))]):
+                return sum(outputs)
+        else:
+            return None
+
+
 
 class WinterHMM(object):
     """
@@ -86,9 +275,9 @@ class WinterHMM(object):
         self.model.add_transition(self.model.start, minus, 0.25)# start in minus
         self.model.add_transition(self.model.start, plus, 0.25) # start in plus
 
-        self.model.add_transition(b, b, 0.5)                    # stay in background
-        self.model.add_transition(b, minus, 0.25)               # enter in minus
-        self.model.add_transition(b, plus, 0.25)                # enter in plus
+        self.model.add_transition(b, b, 0.8)                    # stay in background
+        self.model.add_transition(b, minus, 0.1)               # enter in minus
+        self.model.add_transition(b, plus, 0.1)                # enter in plus
 
         self.model.add_transition(minus, b, 0.25)               # can exit from plus
         self.model.add_transition(minus, in1, 0.25)
@@ -230,26 +419,7 @@ def bedToolsInterval2GenomicInterval(bedtool , strand=True, name=True):
     return intervals
 
 
-def bedToolsInterval2GenomicInterval_noFormat(bedtool):
-    """
-    Given a pybedtools.BedTool object, return dictionary of HTSeq.GenomicInterval objects.
-
-    bedtool=pybedtools.BedTool object.
-    """
-    windows = dict()
-    for interval in windows:
-        feature = HTSeq.GenomicInterval(
-            interval.chrom,
-            interval.start,
-            interval.end
-        )
-        name = string.join(interval.fields, sep="_")
-        windows[name] = feature
-
-    return windows
-
-
-def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, permutate=False):
+def distances(bam, intervals, fragmentsize, duplicates=True, strand_wise=True, permutate=False):
     """
     Gets pairwise distance between reads in intervals. Returns dict with distance:count.
     If permutate=True, it will randomize the reads in each interval along it.
@@ -258,14 +428,10 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, p
     intervals=dict - HTSeq.GenomicInterval objects as values.
     fragmentsize=int.
     duplicates=bool.
-    orientation=bool.
+    strand_wise=bool.
     permutate=bool.
     """
-    if orientation:
-        distsPos = dict()
-        distsNeg = dict()
-    else:
-        dists = dict()
+    dists = Counter()
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
     
     #for name, feature in intervals.iteritems():
@@ -288,7 +454,7 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, p
             if not duplicates and (aln1.pcr_or_optical_duplicate or aln2.pcr_or_optical_duplicate):
                 continue
             # check if in same strand
-            if not orientation and aln1.iv.strand != aln2.iv.strand:
+            if not strand_wise and aln1.iv.strand != aln2.iv.strand:
                 continue
             # adjust fragment to size
             aln1.iv.length = fragmentsize
@@ -297,33 +463,19 @@ def distances(bam, intervals, fragmentsize, duplicates=True, orientation=True, p
             # get position relative
             dist = abs(aln1.iv.start_d - aln2.iv.start_d)
             # add +1 to dict
-            if orientation:
+            if strand_wise:
                 if aln1.iv.strand == "+":
-                    if dist not in distsPos.keys():
-                        distsPos[dist] = 1
-                    else:
-                        distsPos[dist] += 1
-
-                if aln1.iv.strand == "-":
-                    if dist not in distsNeg.keys():
-                        distsNeg[dist] = 1
-                    else:
-                        distsNeg[dist] += 1
-            else:
-                if dist not in dists.keys():
-                    dists[dist] = 1
-                else:
                     dists[dist] += 1
-    if orientation:
-        return (distsPos, distsNeg)
-    else:
-        #plt.plot(dists.keys(), dists.values(), 'o')
-        return dists
+                if aln1.iv.strand == "-":
+                    dists[-dist] += 1
+            else:
+                dists[dist] += 1
+    return dists
 
 
-def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicates=True, strand_specific=False, permutate=False):
+def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicates=True, strand_wise=False, permutate=False):
     """
-    Gets read coverage in intervals. Returns dict of regionName:numpy.array if strand_specific=False,
+    Gets read coverage in intervals. Returns dict of regionName:numpy.array if strand_wise=False,
     a dict of "+" and "-" keys with regionName:numpy.array.
 
     bam=HTSeq.BAM_Reader object - Must be sorted and indexed with .bai file!
@@ -341,7 +493,7 @@ def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicate
         if i % 1000 == 0:
             print(n - i)
         # Initialize empty array for this feature
-        if not strand_specific:
+        if not strand_wise:
             profile = np.zeros(feature.length, dtype=np.float64)
         else:
             profile = np.zeros((2, feature.length), dtype=np.float64)
@@ -384,7 +536,7 @@ def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicate
                 continue
 
             # add +1 to all positions overlapped by read within window
-            if not strand_specific:
+            if not strand_wise:
                 profile[start_in_window : end_in_window] += 1
             else:
                 if aln.iv.strand == "+":
@@ -774,11 +926,11 @@ def main(args):
             # Load bam
             bam = HTSeq.BAM_Reader(os.path.abspath(sampleFile))
             ### Get dict of distances between reads genome-wide
-            distsPos, distsNeg = distances(bam, region, args.fragment_size, args.duplicates, orientation=True)
+            distsPos, distsNeg = distances(bam, region, args.fragment_size, args.duplicates, strand_wise=True)
             pickle.dump((distsPos, distsNeg), open(os.path.join(exportName + ".countsStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
             ### Get dict of distances between permutated reads genome-wide
-            permutedDistsPos, permutedDistsNeg = distances(bam, region, args.fragment_size, args.duplicates, orientation=True, permutate=True)
+            permutedDistsPos, permutedDistsNeg = distances(bam, region, args.fragment_size, args.duplicates, strand_wise=True, permutate=True)
             pickle.dump((permutedDistsPos, permutedDistsNeg), open(os.path.join(exportName + ".countsPermutedStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     ### For each signal extract most abundant periodic signal, correlate it with read coverage on each strand
@@ -812,7 +964,7 @@ def main(args):
         peaks = bedToolsInterval2GenomicInterval(peaks)
         # peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
         
-        coverage = coverageInWindows(bam, peaks, args.fragment_size, strand_specific=True)
+        coverage = coverageInWindows(bam, peaks, args.fragment_size, strand_wise=True)
         pickle.dump(coverage, open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
         
         coverage = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "r"))
