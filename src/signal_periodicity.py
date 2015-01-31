@@ -23,6 +23,7 @@ import yahmm
 import textwrap
 import subprocess
 
+import time
 
 np.set_printoptions(linewidth=200)
 
@@ -33,7 +34,7 @@ class DivideAndSlurm(object):
     Initialize the class with the data to be split, processed in parallel and returned.
 
     """
-    def __init__(self, data, pickleDir="."):
+    def __init__(self, data, tmpDir="/fhgfs/scratch/users/arendeiro/", queue="shortq", userMail=""):
         super(DivideAndSlurm, self).__init__()
 
         # check data is iterable
@@ -43,9 +44,10 @@ class DivideAndSlurm(object):
 
         self.name = str(time.time())
 
-        self.pickleDir = os.path.abspath(pickleDir)
+        self.tmpDir = os.path.abspath(tmpDir)
 
-        self.is_ready = self._is_ready()
+        self.queue = queue
+        self.userMail = userMail #arendeiro@cemm.oeaw.ac.at
 
     def __repr__(self):
         return "DivideAndSlurm object " + self.name
@@ -53,13 +55,11 @@ class DivideAndSlurm(object):
     def __str__(self):
         return "DivideAndSlurm object " + self.name
 
-
     def _chunks(data, n):
         """ Yield successive n-sized chunks from data.
         """
         for i in xrange(0, len(data), n):
             yield data[i:i+n]
-
 
     def _slurmHeader(self, jobName, output, queue="shortq", ntasks=1, time="10:00:00", cpusPerTask=16, memPerCpu=2000, nodes=1, userMail=""):
         command = """            #!/bin/bash
@@ -77,6 +77,9 @@ class DivideAndSlurm(object):
             #SBATCH --mail-type=end
             #SBATCH --mail-user={8}
 
+            # Activate virtual environment
+            source /home/arendeiro/venv/bin/activate
+
             # Start running the job
             hostname
             date
@@ -85,9 +88,12 @@ class DivideAndSlurm(object):
 
         return command
 
-
     def _slurmFooter(self):
         command = """
+
+
+            # Deactivate virtual environment
+            deactivate
 
             # Job end
             date
@@ -95,7 +101,6 @@ class DivideAndSlurm(object):
         """
 
         return command
-
 
     def _slurmSubmitJob(self, jobFile):
         """
@@ -105,16 +110,15 @@ class DivideAndSlurm(object):
         p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
         return p.communicate()
 
-
     def split_data(self, fractions):
         """
         Split self._data in fractions and create pickle objects with them.
         """
         chunkify = lambda lst,n: [lst[i::n] for i in xrange(n)]
 
-        groups = chunkify(self._data, len(self._data) / fractions)
+        groups = chunkify(self._data, fractions)
         ids = [self.name + "_" + str(i) for i in xrange(len(groups))]
-        files = [self.pickleDir + "/" + ID for ID in ids]
+        files = [os.path.join(self.tmpDir, ID) for ID in ids]
         
         # keep track of groups in self
         self.groups = zip(ids, groups, files)
@@ -125,7 +129,6 @@ class DivideAndSlurm(object):
                 open(self.groups[i][2] + ".pickle", 'wb'),  # group pickle file
                 protocol=pickle.HIGHEST_PROTOCOL
             )
-
 
     def count_distances(self, bam_file, strand_wise=True, duplicates=True, permute=True, fragment_size=1):
         """
@@ -140,19 +143,18 @@ class DivideAndSlurm(object):
             output_pickle = self.groups[i][2] + ".output.pickle"
 
             # assemble command for job
-            task = "python count_distances_parallel.py {0} {1} {2} \\".format(input_pickle, output_pickle, bam_file)
+            task = "    python count_distances_parallel.py {0} {1} {2} ".format(input_pickle, output_pickle, bam_file)
 
             if strand_wise:
-                task += "--strand-wise \\"
+                task += "--strand-wise "
             if duplicates:
-                task += "--duplicates \\"
+                task += "--duplicates "
             if duplicates:
-                task += "--permute \\"
-            if fragment_size:
-                task += "--fragment-size "
+                task += "--permute "
+            task += "--fragment-size {0}".format(fragment_size)
 
             # assemble job file
-            job = self._slurmHeader(self.groups[i][0], log) + task + self._slurmFooter()
+            job = self._slurmHeader(self.groups[i][0], log, queue=self.queue, userMail=self.userMail) + task + self._slurmFooter()
 
             # keep track of jobs and their files
             self.jobs.append((job, jobFile))
@@ -161,26 +163,37 @@ class DivideAndSlurm(object):
             with open(jobFile, 'w') as handle:
                 handle.write(textwrap.dedent(job))
 
-
     def submit(self):
         """
         Submit slurm jobs with each fraction of data.
         """
         jobIDs = list()
         for job, jobFile in self.jobs:
-            output, err = _slurmSubmitJob(jobFile)
+            output, err = self._slurmSubmitJob(jobFile)
             jobIDs.append(re.sub("\D", "", output))
         self.submission_time = time.time()
         self.jobIDs = jobIDs
 
+    def cancel_jobs(self):
+        """
+        Submit slurm jobs with each fraction of data.
+        """
+        if not hasattr(self, 'jobIDs'):
+            return False
+        for jobID in self.jobIDs:
+            command = "scancel %s" % jobID
+            p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
 
-    def _is_ready(self):
+    def is_ready(self):
         """
         Check if all submitted jobs have been completed.
         """
+        if not hasattr(self, 'jobIDs'):
+            return False
+
         # check if all ids are missing from squeue
         for i in xrange(len(self.jobIDs)):
-            p = subprocess.Popen("squeue | grep {0}".format(jobIDs[i]), stdout=subprocess.PIPE, shell=True)
+            p = subprocess.Popen("squeue | grep {0}".format(self.jobIDs[i]), stdout=subprocess.PIPE, shell=True)
             output, err = p.communicate()
             if output.strip() != "":
                 return False
@@ -195,7 +208,6 @@ class DivideAndSlurm(object):
         self.output = self._collect_distances()
         return True
 
-
     def _collect_distances(self):
         """
         If self.is_ready(), return joined data.
@@ -203,11 +215,27 @@ class DivideAndSlurm(object):
         if self.is_ready:
             # load all pickles into list
             outputs = [pickle.load(open(self.groups[i][2] + ".output.pickle", 'r')) for i in xrange(len(self.groups))]
-            # if all are counters, sum them
-            if all([type(outputs[i]) == collections.Counter for i in range(len(outputs))]):
-                return sum(outputs)
+            # if all are counters, and their elements are counters, sum them
+            if all([type(outputs[i][j]) == collections.Counter for j in xrange(len(outputs[i])) for i in range(len(outputs))]):
+                output = reduce(lambda x, y: x + y, reduce(lambda x, y: x + y, outputs, []), Counter()) # reduce twice
+                if type(output) == collections.Counter:
+                    self.output = output                # store output in object
+                    self._rm_temps()                    # delete tmp files   
+                    return self.output
         else:
             return None
+
+    def _rm_temps(self):
+        """
+        If self.is_ready(), return joined data.
+        """
+        if hasattr(self, 'output'):
+            to_rm = list()
+            [to_rm.append(self.groups[i][2] + ".pickle") for i in xrange(len(self.groups))]
+            [to_rm.append(self.groups[i][2] + "_count_distances.sh") for i in xrange(len(self.groups))]
+            [to_rm.append(self.groups[i][2] + ".output.pickle") for i in xrange(len(self.groups))]
+            for fl in to_rm:
+                p = subprocess.Popen("rm {0}".format(fl), stdout=subprocess.PIPE, shell=True)
 
 
 
@@ -917,21 +945,25 @@ def main(args):
         "H3K27me3_H3K4me3" : H3K27me3_H3K4me3
     }
     pickle.dump(regions, open(os.path.join(args.results_dir, "genomic_regions.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    
     regions = pickle.load(open(os.path.join(args.results_dir, "genomic_regions.pickle"), "r"))
+    samples = {re.sub("\.bam", "", os.path.basename(sampleFile)) : os.path.abspath(sampleFile) for sampleFile in args.bamfiles}
+for regionName, region in regions.items()[1:3]:
+    for sampleName, sampleFile in samples.items():
+        print("Sample " + sampleName, regionName)
+        exportName = args.results_dir, sampleName + "_" + regionName
+        
+        # New Slurm submission
+        slurm = DivideAndSlurm(region)
+        slurm.split_data(20) # split in 20 parts
+        slurm.count_distances(os.path.abspath(sampleFile))
+        slurm.submit()
+        slurm.is_ready()
+        dists = slurm.output
+        pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-    for regionName, region in regions.items():
-        for sampleName, sampleFile in samples.items():
-            print("Sample " + sampleName)
-            exportName = args.results_dir, sampleName + "_" + regionName
-            # Load bam
-            bam = HTSeq.BAM_Reader(os.path.abspath(sampleFile))
-            ### Get dict of distances between reads genome-wide
-            distsPos, distsNeg = distances(bam, region, args.fragment_size, args.duplicates, strand_wise=True)
-            pickle.dump((distsPos, distsNeg), open(os.path.join(exportName + ".countsStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-            ### Get dict of distances between permutated reads genome-wide
-            permutedDistsPos, permutedDistsNeg = distances(bam, region, args.fragment_size, args.duplicates, strand_wise=True, permutate=True)
-            pickle.dump((permutedDistsPos, permutedDistsNeg), open(os.path.join(exportName + ".countsPermutedStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
 
     ### For each signal extract most abundant periodic signal, correlate it with read coverage on each strand
     # generate windows genome-wide (or under 3K4 peaks)
@@ -1219,13 +1251,13 @@ if __name__ == '__main__':
         "projects/chipmentation/results/plots/periodicity",
         "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
         "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
-        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
+        #"data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
         "data/human/chipmentation/mapped/merged/H3K27me3_K562_10k500k_CM.bam",
-        "data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
+        #"data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
         "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam",
         "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam",
-        "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
-        "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
+        #"/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
+        #"/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
 
         ]
     )

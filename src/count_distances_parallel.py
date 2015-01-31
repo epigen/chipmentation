@@ -1,20 +1,23 @@
 #!/usr/env python
 
 from argparse import ArgumentParser
+import os
 import HTSeq
 import cPickle as pickle
 import multiprocessing
 import parmap
+from collections import Counter
+import itertools
 
 
-def distances(feature, bam, fragmentsize, duplicates=True, strand_wise=True, permutate=False):
+def distances(feature, bam, fragment_size, duplicates=True, strand_wise=True, permutate=False):
     """
     Gets pairwise distance between reads in a single interval. Returns dict with distance:count.
     If permutate=True, it will randomize the reads in each interval along it.
 
     feature=HTSeq.GenomicInterval object.
     bam=HTSeq.BAM_Reader object.
-    fragmentsize=int.
+    fragment_size=int.
     duplicates=bool.
     strand_wise=bool.
     permutate=bool.
@@ -22,8 +25,9 @@ def distances(feature, bam, fragmentsize, duplicates=True, strand_wise=True, per
     dists = Counter()
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
     
-    if feature.chrom not in chroms:
-        continue
+    # FIXME:
+    #if feature.chrom not in chroms:
+    #    continue
     # Fetch all alignments in feature window
     alnsInWindow = bam[feature]
     if permutate:
@@ -43,8 +47,8 @@ def distances(feature, bam, fragmentsize, duplicates=True, strand_wise=True, per
         if not strand_wise and aln1.iv.strand != aln2.iv.strand:
             continue
         # adjust fragment to size
-        aln1.iv.length = fragmentsize
-        aln2.iv.length = fragmentsize
+        aln1.iv.length = fragment_size
+        aln2.iv.length = fragment_size
 
         # get position relative
         dist = abs(aln1.iv.start_d - aln2.iv.start_d)
@@ -80,11 +84,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     ### Read pickle with windows
-    windows = pickle.load(open(args.input_pickle, 'r'))
+    windows = pickle.load(open(args.input_pickle, 'r')) # dict-like list of tuples
+    # convert list of tuples to list
+    windows = [tup[1] for tup in windows]
 
     ### Make bam object
     bam = HTSeq.BAM_Reader(os.path.abspath(args.bam_file))
 
     ### Process in parallel and serialize result
-    dists = parmap.map(distances, windows, bam, args.fragmentsize, duplicates=args.duplicates, strand_wise=args.strand_wise, permutate=args.permute)
-    pickle.dump(dists, open(args.output_pickle, "wb"), protocol=pickle.HIGHEST_PROTOCOL))
+    dists = parmap.map(distances, windows, bam, args.fragment_size, duplicates=args.duplicates, strand_wise=args.strand_wise, permutate=args.permute)
+    pickle.dump(dists, open(args.output_pickle, "wb"), protocol=pickle.HIGHEST_PROTOCOL)
