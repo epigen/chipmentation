@@ -34,15 +34,12 @@ class DivideAndSlurm(object):
     Initialize the class with the data to be split, processed in parallel and returned.
 
     """
-    def __init__(self, data, tmpDir="/fhgfs/scratch/users/arendeiro/", queue="shortq", userMail=""):
+    def __init__(self, tmpDir="/fhgfs/scratch/users/arendeiro/", queue="shortq", userMail=""):
         super(DivideAndSlurm, self).__init__()
 
-        # check data is iterable
-        if type(data) == dict:
-            data = data.items()
-        self._data = data
+        self.tasks = dict()
 
-        self.name = str(time.time())
+        self.name = time.strftime("%Y%m%d%H%M%S", time.localtime())
 
         self.tmpDir = os.path.abspath(tmpDir)
 
@@ -110,37 +107,65 @@ class DivideAndSlurm(object):
         p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
         return p.communicate()
 
-    def split_data(self, fractions):
+    def _split_data(self, taskName, data, fractions):
         """
-        Split self._data in fractions and create pickle objects with them.
+        Split data in fractions and create pickle objects with them.
         """
         chunkify = lambda lst,n: [lst[i::n] for i in xrange(n)]
 
-        groups = chunkify(self._data, fractions)
-        ids = [self.name + "_" + str(i) for i in xrange(len(groups))]
+        groups = chunkify(data, fractions)
+        ids = [taskName + "_" + str(i) for i in xrange(len(groups))]
         files = [os.path.join(self.tmpDir, ID) for ID in ids]
         
         # keep track of groups in self
-        self.groups = zip(ids, groups, files)
+        groups = zip(ids, groups, files)
 
         # serialize groups
-        for i in xrange(len(self.groups)):
-            pickle.dump(self.groups[i][1],                  # actual group of objects
-                open(self.groups[i][2] + ".pickle", 'wb'),  # group pickle file
+        for i in xrange(len(groups)):
+            pickle.dump(groups[i][1],                  # actual group of objects
+                open(groups[i][2] + ".pickle", 'wb'),  # group pickle file
                 protocol=pickle.HIGHEST_PROTOCOL
             )
+        return groups
 
-    def count_distances(self, bam_file, strand_wise=True, duplicates=True, permute=True, fragment_size=1):
+    def _rm_temps(self, taskNumber):
+        """
+        If self.is_ready(taskNumber), return joined data.
+        """
+        if taskNumber not in self.tasks:
+            raise KeyError("Task number not in object's tasks.")
+        if "output" in self.tasks[taskNumber]:
+            groups = self.tasks[taskNumber]["groups"]
+            to_rm = list()
+            [to_rm.append(groups[i][2] + ".pickle") for i in xrange(len(groups))]
+            [to_rm.append(groups[i][2] + "_count_distances.sh") for i in xrange(len(groups))]
+            [to_rm.append(groups[i][2] + ".output.pickle") for i in xrange(len(groups))]
+            for fl in to_rm:
+                p = subprocess.Popen("rm {0}".format(fl), stdout=subprocess.PIPE, shell=True)
+
+    def count_distances(self, data, fractions, bam_file, strand_wise=True, duplicates=True, permute=True, fragment_size=1):
         """
         Add task to be performed with data.
         """
-        self.jobs = list()
-        log = self.name + "_count_distances.log"
+        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()) str(random.randint(1,1000))], sep="_")
+        taskName = "count_distances_{0}".format(now)
+        log = taskName + ".log"
 
-        for i in xrange(len(self.groups)):
-            jobFile = self.groups[i][2] + "_count_distances.sh"
-            input_pickle = self.groups[i][2] + ".pickle"
-            output_pickle = self.groups[i][2] + ".output.pickle"
+        # check data is iterable
+        if type(data) == dict or type(data) == OrderedDict:
+            data = data.items()
+
+        # split data in fractions
+        groups = self._split_data(taskName, data, fractions)
+
+        # make jobs with groups of data
+        jobs = list()
+        jobFiles = list()
+
+        for i in xrange(len(groups)):
+            jobFile = groups[i][2] + "_count_distances.sh"
+            input_pickle = groups[i][2] + ".pickle"
+            output_pickle = groups[i][2] + ".output.pickle"
 
             # assemble command for job
             task = "    python count_distances_parallel.py {0} {1} {2} ".format(input_pickle, output_pickle, bam_file)
@@ -154,89 +179,109 @@ class DivideAndSlurm(object):
             task += "--fragment-size {0}".format(fragment_size)
 
             # assemble job file
-            job = self._slurmHeader(self.groups[i][0], log, queue=self.queue, userMail=self.userMail) + task + self._slurmFooter()
+            job = self._slurmHeader(groups[i][0], log, queue=self.queue, userMail=self.userMail) + task + self._slurmFooter()
 
             # keep track of jobs and their files
-            self.jobs.append((job, jobFile))
+            jobs.append(job)
+            jobFiles.append(jobFile)
 
             # write job file to disk
             with open(jobFile, 'w') as handle:
                 handle.write(textwrap.dedent(job))
 
-    def submit(self):
+        # save task in object
+        taskNumber = len(self.tasks)
+        self.tasks[taskNumber] = {  # don't keep track of data
+            "name" : taskName,
+            "groups" : groups,
+            "jobs" : jobs,
+            "jobFiles" : jobFiles,
+            "log" : log
+        }
+        # return taskNumber so that it can be used later
+        return taskNumber
+
+    def submit(self, taskNumber):
         """
         Submit slurm jobs with each fraction of data.
         """
+        if taskNumber not in self.tasks:
+            raise KeyError("Task number not in object's tasks.")
         jobIDs = list()
-        for job, jobFile in self.jobs:
-            output, err = self._slurmSubmitJob(jobFile)
+        for i in xrange(len(self.tasks[taskNumber]["jobs"])):
+            output, err = self._slurmSubmitJob(self.tasks[taskNumber]["jobFiles"][i])
             jobIDs.append(re.sub("\D", "", output))
-        self.submission_time = time.time()
-        self.jobIDs = jobIDs
+        self.tasks[taskNumber]["submission_time"] = time.time()
+        self.tasks[taskNumber]["jobIDs"] = jobIDs
 
-    def cancel_jobs(self):
+    def cancel_jobs(self, taskNumber):
         """
         Submit slurm jobs with each fraction of data.
         """
-        if not hasattr(self, 'jobIDs'):
+        if taskNumber not in self.tasks:
+            raise KeyError("Task number not in object's tasks.")
+        if not "jobIDs" in self.tasks[taskNumber]:
             return False
-        for jobID in self.jobIDs:
+        for jobID in self.tasks[taskNumber]["jobIDs"]:
             command = "scancel %s" % jobID
-            p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
+            p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)            
 
-    def is_ready(self):
+    def is_ready(self, taskNumber):
         """
         Check if all submitted jobs have been completed.
         """
-        if not hasattr(self, 'jobIDs'):
+        if "is_ready" in self.tasks[taskNumber] and self.tasks[taskNumber]["is_ready"]: # if already finished
+            return True
+        if "jobIDs" not in self.tasks[taskNumber]: # if not even started
             return False
 
         # check if all ids are missing from squeue
-        for i in xrange(len(self.jobIDs)):
-            p = subprocess.Popen("squeue | grep {0}".format(self.jobIDs[i]), stdout=subprocess.PIPE, shell=True)
-            output, err = p.communicate()
-            if output.strip() != "":
+        p = subprocess.Popen("squeue | unexpand t -t 4 | cut -f 4", stdout=subprocess.PIPE, shell=True)
+        processes = p.communicate()[0].split("\n")
+
+        for ID in self.tasks[taskNumber]["jobIDs"]:
+            if ID in processes:
                 return False
 
         # check if all output pickles are produced
-        outputPickles = [self.groups[i][2] + ".output.pickle" for i in xrange(len(self.groups))]
+        outputPickles = [self.tasks[taskNumber]["groups"][i][2] + ".output.pickle" for i in xrange(len(self.tasks[taskNumber]["groups"]))]
         for i in outputPickles:
             if not os.path.isfile(i):
                 return False
 
         # if both are yes, save output already
-        self.output = self._collect_distances()
+        self.tasks[taskNumber]["is_ready"] = True
         return True
 
-    def _collect_distances(self):
+    def collect_distances(self, taskNumber):
         """
-        If self.is_ready(), return joined data.
+        If self.is_ready(taskNumber), return joined data.
         """
-        if self.is_ready:
+        if taskNumber not in self.tasks:
+            raise KeyError("Task number not in object's tasks.")
+
+        if "output" in self.tasks[taskNumber]:                  # if output is already stored, just return it
+            return self.tasks[taskNumber]["output"]
+
+        if self.is_ready(taskNumber):
             # load all pickles into list
-            outputs = [pickle.load(open(self.groups[i][2] + ".output.pickle", 'r')) for i in xrange(len(self.groups))]
+            groups = self.tasks[taskNumber]["groups"]
+            outputs = [pickle.load(open(groups[i][2] + ".output.pickle", 'r')) for i in xrange(len(groups))]
             # if all are counters, and their elements are counters, sum them
-            if all([type(outputs[i][j]) == collections.Counter for j in xrange(len(outputs[i])) for i in range(len(outputs))]):
-                output = reduce(lambda x, y: x + y, reduce(lambda x, y: x + y, outputs, []), Counter()) # reduce twice
-                if type(output) == collections.Counter:
-                    self.output = output                # store output in object
-                    self._rm_temps()                    # delete tmp files   
-                    return self.output
+            if all([type(outputs[i]) == Counter for i in range(len(outputs))]):
+                output = reduce(lambda x, y: x + y, outputs) # reduce
+                if type(output) == Counter:
+                    self.tasks[taskNumber]["output"] = output    # store output in object
+                    self._rm_temps(taskNumber)                   # delete tmp files
+                    return self.tasks[taskNumber]["output"]
         else:
-            return None
+            raise TypeError("Task is not ready yet.")
 
-    def _rm_temps(self):
+    def remove_task(self, taskNumber):
         """
-        If self.is_ready(), return joined data.
+        Remove task from object.
         """
-        if hasattr(self, 'output'):
-            to_rm = list()
-            [to_rm.append(self.groups[i][2] + ".pickle") for i in xrange(len(self.groups))]
-            [to_rm.append(self.groups[i][2] + "_count_distances.sh") for i in xrange(len(self.groups))]
-            [to_rm.append(self.groups[i][2] + ".output.pickle") for i in xrange(len(self.groups))]
-            for fl in to_rm:
-                p = subprocess.Popen("rm {0}".format(fl), stdout=subprocess.PIPE, shell=True)
-
+        del self.tasks[taskNumber]
 
 
 class WinterHMM(object):
@@ -334,13 +379,11 @@ class WinterHMM(object):
 
         self.model.bake()
 
-
     def draw(self):
         """
         Draws the Markov chain of the model.
         """
         return self.model.draw(node_size=400, labels={state.name : str(state.name) for state in self.model.states}, font_size=20)
-
 
     def train(self, sequences):
         """
@@ -348,20 +391,12 @@ class WinterHMM(object):
         """
         self.model.train(sequences)
 
-
     def predict(self, observations):
         """
         Predict hidden states from observations.
         """
         logp, chain = self.model.maximum_a_posteriori(observations)
         return [state.name for num, state in chain][1:-1] # strip begin and end states
-        #model.forward(observations)
-        #model.backward(observations)
-        #model.forward_backward(observations)
-        #-model.log_probability(observations)
-        #logp, chain = self.model.maximum_a_posteriori(observations)
-        #return (logp, [(num, name.name) for num, name in chain])
-
 
     def retrieveProbabilities(self, observations):
         """
@@ -373,7 +408,6 @@ class WinterHMM(object):
         background_state = 0
         prob_nucleossome = 1 - self.probs[ : , background_state] # prob of all states but background
         return prob_nucleossome
-        # raise NotImplemented("Function not implemented yet.")
 
 
 def makeGenomeWindows(windowWidth, genome, step=None):
@@ -947,23 +981,36 @@ def main(args):
     pickle.dump(regions, open(os.path.join(args.results_dir, "genomic_regions.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     
     regions = pickle.load(open(os.path.join(args.results_dir, "genomic_regions.pickle"), "r"))
-    samples = {re.sub("\.bam", "", os.path.basename(sampleFile)) : os.path.abspath(sampleFile) for sampleFile in args.bamfiles}
-for regionName, region in regions.items()[1:3]:
-    for sampleName, sampleFile in samples.items():
-        print("Sample " + sampleName, regionName)
-        exportName = args.results_dir, sampleName + "_" + regionName
-        
-        # New Slurm submission
-        slurm = DivideAndSlurm(region)
-        slurm.split_data(20) # split in 20 parts
-        slurm.count_distances(os.path.abspath(sampleFile))
-        slurm.submit()
-        slurm.is_ready()
-        dists = slurm.output
-        pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
+    # Initialize Slurm object
+    slurm = DivideAndSlurm()
+    tasks = dict()
 
+    # Submit tasks for combinations of regions and bam files
+    for regionName, region in regions.items()[1:]:
+        for sampleName, sampleFile in samples.items():
+            print("Sample " + sampleName, regionName)
+            # Add new task
+            taskNumber = slurm.count_distances(region, 20, os.path.abspath(sampleFile)) # syntax: data, fractions, bam
+            # Submit new task
+            slurm.submit(taskNumber)
+            # Keep track
+            tasks[taskNumber] = (sampleName, regionName)
+    
+    ### Collect processed data
+    ready = list()
+    while not all([slurm.is_ready(taskNumber) for taskNumber in tasks.keys()]):         # while not all tasks are ready
+        for taskNumber, (sampleName, regionName) in tasks.items():                      # loop through tasks, see if ready
+            if slurm.is_ready(taskNumber) and taskNumber not in ready:                  # if yes, collect output and save
+                print("""\
+                Task {0} is now ready! {1}, {2}
+                Time to completion was: {3} minutes.
 
+                """.format(taskNumber, sampleName, regionName, int(time.time() - slurm.tasks[taskNumber]["submission_time"])/ 60.))
+                exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
+                dists = slurm.collect_distances(taskNumber)
+                pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+                ready.append(taskNumber)
 
     ### For each signal extract most abundant periodic signal, correlate it with read coverage on each strand
     # generate windows genome-wide (or under 3K4 peaks)
@@ -1261,5 +1308,6 @@ if __name__ == '__main__':
 
         ]
     )
+    args.results_dir = os.path.abspath(args.results_dir)
     args.plots_dir = os.path.abspath(args.plots_dir)
     main(args)
