@@ -25,139 +25,9 @@ import subprocess
 
 import time
 
+from divideAndSlurm import DivideAndSlurm, Task
+
 np.set_printoptions(linewidth=200)
-
-class Task(object):
-    """
-    General class to model tasks to be handled by DivideAndSlurm object.
-    """
-    def __init__(self, data, fractions):
-        super(Task, self).__init__()
-
-        self.name = "Task created at %s" % time.strftime("%Y%m%d%H%M%S", time.localtime())
-        self.data = data
-        self.fractions = fractions
-
-    def __repr__(self):
-        return "Task object " + self.name
-
-    def __str__(self):
-        return "Task object " + self.name
-
-    def _slurmHeader(self, jobName, output, queue="shortq", ntasks=1, time="10:00:00", cpusPerTask=16, memPerCpu=2000, nodes=1, userMail=""):
-        command = """            #!/bin/bash
-            #SBATCH --partition={0}
-            #SBATCH --ntasks={1}
-            #SBATCH --time={2}
-
-            #SBATCH --cpus-per-task={3}
-            #SBATCH --mem-per-cpu={4}
-            #SBATCH --nodes={5}
-
-            #SBATCH --job-name={6}
-            #SBATCH --output={7}
-
-            #SBATCH --mail-type=end
-            #SBATCH --mail-user={8}
-
-            # Activate virtual environment
-            source /home/arendeiro/venv/bin/activate
-
-            # Start running the job
-            hostname
-            date
-
-        """.format(queue, ntasks, time, cpusPerTask, memPerCpu, nodes, jobName, output, userMail)
-        return command
-
-    def _slurmFooter(self):
-        command = """
-
-
-            # Deactivate virtual environment
-            deactivate
-
-            # Job end
-            date
-
-        """
-        return command
-
-    def _slurmSubmitJob(self, jobFile):
-        """
-        Submit command to shell.
-        """
-        command = "sbatch %s" % jobFile
-        p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
-        return p.communicate()
-
-    def _split_data(self):
-        """
-        Split data in fractions and create pickle objects with them.
-        """
-        chunkify = lambda lst,n: [lst[i::n] for i in xrange(n)]
-
-        groups = chunkify(self.data, self.fractions)
-        ids = [string.join([self.name, str(i)], sep="_") for i in xrange(len(groups))]
-        files = [os.path.join(self.slurm.tmpDir, ID) for ID in ids]
-        
-        # serialize groups
-        for i in xrange(len(groups)):
-            pickle.dump(groups[i],                  # actual objects
-                open(files[i] + ".input.pickle", 'wb'),  # input pickle file
-                protocol=pickle.HIGHEST_PROTOCOL
-            )
-        return (ids, groups, files)
-
-    def _rm_temps(self):
-        """
-        If self.output, delete temp files.
-        """
-        if hasattr(self, "output"):
-            for i in xrange(len(self.jobFiles)):
-                p = subprocess.Popen("rm {0}".format(self.jobFiles[i]), stdout=subprocess.PIPE, shell=True)
-                p = subprocess.Popen("rm {0}".format(self.inputPickles[i]), stdout=subprocess.PIPE, shell=True)
-                p = subprocess.Popen("rm {0}".format(self.outputPickles[i]), stdout=subprocess.PIPE, shell=True)
-
-    def prepare(self):
-        pass
-
-    def is_running(self):
-        """
-        Returns True if any job from the task is still running.
-        """
-        # check if all ids are missing from squeue
-        p = subprocess.Popen("squeue | unexpand t -t 4 | cut -f 4", stdout=subprocess.PIPE, shell=True)
-        processes = p.communicate()[0].split("\n")
-
-        if not any([ID in processes for ID in self.jobIDs]):
-            return False
-        return True
-
-    def has_output(self):
-        """
-        Returns True is all output pickles are present.
-        """
-        # check if all output pickles are produced
-        if not any([os.path.isfile(outputPickle) for outputPickle in self.outputPickles]):
-            return False
-        return True
-
-    def is_ready(self):
-        """
-        Check if all submitted jobs have been completed.
-        """
-        if hasattr(self, "ready"): # if already finished
-            return True
-        if not hasattr(self, "jobIDs"): # if not even started
-            return False
-
-        # if is not running and has output
-        if self.is_running() or not self.has_output():
-            return False
-        self.ready = True
-        return True
-
 
 class CountDistances(Task):
     """
@@ -186,17 +56,11 @@ class CountDistances(Task):
     def __str__(self):
         return "CountDistances object " + self.name
 
-    def prepare(self):
-        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep=".")) # add abspath
-        self._count_distances()
-
-    def _count_distances(self):
+    def _prepare(self):
         """
         Add task to be performed with data.
         """
-        # check data is iterable
-        if type(self.data) == dict or type(self.data) == OrderedDict:
-            self.data = self.data.items()
+        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep=".")) # add abspath
 
         # split data in fractions
         ids, groups, files = self._split_data()
@@ -213,7 +77,7 @@ class CountDistances(Task):
             # header
             job = self._slurmHeader(ids[i], self.log, queue=self.queue, userMail=self.slurm.userMail)
 
-            # command
+            # command - add abspath!
             task = "    python count_distances_parallel.py {0} {1} {2} ".format(inputPickle, outputPickle, self.bam_file)
 
             if self.strand_wise:
@@ -262,79 +126,6 @@ class CountDistances(Task):
         else:
             raise TypeError("Task is not ready yet.")
         
-
-class DivideAndSlurm(object):
-    """
-    DivideAndSlurm is a class to handle a map-reduce style submission of jobs to a Slurm cluster.
-
-    Add a particula task to the object (though a specific function) and it will divide the input data
-    into pools, which will be submitted (use the submit() function) in parallel to the cluster.
-    Tasks can also further process its input in parallel, taking advantage of all processors.
-    """
-    def __init__(self, tmpDir="/fhgfs/scratch/users/arendeiro/", logDir="/home/arendeiro/logs", userMail=""):
-        super(DivideAndSlurm, self).__init__()
-
-        self.tasks = list()
-
-        self.name = time.strftime("%Y%m%d%H%M%S", time.localtime())
-
-        self.tmpDir = os.path.abspath(tmpDir)
-        self.logDir = os.path.abspath(logDir)
-
-        self.userMail = userMail #arendeiro@cemm.oeaw.ac.at
-
-    def __repr__(self):
-        return "DivideAndSlurm object " + self.name
-
-    def __str__(self):
-        return "DivideAndSlurm object " + self.name
-
-    def add_task(self, task):
-        """
-        Add Task object to slurm.
-        """
-        # Object is a Task or of a children class of Task
-        if isinstance(task, (Task, CountDistances)):
-            self.tasks.append(task)
-            task.slurm = self
-            task.prepare()
-        else:
-            raise TypeError("Object provided is not a Task object.")
-
-    def submit(self, task):
-        """
-        Submit slurm jobs with each fraction of data.
-        """
-        if task not in self.tasks:
-            raise AttributeError("Task not in object's tasks.")
-        if not hasattr(task, "jobs") or not hasattr(task, "jobFiles"):
-            raise AttributeError("Task does not have jobs to be submitted.")
-
-        jobIDs = list()
-        for jobFile in task.jobFiles:
-            output, err = self._slurmSubmitJob(jobFile)
-            jobIDs.append(re.sub("\D", "", output))
-        task.submission_time = time.time()
-        tasks.jobIDs = jobIDs
-
-    def cancel_task(self, task):
-        """
-        Submit slurm jobs with each fraction of data.
-        """
-        if task not in self.tasks:
-            raise AttributeError("Task not in object's tasks.")
-        if not hasattr(task, "jobIDs"):
-            return False
-        for jobID in task.jobIDs:
-            command = "scancel %s" % jobID
-            p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)            
-
-    def remove_task(self, task):
-        """
-        Remove task from object.
-        """
-        del self.tasks[self.tasks.index(task)]
-
 
 class WinterHMM(object):
     """
@@ -1044,31 +835,34 @@ def main(args):
             if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
                 print(sampleName, regionName)
                 # Add new task
-                taskNumber = slurm.count_distances(region, 30, os.path.abspath(sampleFile), permute=False) # syntax: data, fractions, bam, options
-                slurm.submit(taskNumber) # Submit new task
-                tasks[taskNumber] = (sampleName, regionName, False) # Keep track
+                task = CountDistances(region, 30, os.path.abspath(sampleFile), permute=False)
+                slurm.add_task(task)
+                slurm.submit(task) # Submit new task
+                tasks[task] = (sampleName, regionName, False) # Keep track
                 # Add permuted
-                taskNumber = slurm.count_distances(region, 30, os.path.abspath(sampleFile), permute=True)
-                slurm.submit(taskNumber)
-                tasks[taskNumber] = (sampleName, regionName, True)
+                task = CountDistances(region, 30, os.path.abspath(sampleFile), permute=True)
+                slurm.add_task(task)
+                slurm.submit(task) # Submit new task
+                tasks[task] = (sampleName, regionName, True) # Keep track
 
     ### Collect processed data
-    ready = list()
-    while not all([slurm.is_ready(taskNumber) for taskNumber in tasks.keys()]):         # while not all tasks are ready
-        for taskNumber, (sampleName, regionName, Permuted) in tasks.items():                      # loop through tasks, see if ready
-            if slurm.is_ready(taskNumber) and taskNumber not in ready:                  # if yes, collect output and save
+    stored = list()
+    while not all([slurm.is_ready(taskNumber) for taskNumber in tasks.keys()]): # while not all tasks are ready
+        for task, (sampleName, regionName, permuted) in tasks.items():          # loop through tasks, see if ready
+            if task.is_ready() and task not in stored:                          # if yes, collect output and save
                 print("""\
                 Task {0} is now ready! {1}, {2}
                 Time to completion was: {3} minutes.
 
-                """.format(taskNumber, sampleName, regionName, int(time.time() - slurm.tasks[taskNumber]["submission_time"])/ 60.))
+                """.format(task, sampleName, regionName, int(time.time() - slurm.tasks[task]["submission_time"])/ 60.))
+
                 exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
-                dists = slurm.collect_distances(taskNumber)
+                dists = task.collect_distances()
                 if not permuted:
                     pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
                 else:
                     pickle.dump(dists, open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-                ready.append(taskNumber)
+                stored.append(task)
 
     ### For each signal extract most abundant periodic signal through FFT, IFFT
     for regionName, region in regions.items():
