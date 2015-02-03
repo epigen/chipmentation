@@ -27,36 +27,22 @@ import time
 
 np.set_printoptions(linewidth=200)
 
-
-class DivideAndSlurm(object):
+class Task(object):
     """
-    DivideAndSlurm is a class to handle a map-reduce style submission of jobs to a Slurm cluster.
-    Initialize the class with the data to be split, processed in parallel and returned.
-
+    General class to model tasks to be handled by DivideAndSlurm object.
     """
-    def __init__(self, tmpDir="/fhgfs/scratch/users/arendeiro/", queue="shortq", userMail=""):
-        super(DivideAndSlurm, self).__init__()
+    def __init__(self, data, fractions):
+        super(Task, self).__init__()
 
-        self.tasks = dict()
-
-        self.name = time.strftime("%Y%m%d%H%M%S", time.localtime())
-
-        self.tmpDir = os.path.abspath(tmpDir)
-
-        self.queue = queue
-        self.userMail = userMail #arendeiro@cemm.oeaw.ac.at
+        self.name = "Task created at %s" % time.strftime("%Y%m%d%H%M%S", time.localtime())
+        self.data = data
+        self.fractions = fractions
 
     def __repr__(self):
-        return "DivideAndSlurm object " + self.name
+        return "Task object " + self.name
 
     def __str__(self):
-        return "DivideAndSlurm object " + self.name
-
-    def _chunks(data, n):
-        """ Yield successive n-sized chunks from data.
-        """
-        for i in xrange(0, len(data), n):
-            yield data[i:i+n]
+        return "Task object " + self.name
 
     def _slurmHeader(self, jobName, output, queue="shortq", ntasks=1, time="10:00:00", cpusPerTask=16, memPerCpu=2000, nodes=1, userMail=""):
         command = """            #!/bin/bash
@@ -82,7 +68,6 @@ class DivideAndSlurm(object):
             date
 
         """.format(queue, ntasks, time, cpusPerTask, memPerCpu, nodes, jobName, output, userMail)
-
         return command
 
     def _slurmFooter(self):
@@ -96,7 +81,6 @@ class DivideAndSlurm(object):
             date
 
         """
-
         return command
 
     def _slurmSubmitJob(self, jobFile):
@@ -107,181 +91,249 @@ class DivideAndSlurm(object):
         p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
         return p.communicate()
 
-    def _split_data(self, taskName, data, fractions):
+    def _split_data(self):
         """
         Split data in fractions and create pickle objects with them.
         """
         chunkify = lambda lst,n: [lst[i::n] for i in xrange(n)]
 
-        groups = chunkify(data, fractions)
-        ids = [taskName + "_" + str(i) for i in xrange(len(groups))]
-        files = [os.path.join(self.tmpDir, ID) for ID in ids]
+        groups = chunkify(self.data, self.fractions)
+        ids = [string.join([self.name, str(i)], sep="_") for i in xrange(len(groups))]
+        files = [os.path.join(self.slurm.tmpDir, ID) for ID in ids]
         
-        # keep track of groups in self
-        groups = zip(ids, groups, files)
-
         # serialize groups
         for i in xrange(len(groups)):
-            pickle.dump(groups[i][1],                  # actual group of objects
-                open(groups[i][2] + ".pickle", 'wb'),  # group pickle file
+            pickle.dump(groups[i],                  # actual objects
+                open(files[i] + ".input.pickle", 'wb'),  # input pickle file
                 protocol=pickle.HIGHEST_PROTOCOL
             )
-        return groups
+        return (ids, groups, files)
 
-    def _rm_temps(self, taskNumber):
+    def _rm_temps(self):
         """
-        If self.is_ready(taskNumber), return joined data.
+        If self.output, delete temp files.
         """
-        if taskNumber not in self.tasks:
-            raise KeyError("Task number not in object's tasks.")
-        if "output" in self.tasks[taskNumber]:
-            groups = self.tasks[taskNumber]["groups"]
-            to_rm = list()
-            [to_rm.append(groups[i][2] + ".pickle") for i in xrange(len(groups))]
-            [to_rm.append(groups[i][2] + "_count_distances.sh") for i in xrange(len(groups))]
-            [to_rm.append(groups[i][2] + ".output.pickle") for i in xrange(len(groups))]
-            for fl in to_rm:
-                p = subprocess.Popen("rm {0}".format(fl), stdout=subprocess.PIPE, shell=True)
+        if hasattr(self, "output"):
+            for i in xrange(len(self.jobFiles)):
+                p = subprocess.Popen("rm {0}".format(self.jobFiles[i]), stdout=subprocess.PIPE, shell=True)
+                p = subprocess.Popen("rm {0}".format(self.inputPickles[i]), stdout=subprocess.PIPE, shell=True)
+                p = subprocess.Popen("rm {0}".format(self.outputPickles[i]), stdout=subprocess.PIPE, shell=True)
 
-    def count_distances(self, data, fractions, bam_file, strand_wise=True, duplicates=True, permute=True, fragment_size=1):
+    def prepare(self):
+        pass
+
+    def is_running(self):
+        """
+        Returns True if any job from the task is still running.
+        """
+        # check if all ids are missing from squeue
+        p = subprocess.Popen("squeue | unexpand t -t 4 | cut -f 4", stdout=subprocess.PIPE, shell=True)
+        processes = p.communicate()[0].split("\n")
+
+        if not any([ID in processes for ID in self.jobIDs]):
+            return False
+        return True
+
+    def has_output(self):
+        """
+        Returns True is all output pickles are present.
+        """
+        # check if all output pickles are produced
+        if not any([os.path.isfile(outputPickle) for outputPickle in self.outputPickles]):
+            return False
+        return True
+
+    def is_ready(self):
+        """
+        Check if all submitted jobs have been completed.
+        """
+        if hasattr(self, "ready"): # if already finished
+            return True
+        if not hasattr(self, "jobIDs"): # if not even started
+            return False
+
+        # if is not running and has output
+        if self.is_running() or not self.has_output():
+            return False
+        self.ready = True
+        return True
+
+
+class CountDistances(Task):
+    """
+    Task to perform counting of distances between reads under regions.
+    """
+    def __init__(self, data, fractions, bam_file, queue="shortq", strand_wise=True, duplicates=True, permute=False, fragment_size=1):
+        super(Task, self).__init__()
+        
+        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1,1000))], sep="_")
+        self.name = "count_distances_{0}".format(now)
+        self.data = data
+        self.fractions = fractions
+        self.bam_file = bam_file
+        self.strand_wise = strand_wise
+        self.duplicates = duplicates
+        self.permute = permute
+        self.fragment_size = fragment_size
+
+        self.queue = queue
+        
+        # Check bunch of stuff        
+
+    def __repr__(self):
+        return "CountDistances object " + self.name
+
+    def __str__(self):
+        return "CountDistances object " + self.name
+
+    def prepare(self):
+        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep=".")) # add abspath
+        self._count_distances()
+
+    def _count_distances(self):
         """
         Add task to be performed with data.
         """
-        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()) str(random.randint(1,1000))], sep="_")
-        taskName = "count_distances_{0}".format(now)
-        log = taskName + ".log"
-
         # check data is iterable
-        if type(data) == dict or type(data) == OrderedDict:
-            data = data.items()
+        if type(self.data) == dict or type(self.data) == OrderedDict:
+            self.data = self.data.items()
 
         # split data in fractions
-        groups = self._split_data(taskName, data, fractions)
+        ids, groups, files = self._split_data()
 
         # make jobs with groups of data
-        jobs = list()
-        jobFiles = list()
+        self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
 
-        for i in xrange(len(groups)):
-            jobFile = groups[i][2] + "_count_distances.sh"
-            input_pickle = groups[i][2] + ".pickle"
-            output_pickle = groups[i][2] + ".output.pickle"
+        for i in xrange(len(ids)):
+            jobFile = files[i] + "_count_distances.sh"
+            inputPickle = files[i] + ".input.pickle"
+            outputPickle = files[i] + ".output.pickle"
 
-            # assemble command for job
-            task = "    python count_distances_parallel.py {0} {1} {2} ".format(input_pickle, output_pickle, bam_file)
+            ### assemble job file
+            # header
+            job = self._slurmHeader(ids[i], self.log, queue=self.queue, userMail=self.slurm.userMail)
 
-            if strand_wise:
+            # command
+            task = "    python count_distances_parallel.py {0} {1} {2} ".format(inputPickle, outputPickle, self.bam_file)
+
+            if self.strand_wise:
                 task += "--strand-wise "
-            if duplicates:
+            if self.duplicates:
                 task += "--duplicates "
-            if duplicates:
+            if self.permute:
                 task += "--permute "
-            task += "--fragment-size {0}".format(fragment_size)
+            task += "--fragment-size {0}".format(self.fragment_size)
+            job += task
 
-            # assemble job file
-            job = self._slurmHeader(groups[i][0], log, queue=self.queue, userMail=self.userMail) + task + self._slurmFooter()
+            # footer
+            job += self._slurmFooter()
 
-            # keep track of jobs and their files
-            jobs.append(job)
-            jobFiles.append(jobFile)
+            # add to save attributes
+            self.jobs.append(job)
+            self.jobFiles.append(jobFile)
+            self.inputPickles.append(inputPickle)
+            self.outputPickles.append(outputPickle)
 
             # write job file to disk
             with open(jobFile, 'w') as handle:
                 handle.write(textwrap.dedent(job))
 
-        # save task in object
-        taskNumber = len(self.tasks)
-        self.tasks[taskNumber] = {  # don't keep track of data
-            "name" : taskName,
-            "groups" : groups,
-            "jobs" : jobs,
-            "jobFiles" : jobFiles,
-            "log" : log
-        }
-        # return taskNumber so that it can be used later
-        return taskNumber
+        # Delete data if jobs are ready to submit and data is serialized
+        #if hasattr(self, "jobs") and hasattr(self, "jobFiles"):
+        #    del self.data
 
-    def submit(self, taskNumber):
+    def collect(self):
         """
-        Submit slurm jobs with each fraction of data.
+        If self.is_ready(), return joined data.
         """
-        if taskNumber not in self.tasks:
-            raise KeyError("Task number not in object's tasks.")
-        jobIDs = list()
-        for i in xrange(len(self.tasks[taskNumber]["jobs"])):
-            output, err = self._slurmSubmitJob(self.tasks[taskNumber]["jobFiles"][i])
-            jobIDs.append(re.sub("\D", "", output))
-        self.tasks[taskNumber]["submission_time"] = time.time()
-        self.tasks[taskNumber]["jobIDs"] = jobIDs
+        if hasattr(self, "output"): # if output is already stored, just return it
+            return self.output
 
-    def cancel_jobs(self, taskNumber):
-        """
-        Submit slurm jobs with each fraction of data.
-        """
-        if taskNumber not in self.tasks:
-            raise KeyError("Task number not in object's tasks.")
-        if not "jobIDs" in self.tasks[taskNumber]:
-            return False
-        for jobID in self.tasks[taskNumber]["jobIDs"]:
-            command = "scancel %s" % jobID
-            p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)            
-
-    def is_ready(self, taskNumber):
-        """
-        Check if all submitted jobs have been completed.
-        """
-        if "is_ready" in self.tasks[taskNumber] and self.tasks[taskNumber]["is_ready"]: # if already finished
-            return True
-        if "jobIDs" not in self.tasks[taskNumber]: # if not even started
-            return False
-
-        # check if all ids are missing from squeue
-        p = subprocess.Popen("squeue | unexpand t -t 4 | cut -f 4", stdout=subprocess.PIPE, shell=True)
-        processes = p.communicate()[0].split("\n")
-
-        for ID in self.tasks[taskNumber]["jobIDs"]:
-            if ID in processes:
-                return False
-
-        # check if all output pickles are produced
-        outputPickles = [self.tasks[taskNumber]["groups"][i][2] + ".output.pickle" for i in xrange(len(self.tasks[taskNumber]["groups"]))]
-        for i in outputPickles:
-            if not os.path.isfile(i):
-                return False
-
-        # if both are yes, save output already
-        self.tasks[taskNumber]["is_ready"] = True
-        return True
-
-    def collect_distances(self, taskNumber):
-        """
-        If self.is_ready(taskNumber), return joined data.
-        """
-        if taskNumber not in self.tasks:
-            raise KeyError("Task number not in object's tasks.")
-
-        if "output" in self.tasks[taskNumber]:                  # if output is already stored, just return it
-            return self.tasks[taskNumber]["output"]
-
-        if self.is_ready(taskNumber):
+        if self.is_ready():
             # load all pickles into list
-            groups = self.tasks[taskNumber]["groups"]
-            outputs = [pickle.load(open(groups[i][2] + ".output.pickle", 'r')) for i in xrange(len(groups))]
+            outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
             # if all are counters, and their elements are counters, sum them
             if all([type(outputs[i]) == Counter for i in range(len(outputs))]):
                 output = reduce(lambda x, y: x + y, outputs) # reduce
                 if type(output) == Counter:
-                    self.tasks[taskNumber]["output"] = output    # store output in object
-                    self._rm_temps(taskNumber)                   # delete tmp files
-                    return self.tasks[taskNumber]["output"]
+                    self.output = output    # store output in object
+                    self._rm_temps() # delete tmp files
+                    return self.output
         else:
             raise TypeError("Task is not ready yet.")
+        
 
-    def remove_task(self, taskNumber):
+class DivideAndSlurm(object):
+    """
+    DivideAndSlurm is a class to handle a map-reduce style submission of jobs to a Slurm cluster.
+
+    Add a particula task to the object (though a specific function) and it will divide the input data
+    into pools, which will be submitted (use the submit() function) in parallel to the cluster.
+    Tasks can also further process its input in parallel, taking advantage of all processors.
+    """
+    def __init__(self, tmpDir="/fhgfs/scratch/users/arendeiro/", logDir="/home/arendeiro/logs", userMail=""):
+        super(DivideAndSlurm, self).__init__()
+
+        self.tasks = list()
+
+        self.name = time.strftime("%Y%m%d%H%M%S", time.localtime())
+
+        self.tmpDir = os.path.abspath(tmpDir)
+        self.logDir = os.path.abspath(logDir)
+
+        self.userMail = userMail #arendeiro@cemm.oeaw.ac.at
+
+    def __repr__(self):
+        return "DivideAndSlurm object " + self.name
+
+    def __str__(self):
+        return "DivideAndSlurm object " + self.name
+
+    def add_task(self, task):
+        """
+        Add Task object to slurm.
+        """
+        # Object is a Task or of a children class of Task
+        if isinstance(task, (Task, CountDistances)):
+            self.tasks.append(task)
+            task.slurm = self
+            task.prepare()
+        else:
+            raise TypeError("Object provided is not a Task object.")
+
+    def submit(self, task):
+        """
+        Submit slurm jobs with each fraction of data.
+        """
+        if task not in self.tasks:
+            raise AttributeError("Task not in object's tasks.")
+        if not hasattr(task, "jobs") or not hasattr(task, "jobFiles"):
+            raise AttributeError("Task does not have jobs to be submitted.")
+
+        jobIDs = list()
+        for jobFile in task.jobFiles:
+            output, err = self._slurmSubmitJob(jobFile)
+            jobIDs.append(re.sub("\D", "", output))
+        task.submission_time = time.time()
+        tasks.jobIDs = jobIDs
+
+    def cancel_task(self, task):
+        """
+        Submit slurm jobs with each fraction of data.
+        """
+        if task not in self.tasks:
+            raise AttributeError("Task not in object's tasks.")
+        if not hasattr(task, "jobIDs"):
+            return False
+        for jobID in task.jobIDs:
+            command = "scancel %s" % jobID
+            p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)            
+
+    def remove_task(self, task):
         """
         Remove task from object.
         """
-        del self.tasks[taskNumber]
+        del self.tasks[self.tasks.index(task)]
 
 
 class WinterHMM(object):
@@ -349,8 +401,8 @@ class WinterHMM(object):
         self.model.add_transition(self.model.start, plus, 0.25) # start in plus
 
         self.model.add_transition(b, b, 0.8)                    # stay in background
-        self.model.add_transition(b, minus, 0.1)               # enter in minus
-        self.model.add_transition(b, plus, 0.1)                # enter in plus
+        self.model.add_transition(b, minus, 0.1)                # enter in minus
+        self.model.add_transition(b, plus, 0.1)                 # enter in plus
 
         self.model.add_transition(minus, b, 0.25)               # can exit from plus
         self.model.add_transition(minus, in1, 0.25)
@@ -985,22 +1037,25 @@ def main(args):
     # Initialize Slurm object
     slurm = DivideAndSlurm()
     tasks = dict()
-
     # Submit tasks for combinations of regions and bam files
-    for regionName, region in regions.items()[1:]:
+    for regionName, region in regions.items():
         for sampleName, sampleFile in samples.items():
-            print("Sample " + sampleName, regionName)
-            # Add new task
-            taskNumber = slurm.count_distances(region, 20, os.path.abspath(sampleFile)) # syntax: data, fractions, bam
-            # Submit new task
-            slurm.submit(taskNumber)
-            # Keep track
-            tasks[taskNumber] = (sampleName, regionName)
-    
+            exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
+            if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
+                print(sampleName, regionName)
+                # Add new task
+                taskNumber = slurm.count_distances(region, 30, os.path.abspath(sampleFile), permute=False) # syntax: data, fractions, bam, options
+                slurm.submit(taskNumber) # Submit new task
+                tasks[taskNumber] = (sampleName, regionName, False) # Keep track
+                # Add permuted
+                taskNumber = slurm.count_distances(region, 30, os.path.abspath(sampleFile), permute=True)
+                slurm.submit(taskNumber)
+                tasks[taskNumber] = (sampleName, regionName, True)
+
     ### Collect processed data
     ready = list()
     while not all([slurm.is_ready(taskNumber) for taskNumber in tasks.keys()]):         # while not all tasks are ready
-        for taskNumber, (sampleName, regionName) in tasks.items():                      # loop through tasks, see if ready
+        for taskNumber, (sampleName, regionName, Permuted) in tasks.items():                      # loop through tasks, see if ready
             if slurm.is_ready(taskNumber) and taskNumber not in ready:                  # if yes, collect output and save
                 print("""\
                 Task {0} is now ready! {1}, {2}
@@ -1009,268 +1064,279 @@ def main(args):
                 """.format(taskNumber, sampleName, regionName, int(time.time() - slurm.tasks[taskNumber]["submission_time"])/ 60.))
                 exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
                 dists = slurm.collect_distances(taskNumber)
-                pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+                if not permuted:
+                    pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+                else:
+                    pickle.dump(dists, open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
                 ready.append(taskNumber)
 
-    ### For each signal extract most abundant periodic signal, correlate it with read coverage on each strand
-    # generate windows genome-wide (or under 3K4 peaks)
-    for sampleName, sampleFile in samples.items():
-        distsPos, distsNeg = pickle.load(open(os.path.join(args.results_dir, sampleName + ".countsStranded.pickle"), "r"))
-        permutedDistsPos, permutedDistsNeg = pickle.load(open(os.path.join(args.results_dir, sampleName + ".countsPermutedStranded.pickle"), "r"))
+    ### For each signal extract most abundant periodic signal through FFT, IFFT
+    for regionName, region in regions.items():
+        for sampleName, sampleFile in samples.items():
+            exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
+            dists = pickle.load(open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "r"))
 
-        ### Extract most abundant periodic pattern from signal
-        # for DNase, extract from a different window (70-150bp)
-        if index == 0:
-            patternPos = extractPattern(distsPos, range(70, 110), os.path.join(args.plots_dir, sampleName + "_posStrand"))
-            patternNeg = extractPattern(distsNeg, range(70, 110), os.path.join(args.plots_dir, sampleName + "-_negStrand"))
-            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(70, 110), os.path.join(args.plots_dir, sampleName + "_bothStrands"))
+            distsPos = {dist : count for dist, count in dists.items() if dist >= 0}
+            distsNeg = {dist : count for dist, count in dists.items() if dist =< 0}
 
-            permutedPatternPos = extractPattern(permutedDistsPos, range(70, 110), os.path.join(args.plots_dir, sampleName + "_posStrand_permuted"))
-            permutedPatternNeg = extractPattern(permutedDistsNeg, range(70, 110), os.path.join(args.plots_dir, sampleName + "_negStrand_permuted"))
-            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(70, 110), os.path.join(args.plots_dir, sampleName + "_bothStrands_permuted"))
-        else:
-            patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.plots_dir, sampleName + "_posStrand"))
-            patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.plots_dir, sampleName + "_negStrand"))
-            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.plots_dir, sampleName + "_bothStrands"))
-        
-            permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.plots_dir, sampleName + "_posStrand_permuted"))
-            permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.plots_dir, sampleName + "_negStrand_permuted"))
-            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.plots_dir, sampleName + "_bothStrands_permuted"))
+            permutedDists = pickle.load(open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "r"))
 
-        ### calculate read coverage in H3K4me3 peaks
-        bam = HTSeq.BAM_Reader(os.path.abspath(sampleFile))
-        peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=samples[1]))
-        peaks = bedToolsInterval2GenomicInterval(peaks)
-        # peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
-        
-        coverage = coverageInWindows(bam, peaks, args.fragment_size, strand_wise=True)
-        pickle.dump(coverage, open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-        
-        coverage = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "r"))
+            permutedDistsPos = {dist : count for dist, count in permutedDists.items() if dist >= 0}
+            permutedDistsNeg = {dist : count for dist, count in permutedDists.items() if dist =< 0}
 
-        # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
+            ### Extract most abundant periodic pattern from signal
+            # for DNase, extract from a different window (70-150bp)
+            if "DNase" in sampleName:
+                patternPos = extractPattern(distsPos, range(70, 110), os.path.join(args.plots_dir, sampleName + "_posStrand"))
+                patternNeg = extractPattern(distsNeg, range(70, 110), os.path.join(args.plots_dir, sampleName + "-_negStrand"))
+                pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(70, 110), os.path.join(args.plots_dir, sampleName + "_bothStrands"))
 
-        ### Correlate coverage and signal pattern
-        correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
-        correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
-        pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.results_dir, sampleName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-        
-        correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCorrelationStranded.pickle"), "r"))
-        
-        ### Binarize data for HMM
-        # binarize data strand-wise
-        pos = dict()
-        for name, cor in correlationsPos.items():
-            b = binarize(cor)
-            pos[name] = b
+                permutedPatternPos = extractPattern(permutedDistsPos, range(70, 110), os.path.join(args.plots_dir, sampleName + "_posStrand_permuted"))
+                permutedPatternNeg = extractPattern(permutedDistsNeg, range(70, 110), os.path.join(args.plots_dir, sampleName + "_negStrand_permuted"))
+                permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(70, 110), os.path.join(args.plots_dir, sampleName + "_bothStrands_permuted"))
+            else:
+                patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.plots_dir, sampleName + "_posStrand"))
+                patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.plots_dir, sampleName + "_negStrand"))
+                pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.plots_dir, sampleName + "_bothStrands"))
+            
+                permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.plots_dir, sampleName + "_posStrand_permuted"))
+                permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.plots_dir, sampleName + "_negStrand_permuted"))
+                permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.plots_dir, sampleName + "_bothStrands_permuted"))
 
-        neg = dict()
-        for name, cor in correlationsNeg.items():
-            b = binarize(cor)
-            neg[name] = b
+            ### calculate read coverage in H3K4me3 peaks
+            bam = HTSeq.BAM_Reader(os.path.abspath(sampleFile))
+            peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=samples[1]))
+            peaks = bedToolsInterval2GenomicInterval(peaks)
+            # peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
+            
+            coverage = coverageInWindows(bam, peaks, args.fragment_size, strand_wise=True)
+            pickle.dump(coverage, open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            
+            coverage = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "r"))
 
-        # join strands in one sequence
-        binary = {peak : getConsensus(pos[peak], neg[peak]) for peak in pos.keys()}
+            # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
 
-        # get zeroes for rest of the genome
+            ### Correlate coverage and signal pattern
+            correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
+            correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
+            pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.results_dir, sampleName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            
+            correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCorrelationStranded.pickle"), "r"))
+            
+            ### Binarize data for HMM
+            # binarize data strand-wise
+            pos = dict()
+            for name, cor in correlationsPos.items():
+                b = binarize(cor)
+                pos[name] = b
 
-        ### HMM
-        model = WinterHMM()
-        ## Train
-        model.train(binary.values()[:100]) # subset data for training
-        # see new probabilities
-        [(s.name, s.distribution) for s in model.model.states]
-        model.model.dense_transition_matrix()
-        # save model with trained parameters
-        pickle.dump(model, open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-        model = pickle.load(open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "r"))
-        ## Predict
-        hmmOutput = {peak : model.predict(sequence) for peak, sequence in binary.items()}
+            neg = dict()
+            for name, cor in correlationsNeg.items():
+                b = binarize(cor)
+                neg[name] = b
 
-        ## Get DARNS from hmmOutput
-        DARNS = getDARNS(peaks, hmmOutput)
+            # join strands in one sequence
+            binary = {peak : getConsensus(pos[peak], neg[peak]) for peak in pos.keys()}
 
-        ## Plot attributes
-        widths, distances, midDistances = measureDARNS(DARNS)
+            # get zeroes for rest of the genome
 
-        plt.plot(widths.keys(), widths.values(), 'o')
-        plt.plot(distances.keys(), distances.values(), 'o')
-        plt.plot(midDistances.keys(), midDistances.values(), 'o')
-        sns.violinplot(widths)
+            ### HMM
+            model = WinterHMM()
+            ## Train
+            model.train(binary.values()[:100]) # subset data for training
+            # see new probabilities
+            [(s.name, s.distribution) for s in model.model.states]
+            model.model.dense_transition_matrix()
+            # save model with trained parameters
+            pickle.dump(model, open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            model = pickle.load(open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "r"))
+            ## Predict
+            hmmOutput = {peak : model.predict(sequence) for peak, sequence in binary.items()}
 
-        ## Get scores from DARNS
-        probs = {peak : model.retrieveProbabilities(sequence) for peak, sequence in binary.items()}
+            ## Get DARNS from hmmOutput
+            DARNS = getDARNS(peaks, hmmOutput)
 
-        # plot predicted darns and post probs
-        i = 3
-        sequence = hmmOutput.values()[i]
+            ## Plot attributes
+            widths, distances, midDistances = measureDARNS(DARNS)
 
-        limits = getDARNSlimits(sequence)
-        probs = model.retrieveProbabilities(binary.items()[i][1])
+            plt.plot(widths.keys(), widths.values(), 'o')
+            plt.plot(distances.keys(), distances.values(), 'o')
+            plt.plot(midDistances.keys(), midDistances.values(), 'o')
+            sns.violinplot(widths)
 
-        from matplotlib.patches import Rectangle
-        colors = sns.color_palette('deep', n_colors=6, desat=0.5)
-        sns.set_context(rc={"figure.figsize": (14, 6)})
-        sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
-        sns.plt.xlim([1, len(sequence)+1])
-        sns.plt.ylim([0,1.2])
-        sns.plt.ylabel(r'posterior probs, $\gamma_k$')
-        sns.plt.xlabel(r'$k$')
-        axis = sns.plt.gca()
+            ## Get scores from DARNS
+            probs = {peak : model.retrieveProbabilities(sequence) for peak, sequence in binary.items()}
 
-        # Plot viterbi predicted TMDs
-        for start, end in limits:
-            axis.add_patch(Rectangle((start+1, 1.075), end-start+1, 0.05, 
-                                     facecolor=colors[0], alpha=0.7))
+            # plot predicted darns and post probs
+            i = 3
+            sequence = hmmOutput.values()[i]
 
-        # Get indices of states
-        indices = { state.name: i for i, state in enumerate( model.model.states ) }
+            limits = getDARNSlimits(sequence)
+            probs = model.retrieveProbabilities(binary.items()[i][1])
 
-        sns.plt.plot(range(1, len(sequence)+1), probs, 
-                     c=colors[2], alpha=0.7)
-        plt.show()
+            from matplotlib.patches import Rectangle
+            colors = sns.color_palette('deep', n_colors=6, desat=0.5)
+            sns.set_context(rc={"figure.figsize": (14, 6)})
+            sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
+            sns.plt.xlim([1, len(sequence)+1])
+            sns.plt.ylim([0,1.2])
+            sns.plt.ylabel(r'posterior probs, $\gamma_k$')
+            sns.plt.xlabel(r'$k$')
+            axis = sns.plt.gca()
 
-        ### Output bed/wig
+            # Plot viterbi predicted TMDs
+            for start, end in limits:
+                axis.add_patch(Rectangle((start+1, 1.075), end-start+1, 0.05, 
+                                         facecolor=colors[0], alpha=0.7))
 
+            # Get indices of states
+            indices = { state.name: i for i, state in enumerate( model.model.states ) }
 
+            sns.plt.plot(range(1, len(sequence)+1), probs, 
+                         c=colors[2], alpha=0.7)
+            plt.show()
 
-
-        ## Export wig files with raw correlations 
-        exportWigFile(
-            [peaks[i] for i in correlationsPos.keys()],
-            correlationsPos.values(),
-            len(pattern)/2,
-            os.path.join(args.results_dir, sampleName + ".peakCorrelationPos.wig"),
-            sampleName + " raw absolute correlation - positive strand"
-        )
-        exportWigFile(
-            [peaks[i] for i in correlationsNeg.keys()],
-            correlationsNeg.values(),
-            len(pattern)/2,
-            os.path.join(args.results_dir, sampleName + ".peakCorrelationNeg.wig"),
-            sampleName + " raw absolute correlation - negative strand"
-        )
-        ## Export wig files with correlations peaks
-
-        ## Export wig files with DARNS
-
-        ## Export bed files with DARNS
-
-
-        ### Genome arithmetics with DARNS:
-        ## Plot :
-        # distances between DARNS borders
-        # distances between DARNS centers
-        # DARNS length
+            ### Output bed/wig
 
 
 
-        # ### Find correlation peaks (broadish regions around region of high pattern-reads correlation)
-        # # i = 0
-        # corPeaksPos = dict()
-        # for name, cor in correlationsPos.items():
-        #     corPeak = findPeaks(abs(cor), 50)
-        #     corPeaksPos[name] = corPeak
-        #     # plt.subplot(5,2,i)
-        #     # plt.plot(abs(cor))
-        #     # plt.plot(corPeak.keys(), [0.2] * len(corPeak.keys()), 'o')
-        #     # for center, peak in corPeak.items():
-        #     #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
-        #     # i += 1
 
-        # exportBedFile(
-        #     {name : peaks[name] for name, peak in corPeaksPos.items()},
-        #     corPeaksPos,
-        #     len(pattern)/2,
-        #     os.path.join(args.results_dir, sampleName + ".correlationPeaksPos.bed"),
-        #     sampleName + " correlation peaks - positive strand"
-        # )
+            ## Export wig files with raw correlations 
+            exportWigFile(
+                [peaks[i] for i in correlationsPos.keys()],
+                correlationsPos.values(),
+                len(pattern)/2,
+                os.path.join(args.results_dir, sampleName + ".peakCorrelationPos.wig"),
+                sampleName + " raw absolute correlation - positive strand"
+            )
+            exportWigFile(
+                [peaks[i] for i in correlationsNeg.keys()],
+                correlationsNeg.values(),
+                len(pattern)/2,
+                os.path.join(args.results_dir, sampleName + ".peakCorrelationNeg.wig"),
+                sampleName + " raw absolute correlation - negative strand"
+            )
+            ## Export wig files with correlations peaks
 
-        # corPeaksNeg = dict()
-        # for name, cor in correlationsNeg.items():
-        #     corPeak = findPeaks(abs(cor), 50)
-        #     corPeaksNeg[name] = corPeak
+            ## Export wig files with DARNS
 
-        # exportBedFile(
-        #     {name : peaks[name] for name, peak in corPeaksNeg.items()},
-        #     corPeaksNeg,
-        #     len(pattern)/2,
-        #     os.path.join(args.results_dir, sampleName + ".correlationPeaksNeg.bed"),
-        #     sampleName + " correlation peaks - negative strand"
-        # )
-
-        ##### ALTERNATIVE WAYS TO HANDLE CORRELATIONS
-        # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
-        
-        # X = abs(correlationsPos.values()[1])
-        # for bandwidth in xrange(1, 10):
-        #     density = kde.kdensity(range(len(X)), bw=bandwidth / 10., weights=X)[0]
-        #     plt.plot(density * 100)
-
-        # for degree in xrange(10, 50):
-        #     coeffs = np.poly1d(np.polyfit(range(len(X)), X, 50))
-        #     plt.plot(np.polyval(coeffs, range(len(X))) * 2)
-
-        # # smooth with interpolate
-        # from scipy.interpolate import interp1d
-        # for degree in xrange(2, 15):
-        #     xn_ax = interp1d(range(len(X)), X, kind=degree)
-        #     plt.plot(xn_ax(X))
-
-        # # find local minima
-        # mins = np.r_[True, X[1:] < X[:-1]] & np.r_[X[:-1] < X[1:], True]
-
-        # min_index = [np.where(X==X[x]) for x in mins]
-
-        # [np.mean(x - 1, x + 1) for x in mins if x == True]
+            ## Export bed files with DARNS
 
 
-        # # find peaks
-        # X = [abs(i) for l in correlationsPos.values() for i in l]
-        # corPeaks = findPeaks(np.array(X), 50)
-
-        # plt.plot(X)
-        # plt.plot(corPeaks.keys(), [0.2] * len(corPeaks.keys()), 'o')
-        # for center, peak in corPeaks.items():
-        #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
-
-        
-        # plot correlations for 20 peaks
-        # for i in xrange(len(correlations)):
-        #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
-        #     plt.plot(correlations.values()[i])
-        
-        # plot concatenation of correlations for some peaks
-        # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
+            ### Genome arithmetics with DARNS:
+            ## Plot :
+            # distances between DARNS borders
+            # distances between DARNS centers
+            # DARNS length
 
 
 
-        # Winter2013 fig.4 - chr19 comparison
-        # peaksWinter = {"winter" : HTSeq.GenomicInterval("chr19", 37016000, 37022000)}
-        # covWinter = coverageInWindows(bam, peaksWinter, args.fragment_size)
-        # RWinter = OrderedDict()
-        # RWinter["winter"] = correlatePatternProfile(pattern, covWinter["winter"])
-        # exportWigFile(
-        #     [peaksWinter[i] for i in RWinter.keys()],
-        #     RWinter.values(),
-        #     len(pattern)/2,
-        #     os.path.join(args.results_dir, sampleName + ".peakCorrelation.Winter.wig"),
-        #     sampleName
-        # )
+            # ### Find correlation peaks (broadish regions around region of high pattern-reads correlation)
+            # # i = 0
+            # corPeaksPos = dict()
+            # for name, cor in correlationsPos.items():
+            #     corPeak = findPeaks(abs(cor), 50)
+            #     corPeaksPos[name] = corPeak
+            #     # plt.subplot(5,2,i)
+            #     # plt.plot(abs(cor))
+            #     # plt.plot(corPeak.keys(), [0.2] * len(corPeak.keys()), 'o')
+            #     # for center, peak in corPeak.items():
+            #     #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
+            #     # i += 1
 
-        # with paralelization
-        # import multiprocessing as mp
-        # pool = mp.Pool()
-        # correlations = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in coverage.values()[:50]] 
-        # for i in xrange(len(correlations)):
-        #    plt.plot(correlations[i])
+            # exportBedFile(
+            #     {name : peaks[name] for name, peak in corPeaksPos.items()},
+            #     corPeaksPos,
+            #     len(pattern)/2,
+            #     os.path.join(args.results_dir, sampleName + ".correlationPeaksPos.bed"),
+            #     sampleName + " correlation peaks - positive strand"
+            # )
 
-        ### TODO:
-        # Get regions in extreme quantiles of correlation 
-        # Check for enrichment in ...
-        #     mnase signal
-        #     nucleosomes
-        #     clusters of CM signal around TSSs
+            # corPeaksNeg = dict()
+            # for name, cor in correlationsNeg.items():
+            #     corPeak = findPeaks(abs(cor), 50)
+            #     corPeaksNeg[name] = corPeak
+
+            # exportBedFile(
+            #     {name : peaks[name] for name, peak in corPeaksNeg.items()},
+            #     corPeaksNeg,
+            #     len(pattern)/2,
+            #     os.path.join(args.results_dir, sampleName + ".correlationPeaksNeg.bed"),
+            #     sampleName + " correlation peaks - negative strand"
+            # )
+
+            ##### ALTERNATIVE WAYS TO HANDLE CORRELATIONS
+            # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
+            
+            # X = abs(correlationsPos.values()[1])
+            # for bandwidth in xrange(1, 10):
+            #     density = kde.kdensity(range(len(X)), bw=bandwidth / 10., weights=X)[0]
+            #     plt.plot(density * 100)
+
+            # for degree in xrange(10, 50):
+            #     coeffs = np.poly1d(np.polyfit(range(len(X)), X, 50))
+            #     plt.plot(np.polyval(coeffs, range(len(X))) * 2)
+
+            # # smooth with interpolate
+            # from scipy.interpolate import interp1d
+            # for degree in xrange(2, 15):
+            #     xn_ax = interp1d(range(len(X)), X, kind=degree)
+            #     plt.plot(xn_ax(X))
+
+            # # find local minima
+            # mins = np.r_[True, X[1:] < X[:-1]] & np.r_[X[:-1] < X[1:], True]
+
+            # min_index = [np.where(X==X[x]) for x in mins]
+
+            # [np.mean(x - 1, x + 1) for x in mins if x == True]
+
+
+            # # find peaks
+            # X = [abs(i) for l in correlationsPos.values() for i in l]
+            # corPeaks = findPeaks(np.array(X), 50)
+
+            # plt.plot(X)
+            # plt.plot(corPeaks.keys(), [0.2] * len(corPeaks.keys()), 'o')
+            # for center, peak in corPeaks.items():
+            #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
+
+            
+            # plot correlations for 20 peaks
+            # for i in xrange(len(correlations)):
+            #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
+            #     plt.plot(correlations.values()[i])
+            
+            # plot concatenation of correlations for some peaks
+            # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
+
+
+
+            # Winter2013 fig.4 - chr19 comparison
+            # peaksWinter = {"winter" : HTSeq.GenomicInterval("chr19", 37016000, 37022000)}
+            # covWinter = coverageInWindows(bam, peaksWinter, args.fragment_size)
+            # RWinter = OrderedDict()
+            # RWinter["winter"] = correlatePatternProfile(pattern, covWinter["winter"])
+            # exportWigFile(
+            #     [peaksWinter[i] for i in RWinter.keys()],
+            #     RWinter.values(),
+            #     len(pattern)/2,
+            #     os.path.join(args.results_dir, sampleName + ".peakCorrelation.Winter.wig"),
+            #     sampleName
+            # )
+
+            # with paralelization
+            # import multiprocessing as mp
+            # pool = mp.Pool()
+            # correlations = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in coverage.values()[:50]] 
+            # for i in xrange(len(correlations)):
+            #    plt.plot(correlations[i])
+
+            ### TODO:
+            # Get regions in extreme quantiles of correlation 
+            # Check for enrichment in ...
+            #     mnase signal
+            #     nucleosomes
+            #     clusters of CM signal around TSSs
 
 
 

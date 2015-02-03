@@ -93,7 +93,14 @@ if __name__ == '__main__':
 
     ### Process in parallel and serialize result
     # parallel process and reduce to Counter
-    dists = reduce(lambda x, y: x + y, parmap.map(distances, windows, bam, args.fragment_size, duplicates=args.duplicates, strand_wise=args.strand_wise, permutate=args.permute))
+    dists = reduce(
+        lambda x, y: x + y,
+        parmap.map(distances, windows, bam, args.fragment_size,
+            duplicates=args.duplicates,
+            strand_wise=args.strand_wise,
+            permutate=args.permute
+        )
+    )
     
     ### Serialize
     pickle.dump(dists, open(args.output_pickle, "wb"), protocol=pickle.HIGHEST_PROTOCOL)
