@@ -1,71 +1,469 @@
 #!/usr/env python
 
 from argparse import ArgumentParser
-import os, re
-from pybedtools import BedTool
-import HTSeq
-import numpy as np
-import string
-import random
-import itertools
-import cPickle as pickle
-
-from matplotlib import pyplot as plt
-import seaborn as sns
 from collections import Counter, OrderedDict
-
-from scipy.stats.stats import pearsonr
-import statsmodels.nonparametric.kde as kde
+from divideAndSlurm import DivideAndSlurm, Task
+from matplotlib import pyplot as plt
+from pybedtools import BedTool
 from scipy import signal
-
+from scipy.stats.stats import pearsonr
+import cPickle as pickle
+import HTSeq
+import itertools
+import numpy as np
+import os
+import random
+import re
+import seaborn as sns
+import statsmodels.nonparametric.kde as kde
+import string
+import subprocess
+import textwrap
+import time
 import yahmm
 
-import textwrap
-import subprocess
-
-import time
-
-from divideAndSlurm import DivideAndSlurm, Task
-
 np.set_printoptions(linewidth=200)
+
+
+def main(args):
+    ### Parse command-line arguments
+    parser = ArgumentParser(
+        description = 'read_distances.py',
+        usage       = 'python read_distances.py <directory> file1, file2... '
+    )
+
+    ### Global options
+    # positional arguments
+    parser.add_argument(dest='results_dir', type=str, help='Directory to save data to.')
+    parser.add_argument(dest='plots_dir', type=str, help='Directory to save plots to.')
+    parser.add_argument('bam_files', nargs = '*', help = 'Bam files')
+    # optional arguments
+    parser.add_argument('--duplicates', dest='duplicates', action='store_true')
+    parser.add_argument('--window-width', dest='window_width', type=int, default=1000)
+    parser.add_argument('--window-step', dest='window_step', type=int, default=900)
+    parser.add_argument('--fragment-size', dest='fragment_size', type=int, default=1)
+    parser.add_argument('--genome', dest='genome', type=str, default='hg19')
+    args = parser.parse_args()
+    args = parser.parse_args(
+        ["projects/chipmentation/results/periodicity",
+        "projects/chipmentation/results/plots/periodicity",
+        "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
+        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
+        #"data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
+        "data/human/chipmentation/mapped/merged/H3K27me3_K562_10k500k_CM.bam",
+        #"data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
+        "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam",
+        "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam",
+        #"/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
+        #"/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
+
+        ]
+    )
+    args.results_dir = os.path.abspath(args.results_dir)
+    args.plots_dir = os.path.abspath(args.plots_dir)
+
+    ### Get sample names
+    samples = {re.sub("\.bam", "", os.path.basename(sampleFile)) : os.path.abspath(sampleFile) for sampleFile in args.bam_files}
+
+    ### Get regions of interest in the genome
+    whole_genome = makeGenomeWindows(args.window_width, args.genome)
+
+    dhs = BedTool(os.path.join("/home", "arendeiro", "wgEncodeOpenChromDnaseK562Pk.narrowPeak"))
+    g = BedTool.window_maker(BedTool(), genome='hg19', w=args.window_width, s=args.window_width)
+    non_dhs = bedToolsInterval2GenomicInterval(g.intersect(b=dhs, v=True), strand=False, name=False)
+    dhs = bedToolsInterval2GenomicInterval(dhs, strand=False, name=False)
+
+    H3K27me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k27me3bUcdPk.narrowPeak"))
+    H3K4me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k4me3bUcdPk.narrowPeak"))
+
+    H3K27me3_only = bedToolsInterval2GenomicInterval(H3K27me3.intersect(b=H3K4me3, v=True), strand=False, name=False)
+    H3K4me3_only = bedToolsInterval2GenomicInterval(H3K4me3.intersect(b=H3K27me3, v=True), strand=False, name=False)
+
+    H3K27me3_H3K4me3 = bedToolsInterval2GenomicInterval(H3K4me3.intersect(b=H3K27me3), strand=False, name=False)
+
+    H3K27me3 = bedToolsInterval2GenomicInterval(H3K27me3, strand=True, name=False)
+    H3K4me3 = bedToolsInterval2GenomicInterval(H3K4me3, strand=True, name=False)
+
+    regions = {
+        "whole_genome" : whole_genome,
+        "dhs" : dhs,
+        "non_dhs" : non_dhs,
+        "H3K27me3" : H3K27me3,
+        "H3K4me3" : H3K4me3,
+        "H3K27me3_only" : H3K27me3_only,
+        "H3K4me3_only" : H3K4me3_only,
+        "H3K27me3_H3K4me3" : H3K27me3_H3K4me3
+    }
+    pickle.dump(regions, open(os.path.join(args.results_dir, "genomic_regions.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    
+    regions = pickle.load(open(os.path.join(args.results_dir, "genomic_regions.pickle"), "r"))
+
+    # Initialize Slurm object
+    slurm = DivideAndSlurm()
+    tasks = dict()
+    # Submit tasks for combinations of regions and bam files
+    for regionName, region in regions.items():
+        for sampleName, sampleFile in samples.items():
+            exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
+            # Add new task
+            if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
+                if regionName != "whole_genome":
+                    task = CountDistances(region, 10, os.path.abspath(sampleFile), permute=False, queue="shortq", time="10:00:00")
+                else:
+                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=False, queue="mediumq", time="42:00:00")
+                slurm.add_task(task)
+                slurm.submit(task) # Submit new task
+                tasks[task] = (sampleName, regionName, False) # Keep track
+                print(tasks[task])
+            # Add permuted
+            if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle")):
+                if regionName != "whole_genome":
+                    task = CountDistances(region, 10, os.path.abspath(sampleFile), permute=True, queue="shortq", time="10:00:00")
+                else:
+                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=True, queue="mediumq", time="42:00:00")
+                slurm.add_task(task)
+                slurm.submit(task) # Submit new task
+                tasks[task] = (sampleName, regionName, True) # Keep track
+                print(tasks[task])
+
+    stored = list()
+    pickle.dump((slurm, tasks, stored), open("/home/arendeiro/slurm.pickle", "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
+    ### Collect processed data
+    for task, (sampleName, regionName, permuted) in tasks.items():          # loop through tasks, see if ready
+        if task.is_ready() and task not in stored:                          # if yes, collect output and save
+            print(textwrap.dedent("""\
+            Task {0} is now ready! {1}, {2}, {3}
+            Time to completion was: {4} minutes.
+            """.format(task, sampleName, regionName, permuted, int(time.time() - task.submission_time)/ 60.)))
+            exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
+            dists = task.collect()
+            if not permuted:
+                pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            else:
+                pickle.dump(dists, open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            stored.append(task)
+
+    ### For each signal extract most abundant periodic signal through FFT, IFFT
+    for regionName, region in regions.items():
+        for sampleName, sampleFile in samples.items():
+
+            regionName = "whole_genome"
+            region = regions[regionName]
+            sampleName = samples.keys()[3]
+            sampleFile = samples[sampleName]
+            exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
+            dists = pickle.load(open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "r"))
+
+            distsPos = {dist : count for dist, count in dists.items() if dist >= 0}
+            distsNeg = {dist : count for dist, count in dists.items() if dist <= 0}
+            plt.plot(distsPos.keys(), distsPos.values())
+
+            permutedDists = pickle.load(open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "r"))
+
+            permutedDistsPos = {dist : count for dist, count in permutedDists.items() if dist >= 0}
+            permutedDistsNeg = {dist : count for dist, count in permutedDists.items() if dist <= 0}
+
+            plt.plot(permutedDistsPos.keys(), permutedDistsPos.values())
+
+            ### Extract most abundant periodic pattern from signal
+            # for DNase, extract from a different window (70-150bp)
+            if "DNase" in sampleName:
+                patternPos = extractPattern(distsPos, range(70, 110), os.path.join(args.plots_dir, sampleName + "_posStrand"))
+                patternNeg = extractPattern(distsNeg, range(70, 110), os.path.join(args.plots_dir, sampleName + "-_negStrand"))
+                pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(70, 110), os.path.join(args.plots_dir, sampleName + "_bothStrands"))
+
+                permutedPatternPos = extractPattern(permutedDistsPos, range(70, 110), os.path.join(args.plots_dir, sampleName + "_posStrand_permuted"))
+                permutedPatternNeg = extractPattern(permutedDistsNeg, range(70, 110), os.path.join(args.plots_dir, sampleName + "_negStrand_permuted"))
+                permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(70, 110), os.path.join(args.plots_dir, sampleName + "_bothStrands_permuted"))
+            else:
+                patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.plots_dir, sampleName + "_posStrand"))
+                patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.plots_dir, sampleName + "_negStrand"))
+                pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.plots_dir, sampleName + "_bothStrands"))
+            
+                permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.plots_dir, sampleName + "_posStrand_permuted"))
+                permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.plots_dir, sampleName + "_negStrand_permuted"))
+                permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.plots_dir, sampleName + "_bothStrands_permuted"))
+
+            ### calculate read coverage in H3K4me3 peaks
+            bam = HTSeq.BAM_Reader(os.path.abspath(sampleFile))
+            peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=samples[1]))
+            peaks = bedToolsInterval2GenomicInterval(peaks)
+            # peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
+            
+            coverage = coverageInWindows(bam, peaks, args.fragment_size, strand_wise=True)
+            pickle.dump(coverage, open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            
+            coverage = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "r"))
+
+            # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
+
+            ### Correlate coverage and signal pattern
+            correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
+            correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
+            pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.results_dir, sampleName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            
+            correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCorrelationStranded.pickle"), "r"))
+            
+            ### Binarize data for HMM
+            # binarize data strand-wise
+            pos = dict()
+            for name, cor in correlationsPos.items():
+                b = binarize(cor)
+                pos[name] = b
+
+            neg = dict()
+            for name, cor in correlationsNeg.items():
+                b = binarize(cor)
+                neg[name] = b
+
+            # join strands in one sequence
+            binary = {peak : getConsensus(pos[peak], neg[peak]) for peak in pos.keys()}
+
+            # get zeroes for rest of the genome
+
+            ### HMM
+            model = WinterHMM()
+            ## Train
+            model.train(binary.values()[:100]) # subset data for training
+            # see new probabilities
+            [(s.name, s.distribution) for s in model.model.states]
+            model.model.dense_transition_matrix()
+            # save model with trained parameters
+            pickle.dump(model, open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            model = pickle.load(open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "r"))
+            ## Predict
+            hmmOutput = {peak : model.predict(sequence) for peak, sequence in binary.items()}
+
+            ## Get DARNS from hmmOutput
+            DARNS = getDARNS(peaks, hmmOutput)
+
+            ## Plot attributes
+            widths, distances, midDistances = measureDARNS(DARNS)
+
+            plt.plot(widths.keys(), widths.values(), 'o')
+            plt.plot(distances.keys(), distances.values(), 'o')
+            plt.plot(midDistances.keys(), midDistances.values(), 'o')
+            sns.violinplot(widths)
+
+            ## Get scores from DARNS
+            probs = {peak : model.retrieveProbabilities(sequence) for peak, sequence in binary.items()}
+
+            # plot predicted darns and post probs
+            i = 3
+            sequence = hmmOutput.values()[i]
+
+            limits = getDARNSlimits(sequence)
+            probs = model.retrieveProbabilities(binary.items()[i][1])
+
+            from matplotlib.patches import Rectangle
+            colors = sns.color_palette('deep', n_colors=6, desat=0.5)
+            sns.set_context(rc={"figure.figsize": (14, 6)})
+            sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
+            sns.plt.xlim([1, len(sequence)+1])
+            sns.plt.ylim([0,1.2])
+            sns.plt.ylabel(r'posterior probs, $\gamma_k$')
+            sns.plt.xlabel(r'$k$')
+            axis = sns.plt.gca()
+
+            # Plot viterbi predicted TMDs
+            for start, end in limits:
+                axis.add_patch(Rectangle((start+1, 1.075), end-start+1, 0.05, 
+                                         facecolor=colors[0], alpha=0.7))
+
+            # Get indices of states
+            indices = { state.name: i for i, state in enumerate( model.model.states ) }
+
+            sns.plt.plot(range(1, len(sequence)+1), probs, 
+                         c=colors[2], alpha=0.7)
+            plt.show()
+
+            ### Output bed/wig
+
+
+
+
+            ## Export wig files with raw correlations 
+            exportWigFile(
+                [peaks[i] for i in correlationsPos.keys()],
+                correlationsPos.values(),
+                len(pattern)/2,
+                os.path.join(args.results_dir, sampleName + ".peakCorrelationPos.wig"),
+                sampleName + " raw absolute correlation - positive strand"
+            )
+            exportWigFile(
+                [peaks[i] for i in correlationsNeg.keys()],
+                correlationsNeg.values(),
+                len(pattern)/2,
+                os.path.join(args.results_dir, sampleName + ".peakCorrelationNeg.wig"),
+                sampleName + " raw absolute correlation - negative strand"
+            )
+            ## Export wig files with correlations peaks
+
+            ## Export wig files with DARNS
+
+            ## Export bed files with DARNS
+
+
+            ### Genome arithmetics with DARNS:
+            ## Plot :
+            # distances between DARNS borders
+            # distances between DARNS centers
+            # DARNS length
+
+
+
+            # ### Find correlation peaks (broadish regions around region of high pattern-reads correlation)
+            # # i = 0
+            # corPeaksPos = dict()
+            # for name, cor in correlationsPos.items():
+            #     corPeak = findPeaks(abs(cor), 50)
+            #     corPeaksPos[name] = corPeak
+            #     # plt.subplot(5,2,i)
+            #     # plt.plot(abs(cor))
+            #     # plt.plot(corPeak.keys(), [0.2] * len(corPeak.keys()), 'o')
+            #     # for center, peak in corPeak.items():
+            #     #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
+            #     # i += 1
+
+            # exportBedFile(
+            #     {name : peaks[name] for name, peak in corPeaksPos.items()},
+            #     corPeaksPos,
+            #     len(pattern)/2,
+            #     os.path.join(args.results_dir, sampleName + ".correlationPeaksPos.bed"),
+            #     sampleName + " correlation peaks - positive strand"
+            # )
+
+            # corPeaksNeg = dict()
+            # for name, cor in correlationsNeg.items():
+            #     corPeak = findPeaks(abs(cor), 50)
+            #     corPeaksNeg[name] = corPeak
+
+            # exportBedFile(
+            #     {name : peaks[name] for name, peak in corPeaksNeg.items()},
+            #     corPeaksNeg,
+            #     len(pattern)/2,
+            #     os.path.join(args.results_dir, sampleName + ".correlationPeaksNeg.bed"),
+            #     sampleName + " correlation peaks - negative strand"
+            # )
+
+            ##### ALTERNATIVE WAYS TO HANDLE CORRELATIONS
+            # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
+            
+            # X = abs(correlationsPos.values()[1])
+            # for bandwidth in xrange(1, 10):
+            #     density = kde.kdensity(range(len(X)), bw=bandwidth / 10., weights=X)[0]
+            #     plt.plot(density * 100)
+
+            # for degree in xrange(10, 50):
+            #     coeffs = np.poly1d(np.polyfit(range(len(X)), X, 50))
+            #     plt.plot(np.polyval(coeffs, range(len(X))) * 2)
+
+            # # smooth with interpolate
+            # from scipy.interpolate import interp1d
+            # for degree in xrange(2, 15):
+            #     xn_ax = interp1d(range(len(X)), X, kind=degree)
+            #     plt.plot(xn_ax(X))
+
+            # # find local minima
+            # mins = np.r_[True, X[1:] < X[:-1]] & np.r_[X[:-1] < X[1:], True]
+
+            # min_index = [np.where(X==X[x]) for x in mins]
+
+            # [np.mean(x - 1, x + 1) for x in mins if x == True]
+
+
+            # # find peaks
+            # X = [abs(i) for l in correlationsPos.values() for i in l]
+            # corPeaks = findPeaks(np.array(X), 50)
+
+            # plt.plot(X)
+            # plt.plot(corPeaks.keys(), [0.2] * len(corPeaks.keys()), 'o')
+            # for center, peak in corPeaks.items():
+            #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
+
+            
+            # plot correlations for 20 peaks
+            # for i in xrange(len(correlations)):
+            #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
+            #     plt.plot(correlations.values()[i])
+            
+            # plot concatenation of correlations for some peaks
+            # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
+
+
+
+            # Winter2013 fig.4 - chr19 comparison
+            # peaksWinter = {"winter" : HTSeq.GenomicInterval("chr19", 37016000, 37022000)}
+            # covWinter = coverageInWindows(bam, peaksWinter, args.fragment_size)
+            # RWinter = OrderedDict()
+            # RWinter["winter"] = correlatePatternProfile(pattern, covWinter["winter"])
+            # exportWigFile(
+            #     [peaksWinter[i] for i in RWinter.keys()],
+            #     RWinter.values(),
+            #     len(pattern)/2,
+            #     os.path.join(args.results_dir, sampleName + ".peakCorrelation.Winter.wig"),
+            #     sampleName
+            # )
+
+            # with paralelization
+            # import multiprocessing as mp
+            # pool = mp.Pool()
+            # correlations = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in coverage.values()[:50]] 
+            # for i in xrange(len(correlations)):
+            #    plt.plot(correlations[i])
+
+            ### TODO:
+            # Get regions in extreme quantiles of correlation 
+            # Check for enrichment in ...
+            #     mnase signal
+            #     nucleosomes
+            #     clusters of CM signal around TSSs
+
 
 class CountDistances(Task):
     """
     Task to perform counting of distances between reads under regions.
     """
-    def __init__(self, data, fractions, bam_file, queue="shortq", strand_wise=True, duplicates=True, permute=False, fragment_size=1):
-        super(Task, self).__init__()
-        
+    def __init__(self, data, fractions, *args, **kwargs):
+        super(CountDistances, self).__init__(data, fractions, *args, **kwargs)
+        ### Initialize rest
         now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1,1000))], sep="_")
         self.name = "count_distances_{0}".format(now)
-        self.data = data
-        self.fractions = fractions
-        self.bam_file = bam_file
-        self.strand_wise = strand_wise
-        self.duplicates = duplicates
-        self.permute = permute
-        self.fragment_size = fragment_size
 
-        self.queue = queue
-        
-        # Check bunch of stuff        
-
-    def __repr__(self):
-        return "CountDistances object " + self.name
-
-    def __str__(self):
-        return "CountDistances object " + self.name
+        ### Parse
+        # required argument
+        if len(self.args) != 1:
+            raise TypeError("Bam file argument is missing")
+        self.bam_file = self.args[0]
+        # additional arguments
+        if "strand_wise" in kwargs.keys():
+            self.strand_wise = kwargs["strand_wise"]
+        else:
+            self.strand_wise = True
+        if "duplicates" in kwargs.keys():
+            self.duplicates = kwargs["duplicates"]
+        else:
+            self.duplicates = True
+        if "permute" in kwargs.keys():
+            self.permute = kwargs["permute"]
+        else:
+            self.permute = False
+        if "fragment_size" in kwargs.keys():
+            self.fragment_size = kwargs["fragment_size"]
+        else:
+            self.fragment_size = 1
 
     def _prepare(self):
         """
-        Add task to be performed with data.
-        """
+        Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
+        """        
         self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep=".")) # add abspath
 
-        # split data in fractions
+        ### Split data in fractions
         ids, groups, files = self._split_data()
 
-        # make jobs with groups of data
+        ### Make jobs with groups of data
         self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
 
         for i in xrange(len(ids)):
@@ -75,10 +473,14 @@ class CountDistances(Task):
 
             ### assemble job file
             # header
-            job = self._slurmHeader(ids[i], self.log, queue=self.queue, userMail=self.slurm.userMail)
+            job = self._slurmHeader(ids[i])
 
             # command - add abspath!
-            task = "    python count_distances_parallel.py {0} {1} {2} ".format(inputPickle, outputPickle, self.bam_file)
+            task = """\
+                # Activate virtual environment
+                source /home/arendeiro/venv/bin/activate
+
+                python count_distances_parallel.py {0} {1} {2} """.format(inputPickle, outputPickle, self.bam_file)
 
             if self.strand_wise:
                 task += "--strand-wise "
@@ -87,7 +489,14 @@ class CountDistances(Task):
             if self.permute:
                 task += "--permute "
             task += "--fragment-size {0}".format(self.fragment_size)
-            job += task
+
+            task += """
+
+                # Deactivate virtual environment
+                deactivate
+                    """
+
+            job += textwrap.dedent(task)
 
             # footer
             job += self._slurmFooter()
@@ -103,12 +512,12 @@ class CountDistances(Task):
                 handle.write(textwrap.dedent(job))
 
         # Delete data if jobs are ready to submit and data is serialized
-        #if hasattr(self, "jobs") and hasattr(self, "jobFiles"):
-        #    del self.data
+        if hasattr(self, "jobs") and hasattr(self, "jobFiles"):
+            del self.data
 
     def collect(self):
         """
-        If self.is_ready(), return joined data.
+        If self.is_ready(), return joined reduced data.
         """
         if hasattr(self, "output"): # if output is already stored, just return it
             return self.output
@@ -787,387 +1196,10 @@ def exportBedFile(intervals, peaks, offset, filename, trackname, strand="."):
                 )
                 handle.write(entry)
 
-
-def main(args):
-    ### Get sample names
-    samples = {re.sub("\.bam", "", os.path.basename(sampleFile)) : os.path.abspath(sampleFile) for sampleFile in args.bamfiles}
-
-    ### Get regions of interest in the genome
-    whole_genome = makeGenomeWindows(args.window_width, args.genome)
-
-    dhs = BedTool(os.path.join("/home", "arendeiro", "wgEncodeOpenChromDnaseK562Pk.narrowPeak"))
-    g = BedTool.window_maker(BedTool(), genome='hg19', w=args.window_width, s=args.window_width)
-    non_dhs = bedToolsInterval2GenomicInterval(g.intersect(b=dhs, v=True), strand=False, name=False)
-    dhs = bedToolsInterval2GenomicInterval(dhs, strand=False, name=False)
-
-    H3K27me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k27me3bUcdPk.narrowPeak"))
-    H3K4me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k4me3bUcdPk.narrowPeak"))
-
-    H3K27me3_only = bedToolsInterval2GenomicInterval(H3K27me3.intersect(b=H3K4me3, v=True), strand=False, name=False)
-    H3K4me3_only = bedToolsInterval2GenomicInterval(H3K4me3.intersect(b=H3K27me3, v=True), strand=False, name=False)
-
-    H3K27me3_H3K4me3 = bedToolsInterval2GenomicInterval(H3K4me3.intersect(b=H3K27me3), strand=False, name=False)
-
-    H3K27me3 = bedToolsInterval2GenomicInterval(H3K27me3, strand=True, name=False)
-    H3K4me3 = bedToolsInterval2GenomicInterval(H3K4me3, strand=True, name=False)
-
-    regions = {
-        "whole_genome" : whole_genome,
-        "dhs" : dhs,
-        "non_dhs" : non_dhs,
-        "H3K27me3" : H3K27me3,
-        "H3K4me3" : H3K4me3,
-        "H3K27me3_only" : H3K27me3_only,
-        "H3K4me3_only" : H3K4me3_only,
-        "H3K27me3_H3K4me3" : H3K27me3_H3K4me3
-    }
-    pickle.dump(regions, open(os.path.join(args.results_dir, "genomic_regions.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    
-    regions = pickle.load(open(os.path.join(args.results_dir, "genomic_regions.pickle"), "r"))
-
-    # Initialize Slurm object
-    slurm = DivideAndSlurm()
-    tasks = dict()
-    # Submit tasks for combinations of regions and bam files
-    for regionName, region in regions.items():
-        for sampleName, sampleFile in samples.items():
-            exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
-            if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
-                print(sampleName, regionName)
-                # Add new task
-                task = CountDistances(region, 30, os.path.abspath(sampleFile), permute=False)
-                slurm.add_task(task)
-                slurm.submit(task) # Submit new task
-                tasks[task] = (sampleName, regionName, False) # Keep track
-                # Add permuted
-                task = CountDistances(region, 30, os.path.abspath(sampleFile), permute=True)
-                slurm.add_task(task)
-                slurm.submit(task) # Submit new task
-                tasks[task] = (sampleName, regionName, True) # Keep track
-
-    ### Collect processed data
-    stored = list()
-    while not all([slurm.is_ready(taskNumber) for taskNumber in tasks.keys()]): # while not all tasks are ready
-        for task, (sampleName, regionName, permuted) in tasks.items():          # loop through tasks, see if ready
-            if task.is_ready() and task not in stored:                          # if yes, collect output and save
-                print("""\
-                Task {0} is now ready! {1}, {2}
-                Time to completion was: {3} minutes.
-
-                """.format(task, sampleName, regionName, int(time.time() - slurm.tasks[task]["submission_time"])/ 60.))
-
-                exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
-                dists = task.collect_distances()
-                if not permuted:
-                    pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-                else:
-                    pickle.dump(dists, open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-                stored.append(task)
-
-    ### For each signal extract most abundant periodic signal through FFT, IFFT
-    for regionName, region in regions.items():
-        for sampleName, sampleFile in samples.items():
-            exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
-            dists = pickle.load(open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "r"))
-
-            distsPos = {dist : count for dist, count in dists.items() if dist >= 0}
-            distsNeg = {dist : count for dist, count in dists.items() if dist =< 0}
-
-            permutedDists = pickle.load(open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "r"))
-
-            permutedDistsPos = {dist : count for dist, count in permutedDists.items() if dist >= 0}
-            permutedDistsNeg = {dist : count for dist, count in permutedDists.items() if dist =< 0}
-
-            ### Extract most abundant periodic pattern from signal
-            # for DNase, extract from a different window (70-150bp)
-            if "DNase" in sampleName:
-                patternPos = extractPattern(distsPos, range(70, 110), os.path.join(args.plots_dir, sampleName + "_posStrand"))
-                patternNeg = extractPattern(distsNeg, range(70, 110), os.path.join(args.plots_dir, sampleName + "-_negStrand"))
-                pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(70, 110), os.path.join(args.plots_dir, sampleName + "_bothStrands"))
-
-                permutedPatternPos = extractPattern(permutedDistsPos, range(70, 110), os.path.join(args.plots_dir, sampleName + "_posStrand_permuted"))
-                permutedPatternNeg = extractPattern(permutedDistsNeg, range(70, 110), os.path.join(args.plots_dir, sampleName + "_negStrand_permuted"))
-                permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(70, 110), os.path.join(args.plots_dir, sampleName + "_bothStrands_permuted"))
-            else:
-                patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.plots_dir, sampleName + "_posStrand"))
-                patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.plots_dir, sampleName + "_negStrand"))
-                pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.plots_dir, sampleName + "_bothStrands"))
-            
-                permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.plots_dir, sampleName + "_posStrand_permuted"))
-                permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.plots_dir, sampleName + "_negStrand_permuted"))
-                permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.plots_dir, sampleName + "_bothStrands_permuted"))
-
-            ### calculate read coverage in H3K4me3 peaks
-            bam = HTSeq.BAM_Reader(os.path.abspath(sampleFile))
-            peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=samples[1]))
-            peaks = bedToolsInterval2GenomicInterval(peaks)
-            # peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
-            
-            coverage = coverageInWindows(bam, peaks, args.fragment_size, strand_wise=True)
-            pickle.dump(coverage, open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-            
-            coverage = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "r"))
-
-            # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
-
-            ### Correlate coverage and signal pattern
-            correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
-            correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
-            pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.results_dir, sampleName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-            
-            correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCorrelationStranded.pickle"), "r"))
-            
-            ### Binarize data for HMM
-            # binarize data strand-wise
-            pos = dict()
-            for name, cor in correlationsPos.items():
-                b = binarize(cor)
-                pos[name] = b
-
-            neg = dict()
-            for name, cor in correlationsNeg.items():
-                b = binarize(cor)
-                neg[name] = b
-
-            # join strands in one sequence
-            binary = {peak : getConsensus(pos[peak], neg[peak]) for peak in pos.keys()}
-
-            # get zeroes for rest of the genome
-
-            ### HMM
-            model = WinterHMM()
-            ## Train
-            model.train(binary.values()[:100]) # subset data for training
-            # see new probabilities
-            [(s.name, s.distribution) for s in model.model.states]
-            model.model.dense_transition_matrix()
-            # save model with trained parameters
-            pickle.dump(model, open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-            model = pickle.load(open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "r"))
-            ## Predict
-            hmmOutput = {peak : model.predict(sequence) for peak, sequence in binary.items()}
-
-            ## Get DARNS from hmmOutput
-            DARNS = getDARNS(peaks, hmmOutput)
-
-            ## Plot attributes
-            widths, distances, midDistances = measureDARNS(DARNS)
-
-            plt.plot(widths.keys(), widths.values(), 'o')
-            plt.plot(distances.keys(), distances.values(), 'o')
-            plt.plot(midDistances.keys(), midDistances.values(), 'o')
-            sns.violinplot(widths)
-
-            ## Get scores from DARNS
-            probs = {peak : model.retrieveProbabilities(sequence) for peak, sequence in binary.items()}
-
-            # plot predicted darns and post probs
-            i = 3
-            sequence = hmmOutput.values()[i]
-
-            limits = getDARNSlimits(sequence)
-            probs = model.retrieveProbabilities(binary.items()[i][1])
-
-            from matplotlib.patches import Rectangle
-            colors = sns.color_palette('deep', n_colors=6, desat=0.5)
-            sns.set_context(rc={"figure.figsize": (14, 6)})
-            sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
-            sns.plt.xlim([1, len(sequence)+1])
-            sns.plt.ylim([0,1.2])
-            sns.plt.ylabel(r'posterior probs, $\gamma_k$')
-            sns.plt.xlabel(r'$k$')
-            axis = sns.plt.gca()
-
-            # Plot viterbi predicted TMDs
-            for start, end in limits:
-                axis.add_patch(Rectangle((start+1, 1.075), end-start+1, 0.05, 
-                                         facecolor=colors[0], alpha=0.7))
-
-            # Get indices of states
-            indices = { state.name: i for i, state in enumerate( model.model.states ) }
-
-            sns.plt.plot(range(1, len(sequence)+1), probs, 
-                         c=colors[2], alpha=0.7)
-            plt.show()
-
-            ### Output bed/wig
-
-
-
-
-            ## Export wig files with raw correlations 
-            exportWigFile(
-                [peaks[i] for i in correlationsPos.keys()],
-                correlationsPos.values(),
-                len(pattern)/2,
-                os.path.join(args.results_dir, sampleName + ".peakCorrelationPos.wig"),
-                sampleName + " raw absolute correlation - positive strand"
-            )
-            exportWigFile(
-                [peaks[i] for i in correlationsNeg.keys()],
-                correlationsNeg.values(),
-                len(pattern)/2,
-                os.path.join(args.results_dir, sampleName + ".peakCorrelationNeg.wig"),
-                sampleName + " raw absolute correlation - negative strand"
-            )
-            ## Export wig files with correlations peaks
-
-            ## Export wig files with DARNS
-
-            ## Export bed files with DARNS
-
-
-            ### Genome arithmetics with DARNS:
-            ## Plot :
-            # distances between DARNS borders
-            # distances between DARNS centers
-            # DARNS length
-
-
-
-            # ### Find correlation peaks (broadish regions around region of high pattern-reads correlation)
-            # # i = 0
-            # corPeaksPos = dict()
-            # for name, cor in correlationsPos.items():
-            #     corPeak = findPeaks(abs(cor), 50)
-            #     corPeaksPos[name] = corPeak
-            #     # plt.subplot(5,2,i)
-            #     # plt.plot(abs(cor))
-            #     # plt.plot(corPeak.keys(), [0.2] * len(corPeak.keys()), 'o')
-            #     # for center, peak in corPeak.items():
-            #     #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
-            #     # i += 1
-
-            # exportBedFile(
-            #     {name : peaks[name] for name, peak in corPeaksPos.items()},
-            #     corPeaksPos,
-            #     len(pattern)/2,
-            #     os.path.join(args.results_dir, sampleName + ".correlationPeaksPos.bed"),
-            #     sampleName + " correlation peaks - positive strand"
-            # )
-
-            # corPeaksNeg = dict()
-            # for name, cor in correlationsNeg.items():
-            #     corPeak = findPeaks(abs(cor), 50)
-            #     corPeaksNeg[name] = corPeak
-
-            # exportBedFile(
-            #     {name : peaks[name] for name, peak in corPeaksNeg.items()},
-            #     corPeaksNeg,
-            #     len(pattern)/2,
-            #     os.path.join(args.results_dir, sampleName + ".correlationPeaksNeg.bed"),
-            #     sampleName + " correlation peaks - negative strand"
-            # )
-
-            ##### ALTERNATIVE WAYS TO HANDLE CORRELATIONS
-            # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
-            
-            # X = abs(correlationsPos.values()[1])
-            # for bandwidth in xrange(1, 10):
-            #     density = kde.kdensity(range(len(X)), bw=bandwidth / 10., weights=X)[0]
-            #     plt.plot(density * 100)
-
-            # for degree in xrange(10, 50):
-            #     coeffs = np.poly1d(np.polyfit(range(len(X)), X, 50))
-            #     plt.plot(np.polyval(coeffs, range(len(X))) * 2)
-
-            # # smooth with interpolate
-            # from scipy.interpolate import interp1d
-            # for degree in xrange(2, 15):
-            #     xn_ax = interp1d(range(len(X)), X, kind=degree)
-            #     plt.plot(xn_ax(X))
-
-            # # find local minima
-            # mins = np.r_[True, X[1:] < X[:-1]] & np.r_[X[:-1] < X[1:], True]
-
-            # min_index = [np.where(X==X[x]) for x in mins]
-
-            # [np.mean(x - 1, x + 1) for x in mins if x == True]
-
-
-            # # find peaks
-            # X = [abs(i) for l in correlationsPos.values() for i in l]
-            # corPeaks = findPeaks(np.array(X), 50)
-
-            # plt.plot(X)
-            # plt.plot(corPeaks.keys(), [0.2] * len(corPeaks.keys()), 'o')
-            # for center, peak in corPeaks.items():
-            #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
-
-            
-            # plot correlations for 20 peaks
-            # for i in xrange(len(correlations)):
-            #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
-            #     plt.plot(correlations.values()[i])
-            
-            # plot concatenation of correlations for some peaks
-            # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
-
-
-
-            # Winter2013 fig.4 - chr19 comparison
-            # peaksWinter = {"winter" : HTSeq.GenomicInterval("chr19", 37016000, 37022000)}
-            # covWinter = coverageInWindows(bam, peaksWinter, args.fragment_size)
-            # RWinter = OrderedDict()
-            # RWinter["winter"] = correlatePatternProfile(pattern, covWinter["winter"])
-            # exportWigFile(
-            #     [peaksWinter[i] for i in RWinter.keys()],
-            #     RWinter.values(),
-            #     len(pattern)/2,
-            #     os.path.join(args.results_dir, sampleName + ".peakCorrelation.Winter.wig"),
-            #     sampleName
-            # )
-
-            # with paralelization
-            # import multiprocessing as mp
-            # pool = mp.Pool()
-            # correlations = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in coverage.values()[:50]] 
-            # for i in xrange(len(correlations)):
-            #    plt.plot(correlations[i])
-
-            ### TODO:
-            # Get regions in extreme quantiles of correlation 
-            # Check for enrichment in ...
-            #     mnase signal
-            #     nucleosomes
-            #     clusters of CM signal around TSSs
-
-
-
 if __name__ == '__main__':
-    ### Parse command-line arguments
-    parser = ArgumentParser(
-        description = 'read_distances.py',
-        usage       = 'python read_distances.py <directory> file1, file2... '
-    )
-
-    ### Global options
-    # positional arguments
-    parser.add_argument(dest='results_dir', type=str, help='Directory to save data to.')
-    parser.add_argument(dest='plots_dir', type=str, help='Directory to save plots to.')
-    parser.add_argument('bamfiles', nargs = '*', help = 'bamFiles')
-    # optional arguments
-    parser.add_argument('--duplicates', dest='duplicates', action='store_true')
-    parser.add_argument('--window-width', dest='window_width', type=int, default=1000)
-    parser.add_argument('--window-step', dest='window_step', type=int, default=900)
-    parser.add_argument('--fragment-size', dest='fragment_size', type=int, default=1)
-    parser.add_argument('--genome', dest='genome', type=str, default='hg19')
-    args = parser.parse_args()
-    args = parser.parse_args(
-        ["projects/chipmentation/results/periodicity",
-        "projects/chipmentation/results/plots/periodicity",
-        "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
-        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
-        #"data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
-        "data/human/chipmentation/mapped/merged/H3K27me3_K562_10k500k_CM.bam",
-        #"data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
-        "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam",
-        "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam",
-        #"/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
-        #"/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
-
-        ]
-    )
-    args.results_dir = os.path.abspath(args.results_dir)
-    args.plots_dir = os.path.abspath(args.plots_dir)
-    main(args)
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("Program canceled by user!")
+        sys.exit(0)
+    
