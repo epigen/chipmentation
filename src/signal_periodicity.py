@@ -34,6 +34,7 @@ def main(args):
 
     ### Global options
     # positional arguments
+    parser.add_argument(dest='data_dir', type=str, help='Directory to save data to.')
     parser.add_argument(dest='results_dir', type=str, help='Directory to save data to.')
     parser.add_argument(dest='plots_dir', type=str, help='Directory to save plots to.')
     parser.add_argument('bam_files', nargs = '*', help = 'Bam files')
@@ -45,7 +46,9 @@ def main(args):
     parser.add_argument('--genome', dest='genome', type=str, default='hg19')
     args = parser.parse_args()
     args = parser.parse_args(
-        ["projects/chipmentation/results/periodicity",
+        [
+        "projects/chipmentation/results/periodicity-data",
+        "projects/chipmentation/results/periodicity",
         "projects/chipmentation/results/plots/periodicity",
         "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
         "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
@@ -59,6 +62,7 @@ def main(args):
 
         ]
     )
+    args.data_dir = os.path.abspath(args.data_dir)
     args.results_dir = os.path.abspath(args.results_dir)
     args.plots_dir = os.path.abspath(args.plots_dir)
 
@@ -66,23 +70,34 @@ def main(args):
     samples = {re.sub("\.bam", "", os.path.basename(sampleFile)) : os.path.abspath(sampleFile) for sampleFile in args.bam_files}
 
     ### Get regions of interest in the genome
+    # Whole genome in 1kb-windows
     whole_genome = makeGenomeWindows(args.window_width, args.genome)
 
-    dhs = BedTool(os.path.join("/home", "arendeiro", "wgEncodeOpenChromDnaseK562Pk.narrowPeak"))
+    # DHS and non-DHS in 1kb-windows
     g = BedTool.window_maker(BedTool(), genome='hg19', w=args.window_width, s=args.window_width)
-    non_dhs = bedToolsInterval2GenomicInterval(g.intersect(b=dhs, v=True), strand=False, name=False)
-    dhs = bedToolsInterval2GenomicInterval(dhs, strand=False, name=False)
+    dhs = BedTool(os.path.join("/home", "arendeiro", "wgEncodeOpenChromDnaseK562Pk.narrowPeak"))
+    non_dhs = g.intersect(b=dhs, v=True)
+    non_dhs = bedToolsInterval2GenomicInterval(BedTool.window_maker(non_dhs, b=non_dhs, w=args.window_width, s=args.window_width), strand=False, name=False)
+    dhs = bedToolsInterval2GenomicInterval(BedTool.window_maker(dhs, b=dhs, w=args.window_width, s=args.window_width), strand=False, name=False)
 
+    # Bed files
     H3K27me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k27me3bUcdPk.narrowPeak"))
     H3K4me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k4me3bUcdPk.narrowPeak"))
 
-    H3K27me3_only = bedToolsInterval2GenomicInterval(H3K27me3.intersect(b=H3K4me3, v=True), strand=False, name=False)
-    H3K4me3_only = bedToolsInterval2GenomicInterval(H3K4me3.intersect(b=H3K27me3, v=True), strand=False, name=False)
+    # peaks not overlapping the other mark in 1kb-windows 
+    H3K27me3_only = H3K27me3.intersect(b=H3K4me3, v=True)
+    H3K27me3_only = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3_only, b=H3K27me3_only, w=args.window_width, s=args.window_width), strand=False, name=False)
+    H3K4me3_only = H3K27me3.intersect(b=H3K27me3, v=True)
+    H3K4me3_only = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3_only, b=H3K4me3_only, w=args.window_width, s=args.window_width), strand=False, name=False)
 
-    H3K27me3_H3K4me3 = bedToolsInterval2GenomicInterval(H3K4me3.intersect(b=H3K27me3), strand=False, name=False)
+    # peaks overlapping each other in 1kb-windows
+    H3K27me3_H3K4me3 = H3K4me3.intersect(b=H3K27me3)
+    H3K27me3_H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3_H3K4me3, b=H3K27me3_H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
 
-    H3K27me3 = bedToolsInterval2GenomicInterval(H3K27me3, strand=True, name=False)
-    H3K4me3 = bedToolsInterval2GenomicInterval(H3K4me3, strand=True, name=False)
+    # All H3K27me3 peaks in 1kb windows
+    H3K27me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3, b=H3K27me3, w=args.window_width, s=args.window_width), strand=False, name=False)
+    # All H3K27me3 peaks in 1kb windows
+    H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3, b=H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
 
     regions = {
         "whole_genome" : whole_genome,
@@ -94,9 +109,9 @@ def main(args):
         "H3K4me3_only" : H3K4me3_only,
         "H3K27me3_H3K4me3" : H3K27me3_H3K4me3
     }
-    pickle.dump(regions, open(os.path.join(args.results_dir, "genomic_regions.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    pickle.dump(regions, open(os.path.join(args.data_dir, "genomic_regions.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     
-    regions = pickle.load(open(os.path.join(args.results_dir, "genomic_regions.pickle"), "r"))
+    regions = pickle.load(open(os.path.join(args.data_dir, "genomic_regions.pickle"), "r"))
 
     # Initialize Slurm object
     slurm = DivideAndSlurm()
@@ -104,39 +119,40 @@ def main(args):
     # Submit tasks for combinations of regions and bam files
     for regionName, region in regions.items():
         for sampleName, sampleFile in samples.items():
-            exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
+            exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
             # Add new task
             if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
-                if regionName != "whole_genome":
-                    task = CountDistances(region, 10, os.path.abspath(sampleFile), permute=False, queue="shortq", time="10:00:00")
+                if regionName != "whole_genome" or regionName != "non_dhs":
+                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=False, queue="shortq", time="12:00:00")
                 else:
-                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=False, queue="mediumq", time="42:00:00")
+                    task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=False, queue="mediumq", time="42:00:00")
                 slurm.add_task(task)
                 slurm.submit(task) # Submit new task
                 tasks[task] = (sampleName, regionName, False) # Keep track
                 print(tasks[task])
             # Add permuted
             if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle")):
-                if regionName != "whole_genome":
-                    task = CountDistances(region, 10, os.path.abspath(sampleFile), permute=True, queue="shortq", time="10:00:00")
+                if regionName != "whole_genome" or regionName != "non_dhs":
+                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=True, queue="shortq", time="12:00:00")
                 else:
-                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=True, queue="mediumq", time="42:00:00")
+                    task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=True, queue="mediumq", time="42:00:00")
                 slurm.add_task(task)
                 slurm.submit(task) # Submit new task
                 tasks[task] = (sampleName, regionName, True) # Keep track
                 print(tasks[task])
 
     stored = list()
-    pickle.dump((slurm, tasks, stored), open("/home/arendeiro/slurm.pickle", "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    pickle.dump((slurm, tasks, stored), open("/home/arendeiro/slurm_20150205_1kb.pickle", "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    slurm, tasks, stored = pickle.load(open("/home/arendeiro/slurm.pickle", "r"))
 
     ### Collect processed data
     for task, (sampleName, regionName, permuted) in tasks.items():          # loop through tasks, see if ready
-        if task.is_ready() and task not in stored:                          # if yes, collect output and save
+        if task.is_ready():                                                 # if yes, collect output and save
             print(textwrap.dedent("""\
             Task {0} is now ready! {1}, {2}, {3}
             Time to completion was: {4} minutes.
             """.format(task, sampleName, regionName, permuted, int(time.time() - task.submission_time)/ 60.)))
-            exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
+            exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
             dists = task.collect()
             if not permuted:
                 pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
@@ -148,42 +164,40 @@ def main(args):
     for regionName, region in regions.items():
         for sampleName, sampleFile in samples.items():
 
-            regionName = "whole_genome"
-            region = regions[regionName]
-            sampleName = samples.keys()[3]
+            regionName = "H3K4me3"
+            #region = regions[regionName]
+            sampleName = samples.keys()[1]
             sampleFile = samples[sampleName]
-            exportName = os.path.join(args.results_dir, sampleName + "_" + regionName)
+            exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
             dists = pickle.load(open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "r"))
 
             distsPos = {dist : count for dist, count in dists.items() if dist >= 0}
-            distsNeg = {dist : count for dist, count in dists.items() if dist <= 0}
+            distsNeg = {abs(dist) : count for dist, count in dists.items() if dist <= 0}
             plt.plot(distsPos.keys(), distsPos.values())
+            plt.plot(distsNeg.keys(), distsNeg.values())
+            distsAll = Counter(distsPos) + Counter(distsNeg)
+            plt.plot(distsAll.keys(), distsAll.values())
 
             permutedDists = pickle.load(open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "r"))
 
             permutedDistsPos = {dist : count for dist, count in permutedDists.items() if dist >= 0}
-            permutedDistsNeg = {dist : count for dist, count in permutedDists.items() if dist <= 0}
+            permutedDistsNeg = {abs(dist) : count for dist, count in permutedDists.items() if dist <= 0}
 
             plt.plot(permutedDistsPos.keys(), permutedDistsPos.values())
+            plt.plot(permutedDistsNeg.keys(), permutedDistsNeg.values())
+            distsAll = Counter(permutedDistsPos) + Counter(permutedDistsNeg)
+            plt.plot(distsAll.keys(), distsAll.values())
+
 
             ### Extract most abundant periodic pattern from signal
             # for DNase, extract from a different window (70-150bp)
-            if "DNase" in sampleName:
-                patternPos = extractPattern(distsPos, range(70, 110), os.path.join(args.plots_dir, sampleName + "_posStrand"))
-                patternNeg = extractPattern(distsNeg, range(70, 110), os.path.join(args.plots_dir, sampleName + "-_negStrand"))
-                pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(70, 110), os.path.join(args.plots_dir, sampleName + "_bothStrands"))
-
-                permutedPatternPos = extractPattern(permutedDistsPos, range(70, 110), os.path.join(args.plots_dir, sampleName + "_posStrand_permuted"))
-                permutedPatternNeg = extractPattern(permutedDistsNeg, range(70, 110), os.path.join(args.plots_dir, sampleName + "_negStrand_permuted"))
-                permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(70, 110), os.path.join(args.plots_dir, sampleName + "_bothStrands_permuted"))
-            else:
-                patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.plots_dir, sampleName + "_posStrand"))
-                patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.plots_dir, sampleName + "_negStrand"))
-                pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.plots_dir, sampleName + "_bothStrands"))
-            
-                permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.plots_dir, sampleName + "_posStrand_permuted"))
-                permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.plots_dir, sampleName + "_negStrand_permuted"))
-                permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.plots_dir, sampleName + "_bothStrands_permuted"))
+            patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.plots_dir, exportName + "_posStrand"))
+            patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.plots_dir, exportName + "_negStrand"))
+            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.plots_dir, exportName + "_bothStrands"))
+        
+            permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.plots_dir, exportName + "_posStrand_permuted"))
+            permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.plots_dir, exportName + "_negStrand_permuted"))
+            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.plots_dir, exportName + "_bothStrands_permuted"))
 
             ### calculate read coverage in H3K4me3 peaks
             bam = HTSeq.BAM_Reader(os.path.abspath(sampleFile))
@@ -192,18 +206,18 @@ def main(args):
             # peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
             
             coverage = coverageInWindows(bam, peaks, args.fragment_size, strand_wise=True)
-            pickle.dump(coverage, open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(coverage, open(os.path.join(args.results_dir, exportName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
             
-            coverage = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCoverageStranded.pickle"), "r"))
+            coverage = pickle.load(open(os.path.join(args.results_dir, exportName + ".peakCoverageStranded.pickle"), "r"))
 
             # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
 
             ### Correlate coverage and signal pattern
             correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
             correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
-            pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.results_dir, sampleName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.results_dir, exportName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
             
-            correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.results_dir, sampleName + ".peakCorrelationStranded.pickle"), "r"))
+            correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.results_dir, exportName + ".peakCorrelationStranded.pickle"), "r"))
             
             ### Binarize data for HMM
             # binarize data strand-wise
@@ -466,6 +480,7 @@ class CountDistances(Task):
         ### Make jobs with groups of data
         self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
 
+        # for each group of data
         for i in xrange(len(ids)):
             jobFile = files[i] + "_count_distances.sh"
             inputPickle = files[i] + ".input.pickle"

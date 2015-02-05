@@ -1,16 +1,16 @@
 #!/usr/env python
 
 from argparse import ArgumentParser
-import os
-import HTSeq
-import cPickle as pickle
-import multiprocessing
-import parmap
 from collections import Counter
+import cPickle as pickle
+import HTSeq
 import itertools
+import multiprocessing
+import os
+import parmap
+import random
 
-
-def distances(feature, bam, fragment_size, duplicates=True, strand_wise=True, permutate=False):
+def distances(feature, bam, fragment_size, duplicates, strand_wise, permutate):
     """
     Gets pairwise distance between reads in a single interval. Returns dict with distance:count.
     If permutate=True, it will randomize the reads in each interval along it.
@@ -22,6 +22,7 @@ def distances(feature, bam, fragment_size, duplicates=True, strand_wise=True, pe
     strand_wise=bool.
     permutate=bool.
     """
+    print permutate
     dists = Counter()
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
     
@@ -39,6 +40,8 @@ def distances(feature, bam, fragment_size, duplicates=True, strand_wise=True, pe
 
     # Measure distance between reads in window, pairwisely
     for aln1, aln2 in itertools.combinations(alnsInWindow, 2):
+        if aln1.iv.chrom != "chr1" or aln2.iv.chrom != "chr1":
+            print "out"
         # check if duplicate
         if not duplicates and (aln1.pcr_or_optical_duplicate or aln2.pcr_or_optical_duplicate):
             continue
@@ -95,11 +98,12 @@ if __name__ == '__main__':
     dists = reduce(
         lambda x, y: x + y,
         parmap.map(distances, windows, bam, args.fragment_size,
-            duplicates=args.duplicates,
-            strand_wise=args.strand_wise,
-            permutate=args.permute
+            args.duplicates,
+            args.strand_wise,
+            args.permute
         )
     )
     
     ### Serialize
     pickle.dump(dists, open(args.output_pickle, "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
