@@ -1,5 +1,31 @@
 #!/usr/env python
 
+"""
+A more deep analysis of ChIPmentation data.
+
+In brief, this does:
+    * Count pairwise distances between reads from several samples (from several
+    techniques - ChIP, ChIPmentation, DNase-seq, ATAC-seq) in several genomic
+    locations (H3K4me3/H3K27me3 peaks, DHS regions, whole genome, etc...) in strand-
+    -specific way and also for permuted reads.
+    * Extract pattern from the read distances distribution.
+    * Decompose pattern into signals with various frequencies (using FFT) and retrieve
+    most abundant.
+    * Calculate correlations between pattern and ChIPmentation read coverage along the genome.
+    * Extract local maxima from correlation into a binary signal.
+    * Feed to a HMM modeling a nucleossome, output predicted nucleossome-associated regions.
+
+    * ... plus several plots along the way.
+
+TODO:
+    Repeat read counting in regions minus repeats and gaps
+    Repeat read counting in regions without duplicates
+
+    Coverage using Task
+    Correlation using Task
+"""
+
+
 from argparse import ArgumentParser
 from collections import Counter, OrderedDict
 from divideAndSlurm import DivideAndSlurm, Task
@@ -52,16 +78,17 @@ def main(args):
         "projects/chipmentation/results/plots/periodicity",
         "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
         "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
-        #"data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
+        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
         "data/human/chipmentation/mapped/merged/H3K27me3_K562_10k500k_CM.bam",
-        #"data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
+        "data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
         "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam",
         "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam",
         #"/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
-        #"/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
+        "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
 
         ]
     )
+    # TODO: mkdirs
     args.data_dir = os.path.abspath(args.data_dir)
     args.results_dir = os.path.abspath(args.results_dir)
     args.plots_dir = os.path.abspath(args.plots_dir)
@@ -70,6 +97,8 @@ def main(args):
     samples = {re.sub("\.bam", "", os.path.basename(sampleFile)) : os.path.abspath(sampleFile) for sampleFile in args.bam_files}
 
     ### Get regions of interest in the genome
+    gapsRepeats = BedTool(os.path.join("/home", "arendeiro", "reference/Homo_sapiens/hg19_gapsRepeats.bed"))
+
     # Whole genome in 1kb-windows
     whole_genome = makeGenomeWindows(args.window_width, args.genome)
 
@@ -119,23 +148,22 @@ def main(args):
     # Submit tasks for combinations of regions and bam files
     for regionName, region in regions.items():
         for sampleName, sampleFile in samples.items():
-            exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
             # Add new task
             if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
-                if regionName != "whole_genome" or regionName != "non_dhs":
-                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=False, queue="shortq", time="12:00:00")
+                if regionName not in ["whole_genome", "non_dhs", "H3K27me3", "H3K27me3_only"]:
+                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=False, queue="shortq", time="12:00:00", permissive=True)
                 else:
-                    task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=False, queue="mediumq", time="42:00:00")
+                    task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=False, queue="mediumq", time="42:00:00", permissive=True)
                 slurm.add_task(task)
                 slurm.submit(task) # Submit new task
                 tasks[task] = (sampleName, regionName, False) # Keep track
                 print(tasks[task])
             # Add permuted
             if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle")):
-                if regionName != "whole_genome" or regionName != "non_dhs":
-                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=True, queue="shortq", time="12:00:00")
+                if regionName not in ["whole_genome", "non_dhs", "H3K27me3", "H3K27me3_only"]:
+                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=True, queue="shortq", time="12:00:00", permissive=True)
                 else:
-                    task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=True, queue="mediumq", time="42:00:00")
+                    task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=True, queue="medium", time="42:00:00", permissive=True)
                 slurm.add_task(task)
                 slurm.submit(task) # Submit new task
                 tasks[task] = (sampleName, regionName, True) # Keep track
@@ -163,41 +191,31 @@ def main(args):
     ### For each signal extract most abundant periodic signal through FFT, IFFT
     for regionName, region in regions.items():
         for sampleName, sampleFile in samples.items():
-
-            regionName = "H3K4me3"
-            #region = regions[regionName]
-            sampleName = samples.keys()[1]
-            sampleFile = samples[sampleName]
             exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
+
+            if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
+                continue
             dists = pickle.load(open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "r"))
 
             distsPos = {dist : count for dist, count in dists.items() if dist >= 0}
             distsNeg = {abs(dist) : count for dist, count in dists.items() if dist <= 0}
-            plt.plot(distsPos.keys(), distsPos.values())
-            plt.plot(distsNeg.keys(), distsNeg.values())
-            distsAll = Counter(distsPos) + Counter(distsNeg)
-            plt.plot(distsAll.keys(), distsAll.values())
-
+            
+            if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle")):
+                continue
             permutedDists = pickle.load(open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "r"))
 
             permutedDistsPos = {dist : count for dist, count in permutedDists.items() if dist >= 0}
             permutedDistsNeg = {abs(dist) : count for dist, count in permutedDists.items() if dist <= 0}
-
-            plt.plot(permutedDistsPos.keys(), permutedDistsPos.values())
-            plt.plot(permutedDistsNeg.keys(), permutedDistsNeg.values())
-            distsAll = Counter(permutedDistsPos) + Counter(permutedDistsNeg)
-            plt.plot(distsAll.keys(), distsAll.values())
-
-
+            
             ### Extract most abundant periodic pattern from signal
             # for DNase, extract from a different window (70-150bp)
-            patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.plots_dir, exportName + "_posStrand"))
-            patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.plots_dir, exportName + "_negStrand"))
-            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.plots_dir, exportName + "_bothStrands"))
+            patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.data_dir, exportName + "_posStrand"))
+            patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand"))
+            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands"))
         
-            permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.plots_dir, exportName + "_posStrand_permuted"))
-            permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.plots_dir, exportName + "_negStrand_permuted"))
-            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.plots_dir, exportName + "_bothStrands_permuted"))
+            permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.data_dir, exportName + "_posStrand_permuted"))
+            permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand_permuted"))
+            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands_permuted"))
 
             ### calculate read coverage in H3K4me3 peaks
             bam = HTSeq.BAM_Reader(os.path.abspath(sampleFile))
@@ -539,7 +557,10 @@ class CountDistances(Task):
 
         if self.is_ready():
             # load all pickles into list
-            outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
+            if self.permissive:
+                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+            else:
+                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
             # if all are counters, and their elements are counters, sum them
             if all([type(outputs[i]) == Counter for i in range(len(outputs))]):
                 output = reduce(lambda x, y: x + y, outputs) # reduce

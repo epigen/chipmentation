@@ -22,7 +22,6 @@ def distances(feature, bam, fragment_size, duplicates, strand_wise, permutate):
     strand_wise=bool.
     permutate=bool.
     """
-    print permutate
     dists = Counter()
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
     
@@ -40,8 +39,6 @@ def distances(feature, bam, fragment_size, duplicates, strand_wise, permutate):
 
     # Measure distance between reads in window, pairwisely
     for aln1, aln2 in itertools.combinations(alnsInWindow, 2):
-        if aln1.iv.chrom != "chr1" or aln2.iv.chrom != "chr1":
-            print "out"
         # check if duplicate
         if not duplicates and (aln1.pcr_or_optical_duplicate or aln2.pcr_or_optical_duplicate):
             continue

@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 #from ggplot import ggplot, aes, stat_smooth, facet_wrap, xlab, ylab, theme_bw, theme
-
+import matplotlib.pyplot as plt
 import rpy2.robjects as robj # for ggplot in R
 import rpy2.robjects.pandas2ri # for R dataframe conversion
 from rpy2.robjects.packages import importr
