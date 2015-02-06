@@ -149,25 +149,25 @@ def main(args):
     for regionName, region in regions.items():
         for sampleName, sampleFile in samples.items():
             # Add new task
-            if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
-                if regionName not in ["whole_genome", "non_dhs", "H3K27me3", "H3K27me3_only"]:
-                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=False, queue="shortq", time="12:00:00", permissive=True)
-                else:
-                    task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=False, queue="mediumq", time="42:00:00", permissive=True)
-                slurm.add_task(task)
-                slurm.submit(task) # Submit new task
-                tasks[task] = (sampleName, regionName, False) # Keep track
-                print(tasks[task])
-            # Add permuted
-            if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle")):
-                if regionName not in ["whole_genome", "non_dhs", "H3K27me3", "H3K27me3_only"]:
-                    task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=True, queue="shortq", time="12:00:00", permissive=True)
-                else:
-                    task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=True, queue="medium", time="42:00:00", permissive=True)
-                slurm.add_task(task)
-                slurm.submit(task) # Submit new task
-                tasks[task] = (sampleName, regionName, True) # Keep track
-                print(tasks[task])
+        #if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
+            if regionName not in ["whole_genome", "non_dhs", "H3K27me3", "H3K27me3_only"]:
+                task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=False, queue="shortq", time="12:00:00", permissive=True)
+            else:
+                task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=False, queue="mediumq", time="42:00:00", permissive=True)
+            slurm.add_task(task)
+            slurm.submit(task) # Submit new task
+            tasks[task] = (sampleName, regionName, False) # Keep track
+            print(tasks[task])
+        # Add permuted
+        #if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle")):
+            if regionName not in ["whole_genome", "non_dhs", "H3K27me3", "H3K27me3_only"]:
+                task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=True, queue="shortq", time="12:00:00", permissive=True)
+            else:
+                task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=True, queue="medium", time="42:00:00", permissive=True)
+            slurm.add_task(task)
+            slurm.submit(task) # Submit new task
+            tasks[task] = (sampleName, regionName, True) # Keep track
+            print(tasks[task])
 
     stored = list()
     pickle.dump((slurm, tasks, stored), open("/home/arendeiro/slurm_20150205_1kb.pickle", "wb"), protocol=pickle.HIGHEST_PROTOCOL)
@@ -217,240 +217,247 @@ def main(args):
             permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand_permuted"))
             permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands_permuted"))
 
-            ### calculate read coverage in H3K4me3 peaks
-            bam = HTSeq.BAM_Reader(os.path.abspath(sampleFile))
-            peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=samples[1]))
-            peaks = bedToolsInterval2GenomicInterval(peaks)
-            # peaks = {name : peak for name, peak in peaks.items() if peak.length >= 1000}         # filter out peaks smaller than 1kb
-            
-            coverage = coverageInWindows(bam, peaks, args.fragment_size, strand_wise=True)
-            pickle.dump(coverage, open(os.path.join(args.results_dir, exportName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-            
-            coverage = pickle.load(open(os.path.join(args.results_dir, exportName + ".peakCoverageStranded.pickle"), "r"))
 
-            # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
+    ### calculate read coverage in H3K4me3 peaks
+    sampleName = "H3K4me3_K562_500k_CM"
+    sampleFile = samples[sampleName]
 
-            ### Correlate coverage and signal pattern
-            correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
-            correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
-            pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.results_dir, exportName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-            
-            correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.results_dir, exportName + ".peakCorrelationStranded.pickle"), "r"))
-            
-            ### Binarize data for HMM
-            # binarize data strand-wise
-            pos = dict()
-            for name, cor in correlationsPos.items():
-                b = binarize(cor)
-                pos[name] = b
+    peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=sampleName))
+    peaks = bedToolsInterval2GenomicInterval(peaks)
 
-            neg = dict()
-            for name, cor in correlationsNeg.items():
-                b = binarize(cor)
-                neg[name] = b
+    exportName = os.path.join(args.data_dir, sampleName + "_" + sampleName)
 
-            # join strands in one sequence
-            binary = {peak : getConsensus(pos[peak], neg[peak]) for peak in pos.keys()}
+    task = Coverage(peaks, 40, os.path.abspath(sampleFile), fragment_size=args.fragment_size, strand_wise=True)
+    slurm.add_task(task)
+    slurm.submit(task)
+    coverage = slurm.collect(task)
+    
+    pickle.dump(coverage, open(os.path.join(args.data_dir, exportName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    coverage = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCoverageStranded.pickle"), "r"))
 
-            # get zeroes for rest of the genome
+    # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
 
-            ### HMM
-            model = WinterHMM()
-            ## Train
-            model.train(binary.values()[:100]) # subset data for training
-            # see new probabilities
-            [(s.name, s.distribution) for s in model.model.states]
-            model.model.dense_transition_matrix()
-            # save model with trained parameters
-            pickle.dump(model, open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-            model = pickle.load(open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "r"))
-            ## Predict
-            hmmOutput = {peak : model.predict(sequence) for peak, sequence in binary.items()}
+    ### Correlate coverage and signal pattern
+    correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
+    correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
+    pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.data_dir, exportName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    
+    correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationStranded.pickle"), "r"))
+    
+    ### Binarize data for HMM
+    # binarize data strand-wise
+    pos = dict()
+    for name, cor in correlationsPos.items():
+        b = binarize(cor)
+        pos[name] = b
 
-            ## Get DARNS from hmmOutput
-            DARNS = getDARNS(peaks, hmmOutput)
+    neg = dict()
+    for name, cor in correlationsNeg.items():
+        b = binarize(cor)
+        neg[name] = b
 
-            ## Plot attributes
-            widths, distances, midDistances = measureDARNS(DARNS)
+    # join strands in one sequence
+    binary = {peak : getConsensus(pos[peak], neg[peak]) for peak in pos.keys()}
 
-            plt.plot(widths.keys(), widths.values(), 'o')
-            plt.plot(distances.keys(), distances.values(), 'o')
-            plt.plot(midDistances.keys(), midDistances.values(), 'o')
-            sns.violinplot(widths)
+    # get zeroes for rest of the genome
 
-            ## Get scores from DARNS
-            probs = {peak : model.retrieveProbabilities(sequence) for peak, sequence in binary.items()}
+    ### HMM
+    model = WinterHMM()
+    ## Train
+    model.train(binary.values()[:100]) # subset data for training
+    # see new probabilities
+    [(s.name, s.distribution) for s in model.model.states]
+    model.model.dense_transition_matrix()
+    # save model with trained parameters
+    pickle.dump(model, open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    model = pickle.load(open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "r"))
+    ## Predict
+    hmmOutput = {peak : model.predict(sequence) for peak, sequence in binary.items()}
 
-            # plot predicted darns and post probs
-            i = 3
-            sequence = hmmOutput.values()[i]
+    ## Get DARNS from hmmOutput
+    DARNS = getDARNS(peaks, hmmOutput)
 
-            limits = getDARNSlimits(sequence)
-            probs = model.retrieveProbabilities(binary.items()[i][1])
+    ## Plot attributes
+    widths, distances, midDistances = measureDARNS(DARNS)
 
-            from matplotlib.patches import Rectangle
-            colors = sns.color_palette('deep', n_colors=6, desat=0.5)
-            sns.set_context(rc={"figure.figsize": (14, 6)})
-            sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
-            sns.plt.xlim([1, len(sequence)+1])
-            sns.plt.ylim([0,1.2])
-            sns.plt.ylabel(r'posterior probs, $\gamma_k$')
-            sns.plt.xlabel(r'$k$')
-            axis = sns.plt.gca()
+    plt.plot(widths.keys(), widths.values(), 'o')
+    plt.plot(distances.keys(), distances.values(), 'o')
+    plt.plot(midDistances.keys(), midDistances.values(), 'o')
+    sns.violinplot(widths)
 
-            # Plot viterbi predicted TMDs
-            for start, end in limits:
-                axis.add_patch(Rectangle((start+1, 1.075), end-start+1, 0.05, 
-                                         facecolor=colors[0], alpha=0.7))
+    ## Get scores from DARNS
+    probs = {peak : model.retrieveProbabilities(sequence) for peak, sequence in binary.items()}
 
-            # Get indices of states
-            indices = { state.name: i for i, state in enumerate( model.model.states ) }
+    # plot predicted darns and post probs
+    i = 3
+    sequence = hmmOutput.values()[i]
 
-            sns.plt.plot(range(1, len(sequence)+1), probs, 
-                         c=colors[2], alpha=0.7)
-            plt.show()
+    limits = getDARNSlimits(sequence)
+    probs = model.retrieveProbabilities(binary.items()[i][1])
 
-            ### Output bed/wig
+    from matplotlib.patches import Rectangle
+    colors = sns.color_palette('deep', n_colors=6, desat=0.5)
+    sns.set_context(rc={"figure.figsize": (14, 6)})
+    sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
+    sns.plt.xlim([1, len(sequence)+1])
+    sns.plt.ylim([0,1.2])
+    sns.plt.ylabel(r'posterior probs, $\gamma_k$')
+    sns.plt.xlabel(r'$k$')
+    axis = sns.plt.gca()
 
+    # Plot viterbi predicted TMDs
+    for start, end in limits:
+        axis.add_patch(Rectangle((start+1, 1.075), end-start+1, 0.05, 
+                                 facecolor=colors[0], alpha=0.7))
 
+    # Get indices of states
+    indices = { state.name: i for i, state in enumerate( model.model.states ) }
 
+    sns.plt.plot(range(1, len(sequence)+1), probs, 
+                 c=colors[2], alpha=0.7)
+    plt.show()
 
-            ## Export wig files with raw correlations 
-            exportWigFile(
-                [peaks[i] for i in correlationsPos.keys()],
-                correlationsPos.values(),
-                len(pattern)/2,
-                os.path.join(args.results_dir, sampleName + ".peakCorrelationPos.wig"),
-                sampleName + " raw absolute correlation - positive strand"
-            )
-            exportWigFile(
-                [peaks[i] for i in correlationsNeg.keys()],
-                correlationsNeg.values(),
-                len(pattern)/2,
-                os.path.join(args.results_dir, sampleName + ".peakCorrelationNeg.wig"),
-                sampleName + " raw absolute correlation - negative strand"
-            )
-            ## Export wig files with correlations peaks
-
-            ## Export wig files with DARNS
-
-            ## Export bed files with DARNS
-
-
-            ### Genome arithmetics with DARNS:
-            ## Plot :
-            # distances between DARNS borders
-            # distances between DARNS centers
-            # DARNS length
+    ### Output bed/wig
 
 
 
-            # ### Find correlation peaks (broadish regions around region of high pattern-reads correlation)
-            # # i = 0
-            # corPeaksPos = dict()
-            # for name, cor in correlationsPos.items():
-            #     corPeak = findPeaks(abs(cor), 50)
-            #     corPeaksPos[name] = corPeak
-            #     # plt.subplot(5,2,i)
-            #     # plt.plot(abs(cor))
-            #     # plt.plot(corPeak.keys(), [0.2] * len(corPeak.keys()), 'o')
-            #     # for center, peak in corPeak.items():
-            #     #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
-            #     # i += 1
 
-            # exportBedFile(
-            #     {name : peaks[name] for name, peak in corPeaksPos.items()},
-            #     corPeaksPos,
-            #     len(pattern)/2,
-            #     os.path.join(args.results_dir, sampleName + ".correlationPeaksPos.bed"),
-            #     sampleName + " correlation peaks - positive strand"
-            # )
+    ## Export wig files with raw correlations 
+    exportWigFile(
+        [peaks[i] for i in correlationsPos.keys()],
+        correlationsPos.values(),
+        len(pattern)/2,
+        os.path.join(args.results_dir, sampleName + ".peakCorrelationPos.wig"),
+        sampleName + " raw absolute correlation - positive strand"
+    )
+    exportWigFile(
+        [peaks[i] for i in correlationsNeg.keys()],
+        correlationsNeg.values(),
+        len(pattern)/2,
+        os.path.join(args.results_dir, sampleName + ".peakCorrelationNeg.wig"),
+        sampleName + " raw absolute correlation - negative strand"
+    )
+    ## Export wig files with correlations peaks
 
-            # corPeaksNeg = dict()
-            # for name, cor in correlationsNeg.items():
-            #     corPeak = findPeaks(abs(cor), 50)
-            #     corPeaksNeg[name] = corPeak
+    ## Export wig files with DARNS
 
-            # exportBedFile(
-            #     {name : peaks[name] for name, peak in corPeaksNeg.items()},
-            #     corPeaksNeg,
-            #     len(pattern)/2,
-            #     os.path.join(args.results_dir, sampleName + ".correlationPeaksNeg.bed"),
-            #     sampleName + " correlation peaks - negative strand"
-            # )
-
-            ##### ALTERNATIVE WAYS TO HANDLE CORRELATIONS
-            # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
-            
-            # X = abs(correlationsPos.values()[1])
-            # for bandwidth in xrange(1, 10):
-            #     density = kde.kdensity(range(len(X)), bw=bandwidth / 10., weights=X)[0]
-            #     plt.plot(density * 100)
-
-            # for degree in xrange(10, 50):
-            #     coeffs = np.poly1d(np.polyfit(range(len(X)), X, 50))
-            #     plt.plot(np.polyval(coeffs, range(len(X))) * 2)
-
-            # # smooth with interpolate
-            # from scipy.interpolate import interp1d
-            # for degree in xrange(2, 15):
-            #     xn_ax = interp1d(range(len(X)), X, kind=degree)
-            #     plt.plot(xn_ax(X))
-
-            # # find local minima
-            # mins = np.r_[True, X[1:] < X[:-1]] & np.r_[X[:-1] < X[1:], True]
-
-            # min_index = [np.where(X==X[x]) for x in mins]
-
-            # [np.mean(x - 1, x + 1) for x in mins if x == True]
+    ## Export bed files with DARNS
 
 
-            # # find peaks
-            # X = [abs(i) for l in correlationsPos.values() for i in l]
-            # corPeaks = findPeaks(np.array(X), 50)
-
-            # plt.plot(X)
-            # plt.plot(corPeaks.keys(), [0.2] * len(corPeaks.keys()), 'o')
-            # for center, peak in corPeaks.items():
-            #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
-
-            
-            # plot correlations for 20 peaks
-            # for i in xrange(len(correlations)):
-            #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
-            #     plt.plot(correlations.values()[i])
-            
-            # plot concatenation of correlations for some peaks
-            # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
+    ### Genome arithmetics with DARNS:
+    ## Plot :
+    # distances between DARNS borders
+    # distances between DARNS centers
+    # DARNS length
 
 
 
-            # Winter2013 fig.4 - chr19 comparison
-            # peaksWinter = {"winter" : HTSeq.GenomicInterval("chr19", 37016000, 37022000)}
-            # covWinter = coverageInWindows(bam, peaksWinter, args.fragment_size)
-            # RWinter = OrderedDict()
-            # RWinter["winter"] = correlatePatternProfile(pattern, covWinter["winter"])
-            # exportWigFile(
-            #     [peaksWinter[i] for i in RWinter.keys()],
-            #     RWinter.values(),
-            #     len(pattern)/2,
-            #     os.path.join(args.results_dir, sampleName + ".peakCorrelation.Winter.wig"),
-            #     sampleName
-            # )
+    # ### Find correlation peaks (broadish regions around region of high pattern-reads correlation)
+    # # i = 0
+    # corPeaksPos = dict()
+    # for name, cor in correlationsPos.items():
+    #     corPeak = findPeaks(abs(cor), 50)
+    #     corPeaksPos[name] = corPeak
+    #     # plt.subplot(5,2,i)
+    #     # plt.plot(abs(cor))
+    #     # plt.plot(corPeak.keys(), [0.2] * len(corPeak.keys()), 'o')
+    #     # for center, peak in corPeak.items():
+    #     #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
+    #     # i += 1
 
-            # with paralelization
-            # import multiprocessing as mp
-            # pool = mp.Pool()
-            # correlations = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in coverage.values()[:50]] 
-            # for i in xrange(len(correlations)):
-            #    plt.plot(correlations[i])
+    # exportBedFile(
+    #     {name : peaks[name] for name, peak in corPeaksPos.items()},
+    #     corPeaksPos,
+    #     len(pattern)/2,
+    #     os.path.join(args.results_dir, sampleName + ".correlationPeaksPos.bed"),
+    #     sampleName + " correlation peaks - positive strand"
+    # )
 
-            ### TODO:
-            # Get regions in extreme quantiles of correlation 
-            # Check for enrichment in ...
-            #     mnase signal
-            #     nucleosomes
-            #     clusters of CM signal around TSSs
+    # corPeaksNeg = dict()
+    # for name, cor in correlationsNeg.items():
+    #     corPeak = findPeaks(abs(cor), 50)
+    #     corPeaksNeg[name] = corPeak
+
+    # exportBedFile(
+    #     {name : peaks[name] for name, peak in corPeaksNeg.items()},
+    #     corPeaksNeg,
+    #     len(pattern)/2,
+    #     os.path.join(args.results_dir, sampleName + ".correlationPeaksNeg.bed"),
+    #     sampleName + " correlation peaks - negative strand"
+    # )
+
+    ##### ALTERNATIVE WAYS TO HANDLE CORRELATIONS
+    # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
+    
+    # X = abs(correlationsPos.values()[1])
+    # for bandwidth in xrange(1, 10):
+    #     density = kde.kdensity(range(len(X)), bw=bandwidth / 10., weights=X)[0]
+    #     plt.plot(density * 100)
+
+    # for degree in xrange(10, 50):
+    #     coeffs = np.poly1d(np.polyfit(range(len(X)), X, 50))
+    #     plt.plot(np.polyval(coeffs, range(len(X))) * 2)
+
+    # # smooth with interpolate
+    # from scipy.interpolate import interp1d
+    # for degree in xrange(2, 15):
+    #     xn_ax = interp1d(range(len(X)), X, kind=degree)
+    #     plt.plot(xn_ax(X))
+
+    # # find local minima
+    # mins = np.r_[True, X[1:] < X[:-1]] & np.r_[X[:-1] < X[1:], True]
+
+    # min_index = [np.where(X==X[x]) for x in mins]
+
+    # [np.mean(x - 1, x + 1) for x in mins if x == True]
+
+
+    # # find peaks
+    # X = [abs(i) for l in correlationsPos.values() for i in l]
+    # corPeaks = findPeaks(np.array(X), 50)
+
+    # plt.plot(X)
+    # plt.plot(corPeaks.keys(), [0.2] * len(corPeaks.keys()), 'o')
+    # for center, peak in corPeaks.items():
+    #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
+
+    
+    # plot correlations for 20 peaks
+    # for i in xrange(len(correlations)):
+    #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
+    #     plt.plot(correlations.values()[i])
+    
+    # plot concatenation of correlations for some peaks
+    # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
+
+
+
+    # Winter2013 fig.4 - chr19 comparison
+    # peaksWinter = {"winter" : HTSeq.GenomicInterval("chr19", 37016000, 37022000)}
+    # covWinter = coverageInWindows(bam, peaksWinter, args.fragment_size)
+    # RWinter = OrderedDict()
+    # RWinter["winter"] = correlatePatternProfile(pattern, covWinter["winter"])
+    # exportWigFile(
+    #     [peaksWinter[i] for i in RWinter.keys()],
+    #     RWinter.values(),
+    #     len(pattern)/2,
+    #     os.path.join(args.results_dir, sampleName + ".peakCorrelation.Winter.wig"),
+    #     sampleName
+    # )
+
+    # with paralelization
+    # import multiprocessing as mp
+    # pool = mp.Pool()
+    # correlations = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in coverage.values()[:50]] 
+    # for i in xrange(len(correlations)):
+    #    plt.plot(correlations[i])
+
+    ### TODO:
+    # Get regions in extreme quantiles of correlation 
+    # Check for enrichment in ...
+    #     mnase signal
+    #     nucleosomes
+    #     clusters of CM signal around TSSs
 
 
 class CountDistances(Task):
@@ -570,7 +577,130 @@ class CountDistances(Task):
                     return self.output
         else:
             raise TypeError("Task is not ready yet.")
-        
+
+
+class Coverage(Task):
+    """
+    Task to get read coverage under regions.
+    """
+    def __init__(self, data, fractions, *args, **kwargs):
+        super(Coverage, self).__init__(data, fractions, *args, **kwargs)
+        ### Initialize rest
+        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1,1000))], sep="_")
+        self.name = "coverage_{0}".format(now)
+
+        ### Parse
+        # required argument
+        if len(self.args) != 1:
+            raise TypeError("Bam file argument is missing")
+        self.bam_file = self.args[0]
+        # additional arguments
+        if "strand_wise" in kwargs.keys():
+            self.strand_wise = kwargs["strand_wise"]
+        else:
+            self.strand_wise = True
+        if "duplicates" in kwargs.keys():
+            self.duplicates = kwargs["duplicates"]
+        else:
+            self.duplicates = True
+        if "orientation" in kwargs.keys():
+            self.orientation = kwargs["orientation"]
+        else:
+            self.orientation = False
+        if "permute" in kwargs.keys():
+            self.permute = kwargs["permute"]
+        else:
+            self.permute = False
+        if "fragment_size" in kwargs.keys():
+            self.fragment_size = kwargs["fragment_size"]
+        else:
+            self.fragment_size = 1
+
+    def _prepare(self):
+        """
+        Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
+        """        
+        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep=".")) # add abspath
+
+        ### Split data in fractions
+        ids, groups, files = self._split_data()
+
+        ### Make jobs with groups of data
+        self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
+
+        # for each group of data
+        for i in xrange(len(ids)):
+            jobFile = files[i] + "_coverage.sh"
+            inputPickle = files[i] + ".input.pickle"
+            outputPickle = files[i] + ".output.pickle"
+
+            ### assemble job file
+            # header
+            job = self._slurmHeader(ids[i])
+
+            # command - add abspath!
+            task = """\
+                # Activate virtual environment
+                source /home/arendeiro/venv/bin/activate
+
+                python coverage_parallel.py {0} {1} {2} """.format(inputPickle, outputPickle, self.bam_file)
+
+            if self.strand_wise:
+                task += "--strand-wise "
+            if self.duplicates:
+                task += "--duplicates "
+            if self.permute:
+                task += "--permute "
+            task += "--fragment-size {0}".format(self.fragment_size)
+
+            task += """
+
+                # Deactivate virtual environment
+                deactivate
+                    """
+
+            job += textwrap.dedent(task)
+
+            # footer
+            job += self._slurmFooter()
+
+            # add to save attributes
+            self.jobs.append(job)
+            self.jobFiles.append(jobFile)
+            self.inputPickles.append(inputPickle)
+            self.outputPickles.append(outputPickle)
+
+            # write job file to disk
+            with open(jobFile, 'w') as handle:
+                handle.write(textwrap.dedent(job))
+
+        # Delete data if jobs are ready to submit and data is serialized
+        if hasattr(self, "jobs") and hasattr(self, "jobFiles"):
+            del self.data
+
+    def collect(self):
+        """
+        If self.is_ready(), return joined reduced data.
+        """
+        if hasattr(self, "output"): # if output is already stored, just return it
+            return self.output
+
+        if self.is_ready():
+            # load all pickles into list
+            if self.permissive:
+                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+            else:
+                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
+            # if all are counters, and their elements are counters, sum them
+            if all([type(outputs[i]) == dict for i in range(len(outputs))]):
+                output = reduce(lambda x, y: dict(x, **y), outputs)
+                if type(output) == dict:
+                    self.output = output # store output in object
+                    self._rm_temps() # delete tmp files
+                    return self.output
+        else:
+            raise TypeError("Task is not ready yet.")
+
 
 class WinterHMM(object):
     """

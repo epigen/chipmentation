@@ -65,7 +65,7 @@ def distances(feature, bam, fragment_size, duplicates, strand_wise, permutate):
 if __name__ == '__main__':
     parser = ArgumentParser(
         description = 'count_distances_parallel.py',
-        usage       = 'python count_distances_parallel.py <directory> input_pickle '
+        usage       = 'python count_distances_parallel.py [options] input_pickle output_pickle bam_file'        
     )
 
     ### Global options
