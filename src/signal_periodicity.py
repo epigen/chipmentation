@@ -238,10 +238,21 @@ def main(args):
     # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
 
     ### Correlate coverage and signal pattern
-    correlationsPos = {peak : correlatePatternProfile(pattern, reads[0]) for peak, reads in coverage.items()}
-    correlationsNeg = {peak : correlatePatternProfile(pattern, reads[1]) for peak, reads in coverage.items()}
+    # positive strand
+    coveragePos = [reads[0] for peak, reads in coverage.items()]
+    task = Correlation(coveragePos, 40, pattern, step=1)
+    slurm.add_task(task)
+    slurm.submit(task)
+    correlationsPos = slurm.collect(task)
+
+    # negative strand
+    coverageNeg = [reads[1] for peak, reads in coverage.items()]
+    task = Correlation(coverageNeg, 40, pattern, step=1)
+    slurm.add_task(task)
+    slurm.submit(task)
+    correlationsNeg = slurm.collect(task)
+
     pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.data_dir, exportName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    
     correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationStranded.pickle"), "r"))
     
     ### Binarize data for HMM
@@ -658,6 +669,112 @@ class Coverage(Task):
                 # Deactivate virtual environment
                 deactivate
                     """
+
+            job += textwrap.dedent(task)
+
+            # footer
+            job += self._slurmFooter()
+
+            # add to save attributes
+            self.jobs.append(job)
+            self.jobFiles.append(jobFile)
+            self.inputPickles.append(inputPickle)
+            self.outputPickles.append(outputPickle)
+
+            # write job file to disk
+            with open(jobFile, 'w') as handle:
+                handle.write(textwrap.dedent(job))
+
+        # Delete data if jobs are ready to submit and data is serialized
+        if hasattr(self, "jobs") and hasattr(self, "jobFiles"):
+            del self.data
+
+    def collect(self):
+        """
+        If self.is_ready(), return joined reduced data.
+        """
+        if hasattr(self, "output"): # if output is already stored, just return it
+            return self.output
+
+        if self.is_ready():
+            # load all pickles into list
+            if self.permissive:
+                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+            else:
+                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
+            # if all are counters, and their elements are counters, sum them
+            if all([type(outputs[i]) == dict for i in range(len(outputs))]):
+                output = reduce(lambda x, y: dict(x, **y), outputs)
+                if type(output) == dict:
+                    self.output = output # store output in object
+                    self._rm_temps() # delete tmp files
+                    return self.output
+        else:
+            raise TypeError("Task is not ready yet.")
+
+
+class Correlation(Task):
+    """
+    Task to get read coverage under regions.
+    """
+    def __init__(self, data, fractions, *args, **kwargs):
+        super(Coverage, self).__init__(data, fractions, *args, **kwargs)
+        ### Initialize rest
+        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1,1000))], sep="_")
+        self.name = "correlation_{0}".format(now)
+
+        ### Parse
+        # required argument
+        if len(self.args) != 1:
+            raise TypeError("Pattern argument is missing")
+        self.pattern = self.args[0]
+        # additional arguments
+        if "step" in kwargs.keys():
+            self.step = kwargs["step"]
+        else:
+            self.step = 1
+
+    def _prepare(self):
+        """
+        Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
+        """        
+        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep=".")) # add abspath
+
+        ### Pickle pattern
+        self.patternPickle = os.path.join(self.slurm.tmpDir, self.name + "_pattern.pickle")
+        pickle.dump(self.pattern, open(self.patternPickle, "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
+        ### Split data in fractions
+        ids, groups, files = self._split_data()
+
+        ### Make jobs with groups of data
+        self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
+
+        # for each group of data
+        for i in xrange(len(ids)):
+            jobFile = files[i] + "_correlation.sh"
+            inputPickle = files[i] + ".input.pickle"
+            outputPickle = files[i] + ".output.pickle"
+
+            ### assemble job file
+            # header
+            job = self._slurmHeader(ids[i])
+
+            # command - add abspath to python script!
+            task = """\
+                # Activate virtual environment
+                source /home/arendeiro/venv/bin/activate
+
+                python correlation_parallel.py {0} {1} {2} """.format(inputPickle, outputPickle, self.patternPickle)
+
+            if self.step:
+                task += "--step {0} ".format(self.step)
+
+            task += """
+
+            # Deactivate virtual environment
+            deactivate
+                """
 
             job += textwrap.dedent(task)
 
