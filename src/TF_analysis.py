@@ -126,17 +126,18 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
 
 def exportToJavaTreeView(df, filename):
     """
-    Export cdt file of cluster to view in JavaTreeView
-    df - pandas.DataFrame object
+    Export cdt file of cluster to view in JavaTreeView.
+    df - pandas.DataFrame object with numeric data.
     filename - string.    
     """
+    cols = ["X" + str(x) for x in df.columns]
+    df.columns = cols
     df["X"] = df.index
     df["NAME"] = df.index
     df["GWEIGHT"] = 1
-    df.columns = ["X" + str(x) for x in df.columns]
-    df = df[["X", "NAME", "GWEIGHT"] + ["X" + str(x) for x in df.columns]]
+    df = df[["X", "NAME", "GWEIGHT"] + cols]
     df.to_csv(filename, sep="\t", index=False)
-    
+
 
 # Loop through all samples, compute coverage in peak regions centered on motifs,
 # save dicts with coverage and average profiles
