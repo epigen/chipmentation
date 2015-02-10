@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from divideAndSlurm import DivideAndSlurm, Task
+import string, time, random, textwrap
 
 from ggplot import ggplot, aes, stat_smooth, facet_wrap, xlab, ylab, theme_bw, theme
 
@@ -30,9 +31,6 @@ import cPickle as pickle
 import plotly.plotly as plotly
 from plotly.graph_objs import Data, Heatmap, Layout, Figure
 
-global v # verbose
-# Define variables
-v = True
 signals = { "CTCF_K562_10mio_CM" : ["CTCF_K562_10mio_CM", "CTCF_K562_10mio_ChIP", "IgG_K562_10mio_CM"],
             "PU1_K562_10mio_CM" : ["PU1_K562_10mio_CM", "PU1_K562_10mio_ChIP", "IgG_K562_10mio_CM"]} # DNase missing
 bamFilePath = "/home/arendeiro/data/human/chipmentation/mapped/merged"
@@ -56,7 +54,6 @@ class Coverage(Task):
     Task to get read coverage under regions.
     """
     def __init__(self, data, fractions, *args, **kwargs):
-        import string, time, random, textwrap
         super(Coverage, self).__init__(data, fractions, *args, **kwargs)
         ### Initialize rest
         now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1,1000))], sep="_")
@@ -155,24 +152,24 @@ class Coverage(Task):
         """
         If self.is_ready(), return joined reduced data.
         """
-        if hasattr(self, "output"): # if output is already stored, just return it
-            return self.output
-
-        if self.is_ready():
-            # load all pickles into list
-            if self.permissive:
-                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+        if not hasattr(self, "output"): # if output is already stored, just return it
+            if self.is_ready():
+                # load all pickles into list
+                if self.permissive:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+                else:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
+                # if all are counters, and their elements are counters, sum them
+                if all([type(outputs[i]) == dict for i in range(len(outputs))]):
+                    output = reduce(lambda x, y: dict(x, **y), outputs)
+                    if type(output) == dict:
+                        self.output = output # store output in object
+                        self._rm_temps() # delete tmp files
+                        return self.output
             else:
-                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
-            # if all are counters, and their elements are counters, sum them
-            if all([type(outputs[i]) == dict for i in range(len(outputs))]):
-                output = reduce(lambda x, y: dict(x, **y), outputs)
-                if type(output) == dict:
-                    self.output = output # store output in object
-                    self._rm_temps() # delete tmp files
-                    return self.output
+                raise TypeError("Task is not ready yet.")
         else:
-            raise TypeError("Task is not ready yet.")
+            return self.output
 
 
 def bedToolsInterval2GenomicInterval(bedtool):
@@ -356,9 +353,10 @@ for signal in signals:
 """
 Investigating the contribution of chromatin loops to TF ChIPmentation signal
 """
-
-signal = "CTCF_K562_10mio_CM"
+slurm = DivideAndSlurm()
+signal = "PU1_K562_10mio_CM"
 sample = "CTCF_K562_10mio_CM"
+sample = "ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups"
 
 # load ChIPmentation peaks
 peaks = pybedtools.BedTool(os.path.join(peakFilePath, signal + ".motifStrand.bed"))
@@ -374,11 +372,11 @@ peaks_notin_loops = bedToolsInterval2GenomicInterval(peaks_notin_loops)
 
 
 for name, interval in peaks_in_loops.iteritems():
-        if interval.length < windowWidth:
-            peaks_in_loops.pop(name)
+    if interval.length < windowWidth:
+        peaks_in_loops.pop(name)
 for name, interval in peaks_notin_loops.iteritems():
-        if interval.length < windowWidth:
-            peaks_notin_loops.pop(name)
+    if interval.length < windowWidth:
+        peaks_notin_loops.pop(name)
 
 loopsTask = Coverage(peaks_in_loops, 30, os.path.join(bamFilePath, sample + ".bam"),
     orientation=True, fragment_size=1, strand_specific=False, queue="shortq", cpusPerTask=2
@@ -434,4 +432,17 @@ notLoopsAve = {
     "negative" : notLoopsDf.ix[range(1, len(notLoopsDf), 2)].apply(np.mean, axis=0)     # negative strand
 }
 pickle.dump(loopsAve, open(os.path.join(coverageFilePath, "{0}_inLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-pickle.dump(notLoopsDf, open(os.path.join(coverageFilePath, "{0}_notinLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+pickle.dump(notLoopsAve, open(os.path.join(coverageFilePath, "{0}_notinLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+# loopsAve = pickle.load(open(os.path.join(coverageFilePath, "{0}_inLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "r"))
+# notLoopsAve = pickle.load(open(os.path.join(coverageFilePath, "{0}_notinLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "r"))
+
+
+# Plot
+import matplotlib.pyplot as plt
+plt.plot(loopsAve['positive'].index, loopsAve['positive'])
+plt.plot(loopsAve['negative'].index, loopsAve['negative'])
+plt.plot(loopsAve['average'].index, loopsAve['average'])
+plt.plot(notLoopsAve['positive'].index, notLoopsAve['positive'])
+plt.plot(notLoopsAve['negative'].index, notLoopsAve['negative'])
+plt.plot(notLoopsAve['average'].index, notLoopsAve['average'])
+plt.show()

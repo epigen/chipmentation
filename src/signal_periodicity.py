@@ -20,9 +20,6 @@ In brief, this does:
 TODO:
     Repeat read counting in regions minus repeats and gaps
     Repeat read counting in regions without duplicates
-
-    Coverage using Task
-    Correlation using Task
 """
 
 
@@ -100,32 +97,35 @@ def main(args):
     gapsRepeats = BedTool(os.path.join("/home", "arendeiro", "reference/Homo_sapiens/hg19_gapsRepeats.bed"))
 
     # Whole genome in 1kb-windows
-    whole_genome = makeGenomeWindows(args.window_width, args.genome)
+    whole_genome = BedTool.window_maker(BedTool(), genome='hg19', w=args.window_width, s=args.window_width)
+    whole_genome = whole_genome.intersect(b=gapsRepeats, v=True, wa=True)
 
     # DHS and non-DHS in 1kb-windows
-    g = BedTool.window_maker(BedTool(), genome='hg19', w=args.window_width, s=args.window_width)
     dhs = BedTool(os.path.join("/home", "arendeiro", "wgEncodeOpenChromDnaseK562Pk.narrowPeak"))
-    non_dhs = g.intersect(b=dhs, v=True)
-    non_dhs = bedToolsInterval2GenomicInterval(BedTool.window_maker(non_dhs, b=non_dhs, w=args.window_width, s=args.window_width), strand=False, name=False)
-    dhs = bedToolsInterval2GenomicInterval(BedTool.window_maker(dhs, b=dhs, w=args.window_width, s=args.window_width), strand=False, name=False)
-
+    dhs = dhs.intersect(b=gapsRepeats, v=True, wa=True)
+    non_dhs = whole_genome.intersect(b=dhs, v=True)
+    
     # Bed files
     H3K27me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k27me3bUcdPk.narrowPeak"))
+    H3K27me3 = H3K27me3.intersect(b=gapsRepeats, v=True, wa=True)
     H3K4me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k4me3bUcdPk.narrowPeak"))
+    H3K4me3 = H3K4me3.intersect(b=gapsRepeats, v=True, wa=True)
 
     # peaks not overlapping the other mark in 1kb-windows 
     H3K27me3_only = H3K27me3.intersect(b=H3K4me3, v=True)
-    H3K27me3_only = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3_only, b=H3K27me3_only, w=args.window_width, s=args.window_width), strand=False, name=False)
     H3K4me3_only = H3K27me3.intersect(b=H3K27me3, v=True)
-    H3K4me3_only = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3_only, b=H3K4me3_only, w=args.window_width, s=args.window_width), strand=False, name=False)
 
     # peaks overlapping each other in 1kb-windows
     H3K27me3_H3K4me3 = H3K4me3.intersect(b=H3K27me3)
-    H3K27me3_H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3_H3K4me3, b=H3K27me3_H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
 
-    # All H3K27me3 peaks in 1kb windows
+    # Make 1kb windows and convert to HTSeq
+    whole_genome = bedToolsInterval2GenomicInterval(whole_genome, strand=False, name=False)
+    non_dhs = bedToolsInterval2GenomicInterval(BedTool.window_maker(non_dhs, b=non_dhs, w=args.window_width, s=args.window_width), strand=False, name=False)
+    dhs = bedToolsInterval2GenomicInterval(BedTool.window_maker(dhs, b=dhs, w=args.window_width, s=args.window_width), strand=False, name=False)
+    H3K27me3_only = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3_only, b=H3K27me3_only, w=args.window_width, s=args.window_width), strand=False, name=False)
+    H3K4me3_only = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3_only, b=H3K4me3_only, w=args.window_width, s=args.window_width), strand=False, name=False)
+    H3K27me3_H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3_H3K4me3, b=H3K27me3_H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
     H3K27me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3, b=H3K27me3, w=args.window_width, s=args.window_width), strand=False, name=False)
-    # All H3K27me3 peaks in 1kb windows
     H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3, b=H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
 
     regions = {
@@ -138,9 +138,11 @@ def main(args):
         "H3K4me3_only" : H3K4me3_only,
         "H3K27me3_H3K4me3" : H3K27me3_H3K4me3
     }
-    pickle.dump(regions, open(os.path.join(args.data_dir, "genomic_regions.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    pickle.dump(regions, open(os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     
-    regions = pickle.load(open(os.path.join(args.data_dir, "genomic_regions.pickle"), "r"))
+    regions = pickle.load(open(os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle"), "r"))
+    # with repeats, load:
+    # regions = pickle.load(open(os.path.join(args.data_dir, "genomic_regions.pickle"), "r"))
 
     # Initialize Slurm object
     slurm = DivideAndSlurm()
@@ -149,21 +151,13 @@ def main(args):
     for regionName, region in regions.items():
         for sampleName, sampleFile in samples.items():
             # Add new task
-        #if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
-            if regionName not in ["whole_genome", "non_dhs", "H3K27me3", "H3K27me3_only"]:
-                task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=False, queue="shortq", time="12:00:00", permissive=True)
-            else:
-                task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=False, queue="mediumq", time="42:00:00", permissive=True)
+            task = CountDistances(region, 5, os.path.abspath(sampleFile), permute=False, queue="shortq", time="4:00:00", permissive=True)
             slurm.add_task(task)
             slurm.submit(task) # Submit new task
             tasks[task] = (sampleName, regionName, False) # Keep track
             print(tasks[task])
-        # Add permuted
-        #if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle")):
-            if regionName not in ["whole_genome", "non_dhs", "H3K27me3", "H3K27me3_only"]:
-                task = CountDistances(region, 20, os.path.abspath(sampleFile), permute=True, queue="shortq", time="12:00:00", permissive=True)
-            else:
-                task = CountDistances(region, 40, os.path.abspath(sampleFile), permute=True, queue="medium", time="42:00:00", permissive=True)
+            # Add permuted
+            task = CountDistances(region, 5, os.path.abspath(sampleFile), permute=True, queue="shortq", time="4:00:00", permissive=True)
             slurm.add_task(task)
             slurm.submit(task) # Submit new task
             tasks[task] = (sampleName, regionName, True) # Keep track
@@ -183,9 +177,9 @@ def main(args):
             exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
             dists = task.collect()
             if not permuted:
-                pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(dists, open(os.path.join(exportName + ".countsStranded-noRepeats-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
             else:
-                pickle.dump(dists, open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(dists, open(os.path.join(exportName + ".countsPermutedStranded-noRepeats-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
             stored.append(task)
 
     ### For each signal extract most abundant periodic signal through FFT, IFFT

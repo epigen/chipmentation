@@ -40,10 +40,13 @@ def coverage(bam, intervals, fragmentsize, duplicates=False):
     fragmentsize - integer.
     duplicates - boolean.
     """
+    chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
     # Loop through TSSs, get coverage, append to dict
     cov = dict()
 
     for name, feature in intervals.iteritems():
+        if feature.chrom not in chroms:
+            continue
         count = 0
         
         # Fetch alignments in feature window
@@ -80,10 +83,9 @@ rawSignals = dict()
 for signal in signals:
     # Load bam
     bamfile = HTSeq.BAM_Reader(os.path.join(bamFilePath, signal + ".bam"))
-    #       chroms = set(HTSeq.pysam.Samfile(os.path.join(bamFilePath, signal + ".bam")).references)
 
     # Get dataframe of signal coverage in bed regions, append to dict
-    rawSignals[signal] = coverage(bamfile, windows, chroms, fragmentsize, duplicates)
+    rawSignals[signal] = coverage(bamfile, windows, fragmentsize, duplicates)
 
 df = pd.DataFrame(rawSignals)
 
