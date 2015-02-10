@@ -35,6 +35,7 @@ import HTSeq
 import itertools
 import numpy as np
 import os
+import sys
 import random
 import re
 import seaborn as sns
@@ -49,18 +50,18 @@ np.set_printoptions(linewidth=200)
 
 
 def main(args):
-    ### Parse command-line arguments
+    # Parse command-line arguments
     parser = ArgumentParser(
-        description = 'read_distances.py',
-        usage       = 'python read_distances.py <directory> file1, file2... '
+        description='read_distances.py',
+        usage='python read_distances.py <directory> file1, file2... '
     )
 
-    ### Global options
+    # Global options
     # positional arguments
     parser.add_argument(dest='data_dir', type=str, help='Directory to save data to.')
     parser.add_argument(dest='results_dir', type=str, help='Directory to save data to.')
     parser.add_argument(dest='plots_dir', type=str, help='Directory to save plots to.')
-    parser.add_argument('bam_files', nargs = '*', help = 'Bam files')
+    parser.add_argument('bam_files', nargs='*', help='Bam files')
     # optional arguments
     parser.add_argument('--duplicates', dest='duplicates', action='store_true')
     parser.add_argument('--window-width', dest='window_width', type=int, default=1000)
@@ -68,8 +69,7 @@ def main(args):
     parser.add_argument('--fragment-size', dest='fragment_size', type=int, default=1)
     parser.add_argument('--genome', dest='genome', type=str, default='hg19')
     args = parser.parse_args()
-    args = parser.parse_args(
-        [
+    args = parser.parse_args([
         "projects/chipmentation/results/periodicity-data",
         "projects/chipmentation/results/periodicity",
         "projects/chipmentation/results/plots/periodicity",
@@ -82,7 +82,6 @@ def main(args):
         "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam",
         #"/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
         "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
-
         ]
     )
     # TODO: mkdirs
@@ -90,10 +89,10 @@ def main(args):
     args.results_dir = os.path.abspath(args.results_dir)
     args.plots_dir = os.path.abspath(args.plots_dir)
 
-    ### Get sample names
-    samples = {re.sub("\.bam", "", os.path.basename(sampleFile)) : os.path.abspath(sampleFile) for sampleFile in args.bam_files}
+    # Get sample names
+    samples = {re.sub("\.bam", "", os.path.basename(sampleFile)): os.path.abspath(sampleFile) for sampleFile in args.bam_files}
 
-    ### Get regions of interest in the genome
+    # Get regions of interest in the genome
     gapsRepeats = BedTool(os.path.join("/home", "arendeiro", "reference/Homo_sapiens/hg19_gapsRepeats.bed"))
 
     # Whole genome in 1kb-windows
@@ -104,14 +103,14 @@ def main(args):
     dhs = BedTool(os.path.join("/home", "arendeiro", "wgEncodeOpenChromDnaseK562Pk.narrowPeak"))
     dhs = dhs.intersect(b=gapsRepeats, v=True, wa=True)
     non_dhs = whole_genome.intersect(b=dhs, v=True)
-    
+
     # Bed files
     H3K27me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k27me3bUcdPk.narrowPeak"))
     H3K27me3 = H3K27me3.intersect(b=gapsRepeats, v=True, wa=True)
     H3K4me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k4me3bUcdPk.narrowPeak"))
     H3K4me3 = H3K4me3.intersect(b=gapsRepeats, v=True, wa=True)
 
-    # peaks not overlapping the other mark in 1kb-windows 
+    # peaks not overlapping the other mark in 1kb-windows
     H3K27me3_only = H3K27me3.intersect(b=H3K4me3, v=True)
     H3K4me3_only = H3K27me3.intersect(b=H3K27me3, v=True)
 
@@ -129,17 +128,17 @@ def main(args):
     H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3, b=H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
 
     regions = {
-        "whole_genome" : whole_genome,
-        "dhs" : dhs,
-        "non_dhs" : non_dhs,
-        "H3K27me3" : H3K27me3,
-        "H3K4me3" : H3K4me3,
-        "H3K27me3_only" : H3K27me3_only,
-        "H3K4me3_only" : H3K4me3_only,
-        "H3K27me3_H3K4me3" : H3K27me3_H3K4me3
+        "whole_genome": whole_genome,
+        "dhs": dhs,
+        "non_dhs": non_dhs,
+        "H3K27me3": H3K27me3,
+        "H3K4me3": H3K4me3,
+        "H3K27me3_only": H3K27me3_only,
+        "H3K4me3_only": H3K4me3_only,
+        "H3K27me3_H3K4me3": H3K27me3_H3K4me3
     }
     pickle.dump(regions, open(os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    
+
     regions = pickle.load(open(os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle"), "r"))
     # with repeats, load:
     # regions = pickle.load(open(os.path.join(args.data_dir, "genomic_regions.pickle"), "r"))
@@ -153,21 +152,21 @@ def main(args):
             # Add new task
             task = CountDistances(region, 5, os.path.abspath(sampleFile), permute=False, queue="shortq", time="4:00:00", permissive=True)
             slurm.add_task(task)
-            slurm.submit(task) # Submit new task
-            tasks[task] = (sampleName, regionName, False) # Keep track
+            slurm.submit(task)  # Submit new task
+            tasks[task] = (sampleName, regionName, False)  # Keep track
             print(tasks[task])
             # Add permuted
             task = CountDistances(region, 5, os.path.abspath(sampleFile), permute=True, queue="shortq", time="4:00:00", permissive=True)
             slurm.add_task(task)
-            slurm.submit(task) # Submit new task
-            tasks[task] = (sampleName, regionName, True) # Keep track
+            slurm.submit(task)  # Submit new task
+            tasks[task] = (sampleName, regionName, True)  # Keep track
             print(tasks[task])
 
     stored = list()
-    pickle.dump((slurm, tasks, stored), open("/home/arendeiro/slurm_20150205_1kb.pickle", "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    slurm, tasks, stored = pickle.load(open("/home/arendeiro/slurm.pickle", "r"))
+    pickle.dump((slurm, tasks, stored), open("/home/arendeiro/slurm_20150210_1kb_norepeats.pickle", "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    slurm, tasks, stored = pickle.load(open("/home/arendeiro/slurm_20150210_1kb_norepeats.pickle", "r"))
 
-    ### Collect processed data
+    # Collect processed data
     for task, (sampleName, regionName, permuted) in tasks.items():          # loop through tasks, see if ready
         if task.is_ready():                                                 # if yes, collect output and save
             print(textwrap.dedent("""\
@@ -182,7 +181,7 @@ def main(args):
                 pickle.dump(dists, open(os.path.join(exportName + ".countsPermutedStranded-noRepeats-slurm.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
             stored.append(task)
 
-    ### For each signal extract most abundant periodic signal through FFT, IFFT
+    # For each signal extract most abundant periodic signal through FFT, IFFT
     for regionName, region in regions.items():
         for sampleName, sampleFile in samples.items():
             exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
@@ -191,28 +190,27 @@ def main(args):
                 continue
             dists = pickle.load(open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "r"))
 
-            distsPos = {dist : count for dist, count in dists.items() if dist >= 0}
-            distsNeg = {abs(dist) : count for dist, count in dists.items() if dist <= 0}
-            
+            distsPos = {dist: count for dist, count in dists.items() if dist >= 0}
+            distsNeg = {abs(dist): count for dist, count in dists.items() if dist <= 0}
+
             if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle")):
                 continue
             permutedDists = pickle.load(open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "r"))
 
-            permutedDistsPos = {dist : count for dist, count in permutedDists.items() if dist >= 0}
-            permutedDistsNeg = {abs(dist) : count for dist, count in permutedDists.items() if dist <= 0}
-            
-            ### Extract most abundant periodic pattern from signal
+            permutedDistsPos = {dist: count for dist, count in permutedDists.items() if dist >= 0}
+            permutedDistsNeg = {abs(dist): count for dist, count in permutedDists.items() if dist <= 0}
+
+            # Extract most abundant periodic pattern from signal
             # for DNase, extract from a different window (70-150bp)
             patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.data_dir, exportName + "_posStrand"))
             patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand"))
             pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands"))
-        
+
             permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.data_dir, exportName + "_posStrand_permuted"))
             permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand_permuted"))
             permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands_permuted"))
 
-
-    ### calculate read coverage in H3K4me3 peaks
+    # calculate read coverage in H3K4me3 peaks
     sampleName = "H3K4me3_K562_500k_CM"
     sampleFile = samples[sampleName]
 
@@ -225,13 +223,13 @@ def main(args):
     slurm.add_task(task)
     slurm.submit(task)
     coverage = slurm.collect(task)
-    
+
     pickle.dump(coverage, open(os.path.join(args.data_dir, exportName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     coverage = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCoverageStranded.pickle"), "r"))
 
     # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
 
-    ### Correlate coverage and signal pattern
+    # Correlate coverage and signal pattern
     # positive strand
     coveragePos = [reads[0] for peak, reads in coverage.items()]
     task = Correlation(coveragePos, 40, pattern, step=1)
@@ -248,8 +246,8 @@ def main(args):
 
     pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.data_dir, exportName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationStranded.pickle"), "r"))
-    
-    ### Binarize data for HMM
+
+    # Binarize data for HMM
     # binarize data strand-wise
     pos = dict()
     for name, cor in correlationsPos.items():
@@ -262,27 +260,27 @@ def main(args):
         neg[name] = b
 
     # join strands in one sequence
-    binary = {peak : getConsensus(pos[peak], neg[peak]) for peak in pos.keys()}
+    binary = {peak: getConsensus(pos[peak], neg[peak]) for peak in pos.keys()}
 
     # get zeroes for rest of the genome
 
-    ### HMM
+    # HMM
     model = WinterHMM()
-    ## Train
-    model.train(binary.values()[:100]) # subset data for training
+    # Train
+    model.train(binary.values()[:100])  # subset data for training
     # see new probabilities
     [(s.name, s.distribution) for s in model.model.states]
     model.model.dense_transition_matrix()
     # save model with trained parameters
     pickle.dump(model, open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     model = pickle.load(open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "r"))
-    ## Predict
-    hmmOutput = {peak : model.predict(sequence) for peak, sequence in binary.items()}
+    # Predict
+    hmmOutput = {peak: model.predict(sequence) for peak, sequence in binary.items()}
 
-    ## Get DARNS from hmmOutput
+    # Get DARNS from hmmOutput
     DARNS = getDARNS(peaks, hmmOutput)
 
-    ## Plot attributes
+    # Plot attributes
     widths, distances, midDistances = measureDARNS(DARNS)
 
     plt.plot(widths.keys(), widths.values(), 'o')
@@ -290,8 +288,8 @@ def main(args):
     plt.plot(midDistances.keys(), midDistances.values(), 'o')
     sns.violinplot(widths)
 
-    ## Get scores from DARNS
-    probs = {peak : model.retrieveProbabilities(sequence) for peak, sequence in binary.items()}
+    # Get scores from DARNS
+    probs = {peak: model.retrieveProbabilities(sequence) for peak, sequence in binary.items()}
 
     # plot predicted darns and post probs
     i = 3
@@ -304,21 +302,21 @@ def main(args):
     colors = sns.color_palette('deep', n_colors=6, desat=0.5)
     sns.set_context(rc={"figure.figsize": (14, 6)})
     sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
-    sns.plt.xlim([1, len(sequence)+1])
-    sns.plt.ylim([0,1.2])
+    sns.plt.xlim([1, len(sequence) + 1])
+    sns.plt.ylim([0, 1.2])
     sns.plt.ylabel(r'posterior probs, $\gamma_k$')
     sns.plt.xlabel(r'$k$')
     axis = sns.plt.gca()
 
     # Plot viterbi predicted TMDs
     for start, end in limits:
-        axis.add_patch(Rectangle((start+1, 1.075), end-start+1, 0.05, 
+        axis.add_patch(Rectangle((start + 1, 1.075), end - start + 1, 0.05,
                                  facecolor=colors[0], alpha=0.7))
 
     # Get indices of states
-    indices = { state.name: i for i, state in enumerate( model.model.states ) }
+    indices = {state.name: i for i, state in enumerate(model.model.states)}
 
-    sns.plt.plot(range(1, len(sequence)+1), probs, 
+    sns.plt.plot(range(1, len(sequence) + 1), probs,
                  c=colors[2], alpha=0.7)
     plt.show()
 
@@ -327,30 +325,30 @@ def main(args):
 
 
 
-    ## Export wig files with raw correlations 
+    # Export wig files with raw correlations
     exportWigFile(
         [peaks[i] for i in correlationsPos.keys()],
         correlationsPos.values(),
-        len(pattern)/2,
+        len(pattern) / 2,
         os.path.join(args.results_dir, sampleName + ".peakCorrelationPos.wig"),
         sampleName + " raw absolute correlation - positive strand"
     )
     exportWigFile(
         [peaks[i] for i in correlationsNeg.keys()],
         correlationsNeg.values(),
-        len(pattern)/2,
+        len(pattern) / 2,
         os.path.join(args.results_dir, sampleName + ".peakCorrelationNeg.wig"),
         sampleName + " raw absolute correlation - negative strand"
     )
-    ## Export wig files with correlations peaks
+    # Export wig files with correlations peaks
 
-    ## Export wig files with DARNS
+    # Export wig files with DARNS
 
-    ## Export bed files with DARNS
+    # Export bed files with DARNS
 
 
-    ### Genome arithmetics with DARNS:
-    ## Plot :
+    # Genome arithmetics with DARNS:
+    # Plot :
     # distances between DARNS borders
     # distances between DARNS centers
     # DARNS length
@@ -393,7 +391,7 @@ def main(args):
 
     ##### ALTERNATIVE WAYS TO HANDLE CORRELATIONS
     # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
-    
+   
     # X = abs(correlationsPos.values()[1])
     # for bandwidth in xrange(1, 10):
     #     density = kde.kdensity(range(len(X)), bw=bandwidth / 10., weights=X)[0]
@@ -417,7 +415,7 @@ def main(args):
     # [np.mean(x - 1, x + 1) for x in mins if x == True]
 
 
-    # # find peaks
+    # find peaks
     # X = [abs(i) for l in correlationsPos.values() for i in l]
     # corPeaks = findPeaks(np.array(X), 50)
 
@@ -426,12 +424,12 @@ def main(args):
     # for center, peak in corPeaks.items():
     #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
 
-    
+
     # plot correlations for 20 peaks
     # for i in xrange(len(correlations)):
     #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
     #     plt.plot(correlations.values()[i])
-    
+
     # plot concatenation of correlations for some peaks
     # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
 
@@ -453,12 +451,12 @@ def main(args):
     # with paralelization
     # import multiprocessing as mp
     # pool = mp.Pool()
-    # correlations = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in coverage.values()[:50]] 
+    # correlations = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in coverage.values()[:50]]
     # for i in xrange(len(correlations)):
     #    plt.plot(correlations[i])
 
     ### TODO:
-    # Get regions in extreme quantiles of correlation 
+    # Get regions in extreme quantiles of correlation
     # Check for enrichment in ...
     #     mnase signal
     #     nucleosomes
@@ -471,11 +469,11 @@ class CountDistances(Task):
     """
     def __init__(self, data, fractions, *args, **kwargs):
         super(CountDistances, self).__init__(data, fractions, *args, **kwargs)
-        ### Initialize rest
-        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1,1000))], sep="_")
+        # Initialize rest
+        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1, 1000))], sep="_")
         self.name = "count_distances_{0}".format(now)
 
-        ### Parse
+        # Parse
         # required argument
         if len(self.args) != 1:
             raise TypeError("Bam file argument is missing")
@@ -501,10 +499,10 @@ class CountDistances(Task):
     def _prepare(self):
         """
         Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
-        """        
-        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep=".")) # add abspath
+        """
+        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep="."))  # add abspath
 
-        ### Split data in fractions
+        # Split data in fractions
         ids, groups, files = self._split_data()
 
         ### Make jobs with groups of data
@@ -516,7 +514,7 @@ class CountDistances(Task):
             inputPickle = files[i] + ".input.pickle"
             outputPickle = files[i] + ".output.pickle"
 
-            ### assemble job file
+            # assemble job file
             # header
             job = self._slurmHeader(ids[i])
 
@@ -564,7 +562,7 @@ class CountDistances(Task):
         """
         If self.is_ready(), return joined reduced data.
         """
-        if hasattr(self, "output"): # if output is already stored, just return it
+        if hasattr(self, "output"):  # if output is already stored, just return it
             return self.output
 
         if self.is_ready():
@@ -575,10 +573,10 @@ class CountDistances(Task):
                 outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
             # if all are counters, and their elements are counters, sum them
             if all([type(outputs[i]) == Counter for i in range(len(outputs))]):
-                output = reduce(lambda x, y: x + y, outputs) # reduce
+                output = reduce(lambda x, y: x + y, outputs)  # reduce
                 if type(output) == Counter:
                     self.output = output    # store output in object
-                    self._rm_temps() # delete tmp files
+                    self._rm_temps()  # delete tmp files
                     return self.output
         else:
             raise TypeError("Task is not ready yet.")
@@ -590,11 +588,11 @@ class Coverage(Task):
     """
     def __init__(self, data, fractions, *args, **kwargs):
         super(Coverage, self).__init__(data, fractions, *args, **kwargs)
-        ### Initialize rest
-        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1,1000))], sep="_")
+        # Initialize rest
+        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1, 1000))], sep="_")
         self.name = "coverage_{0}".format(now)
 
-        ### Parse
+        # Parse
         # required argument
         if len(self.args) != 1:
             raise TypeError("Bam file argument is missing")
@@ -624,13 +622,13 @@ class Coverage(Task):
     def _prepare(self):
         """
         Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
-        """        
-        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep=".")) # add abspath
+        """
+        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep="."))  # add abspath
 
-        ### Split data in fractions
+        # Split data in fractions
         ids, groups, files = self._split_data()
 
-        ### Make jobs with groups of data
+        # Make jobs with groups of data
         self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
 
         # for each group of data
@@ -639,7 +637,7 @@ class Coverage(Task):
             inputPickle = files[i] + ".input.pickle"
             outputPickle = files[i] + ".output.pickle"
 
-            ### assemble job file
+            # assemble job file
             # header
             job = self._slurmHeader(ids[i])
 
@@ -687,7 +685,7 @@ class Coverage(Task):
         """
         If self.is_ready(), return joined reduced data.
         """
-        if hasattr(self, "output"): # if output is already stored, just return it
+        if hasattr(self, "output"):  # if output is already stored, just return it
             return self.output
 
         if self.is_ready():
@@ -700,8 +698,8 @@ class Coverage(Task):
             if all([type(outputs[i]) == dict for i in range(len(outputs))]):
                 output = reduce(lambda x, y: dict(x, **y), outputs)
                 if type(output) == dict:
-                    self.output = output # store output in object
-                    self._rm_temps() # delete tmp files
+                    self.output = output  # store output in object
+                    self._rm_temps()  # delete tmp files
                     return self.output
         else:
             raise TypeError("Task is not ready yet.")
@@ -713,11 +711,11 @@ class Correlation(Task):
     """
     def __init__(self, data, fractions, *args, **kwargs):
         super(Coverage, self).__init__(data, fractions, *args, **kwargs)
-        ### Initialize rest
-        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1,1000))], sep="_")
+        # Initialize rest
+        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1, 1000))], sep="_")
         self.name = "correlation_{0}".format(now)
 
-        ### Parse
+        # Parse
         # required argument
         if len(self.args) != 1:
             raise TypeError("Pattern argument is missing")
@@ -731,17 +729,17 @@ class Correlation(Task):
     def _prepare(self):
         """
         Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
-        """        
-        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep=".")) # add abspath
+        """
+        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep="."))  # add abspath
 
-        ### Pickle pattern
+        # Pickle pattern
         self.patternPickle = os.path.join(self.slurm.tmpDir, self.name + "_pattern.pickle")
         pickle.dump(self.pattern, open(self.patternPickle, "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-        ### Split data in fractions
+        # Split data in fractions
         ids, groups, files = self._split_data()
 
-        ### Make jobs with groups of data
+        # Make jobs with groups of data
         self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
 
         # for each group of data
@@ -750,7 +748,7 @@ class Correlation(Task):
             inputPickle = files[i] + ".input.pickle"
             outputPickle = files[i] + ".output.pickle"
 
-            ### assemble job file
+            # assemble job file
             # header
             job = self._slurmHeader(ids[i])
 
@@ -793,7 +791,7 @@ class Correlation(Task):
         """
         If self.is_ready(), return joined reduced data.
         """
-        if hasattr(self, "output"): # if output is already stored, just return it
+        if hasattr(self, "output"):  # if output is already stored, just return it
             return self.output
 
         if self.is_ready():
@@ -806,8 +804,8 @@ class Correlation(Task):
             if all([type(outputs[i]) == dict for i in range(len(outputs))]):
                 output = reduce(lambda x, y: dict(x, **y), outputs)
                 if type(output) == dict:
-                    self.output = output # store output in object
-                    self._rm_temps() # delete tmp files
+                    self.output = output  # store output in object
+                    self._rm_temps()  # delete tmp files
                     return self.output
         else:
             raise TypeError("Task is not ready yet.")
@@ -822,26 +820,26 @@ class WinterHMM(object):
         background = yahmm.DiscreteDistribution({
             1: 0.33,
             0: 0.33,
-            -1 : 0.33
+            -1: 0.33
         })
         pos = yahmm.DiscreteDistribution({
             1: 0.7,
             0: 0.2,
-            -1 : 0.1
+            -1: 0.1
         })
         neg = yahmm.DiscreteDistribution({
             1: 0.1,
             0: 0.2,
-            -1 : 0.7
+            -1: 0.7
         })
         zero = yahmm.DiscreteDistribution({
             1: 0,
             0: 1,
-            -1 : 0
+            -1: 0
         })
 
         # Create states
-        b = yahmm.State(background, name="B")        
+        b = yahmm.State(background, name="B")      
         minus = yahmm.State(neg, name="-")
         in1 = yahmm.State(zero, name="in1")
         in2 = yahmm.State(zero, name="in2")
@@ -873,32 +871,32 @@ class WinterHMM(object):
         self.model.add_state(in11)
         self.model.add_state(plus)
 
-        self.model.add_transition(self.model.start, b, 0.5)     # start in background
-        self.model.add_transition(self.model.start, minus, 0.25)# start in minus
-        self.model.add_transition(self.model.start, plus, 0.25) # start in plus
+        self.model.add_transition(self.model.start, b, 0.5)       # start in background
+        self.model.add_transition(self.model.start, minus, 0.25)  # start in minus
+        self.model.add_transition(self.model.start, plus, 0.25)   # start in plus
 
-        self.model.add_transition(b, b, 0.8)                    # stay in background
-        self.model.add_transition(b, minus, 0.1)                # enter in minus
-        self.model.add_transition(b, plus, 0.1)                 # enter in plus
+        self.model.add_transition(b, b, 0.8)                      # stay in background
+        self.model.add_transition(b, minus, 0.1)                  # enter in minus
+        self.model.add_transition(b, plus, 0.1)                   # enter in plus
 
-        self.model.add_transition(minus, b, 0.25)               # can exit from plus
+        self.model.add_transition(minus, b, 0.25)                 # can exit from plus
         self.model.add_transition(minus, in1, 0.25)
         self.model.add_transition(minus, plus, 0.25)
 
-        self.model.add_transition(in1, in2, 0.5)                # states 1-3 can go directly to plus or follow a string 1 to 4
-        self.model.add_transition(in1, plus, 0.5)       
+        self.model.add_transition(in1, in2, 0.5)                  # states 1-3 can go directly to plus or follow a string 1 to 4
+        self.model.add_transition(in1, plus, 0.5)
         self.model.add_transition(in2, in3, 0.5)
         self.model.add_transition(in2, plus, 0.5)
         self.model.add_transition(in3, in4, 0.5)
         self.model.add_transition(in3, plus, 0.5)
 
-        self.model.add_transition(plus, b, 0.50)                # can exit from plus
+        self.model.add_transition(plus, b, 0.50)                  # can exit from plus
         self.model.add_transition(plus, in4, 0.50)
-        self.model.add_transition(in4, in5, 1)                  # string of 4 to 8 at least
+        self.model.add_transition(in4, in5, 1)                    # string of 4 to 8 at least
         self.model.add_transition(in5, in6, 1)
         self.model.add_transition(in6, in7, 1)
         self.model.add_transition(in7, in8, 1)
-        self.model.add_transition(in8, in9, 0.5)                # states 8-11 can go directly to minus
+        self.model.add_transition(in8, in9, 0.5)                  # states 8-11 can go directly to minus
         self.model.add_transition(in8, minus, 0.5)
         self.model.add_transition(in9, in10, 0.5)
         self.model.add_transition(in9, minus, 0.5)
@@ -912,7 +910,7 @@ class WinterHMM(object):
         """
         Draws the Markov chain of the model.
         """
-        return self.model.draw(node_size=400, labels={state.name : str(state.name) for state in self.model.states}, font_size=20)
+        return self.model.draw(node_size=400, labels={state.name: str(state.name) for state in self.model.states}, font_size=20)
 
     def train(self, sequences):
         """
@@ -925,7 +923,7 @@ class WinterHMM(object):
         Predict hidden states from observations.
         """
         logp, chain = self.model.maximum_a_posteriori(observations)
-        return [state.name for num, state in chain][1:-1] # strip begin and end states
+        return [state.name for num, state in chain][1:-1]  # strip begin and end states
 
     def retrieveProbabilities(self, observations):
         """
@@ -933,9 +931,9 @@ class WinterHMM(object):
         """
         trans, ems = self.model.forward_backward(observations)
         ems = np.exp(ems)
-        self.probs = ems/np.sum(ems, axis=1)[:, np.newaxis] # probs of all states
+        self.probs = ems / np.sum(ems, axis=1)[:, np.newaxis]  # probs of all states
         background_state = 0
-        prob_nucleossome = 1 - self.probs[ : , background_state] # prob of all states but background
+        prob_nucleossome = 1 - self.probs[:, background_state]  # prob of all states but background
         return prob_nucleossome
 
 
@@ -987,7 +985,7 @@ def makeBedWindows(windowWidth, bedtool, step=None):
     return windows
 
 
-def bedToolsInterval2GenomicInterval(bedtool , strand=True, name=True):
+def bedToolsInterval2GenomicInterval(bedtool, strand=True, name=True):
     """
     Given a pybedtools.BedTool object, return dictionary of HTSeq.GenomicInterval objects.
 
@@ -1024,8 +1022,8 @@ def distances(bam, intervals, fragmentsize, duplicates=True, strand_wise=True, p
     """
     dists = Counter()
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
-    
-    #for name, feature in intervals.iteritems():
+
+    # for name, feature in intervals.iteritems():
     for name, feature in intervals.items():
         if feature.chrom not in chroms:
             continue
@@ -1089,9 +1087,9 @@ def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicate
         else:
             profile = np.zeros((2, feature.length), dtype=np.float64)
 
-        # Check if feature is in bam index 
+        # Check if feature is in bam index
         if feature.chrom not in chroms or feature.chrom == "chrM":
-            i+=1
+            i += 1
             continue
 
         # Fetch all alignments in feature window
@@ -1108,36 +1106,36 @@ def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicate
             # check if duplicate
             if not duplicates and aln.pcr_or_optical_duplicate:
                 continue
-            aln.iv.length = fragmentsize # adjust to size
+            aln.iv.length = fragmentsize  # adjust to size
 
             # get position in relative to window
             if orientation:
                 if feature.strand == "+" or feature.strand == ".":
                     start_in_window = aln.iv.start - feature.start - 1
-                    end_in_window   = aln.iv.end   - feature.start - 1
+                    end_in_window = aln.iv.end - feature.start - 1
                 else:
                     start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
-                    end_in_window   = feature.length - abs(feature.start - aln.iv.start) - 1
+                    end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
             else:
                 start_in_window = aln.iv.start - feature.start - 1
-                end_in_window   = aln.iv.end   - feature.start - 1
-            
+                end_in_window = aln.iv.end - feature.start - 1
+
             # check fragment is within window; this is because of fragmentsize adjustment
             if start_in_window <= 0 or end_in_window > feature.length:
                 continue
 
             # add +1 to all positions overlapped by read within window
             if not strand_wise:
-                profile[start_in_window : end_in_window] += 1
+                profile[start_in_window: end_in_window] += 1
             else:
                 if aln.iv.strand == "+":
-                    profile[0][start_in_window : end_in_window] += 1
+                    profile[0][start_in_window: end_in_window] += 1
                 else:
-                    profile[1][start_in_window : end_in_window] += 1
-            
+                    profile[1][start_in_window: end_in_window] += 1
+
         # append feature profile to dict
         coverage[name] = profile
-        i+=1
+        i += 1
     return coverage
 
 
@@ -1156,18 +1154,18 @@ def extractPattern(dists, distRange, filePrefix):
     plt.subplot(211)
     x = dists.keys()
     y = [dists[i] for i in x]
-    p1 = np.poly1d(np.polyfit(x, y, 1)) # fit linear regression
-    m , b = p1.coeffs
+    p1 = np.poly1d(np.polyfit(x, y, 1))  # fit linear regression
+    m, b = p1.coeffs
     plt.plot(
         x, y, 'o',
         x, p1(x), "-"
-    )    
-    
+    )
+
     # restrict to signal
     x = distRange
     y = [dists[i] for i in x]
-    p1 = np.poly1d(np.polyfit(x, y, 1)) # fit linear regression
-    m , b = p1.coeffs
+    p1 = np.poly1d(np.polyfit(x, y, 1))  # fit linear regression
+    m, b = p1.coeffs
     plt.subplot(212)
     plt.plot(
         x, y, 'o',
@@ -1177,23 +1175,23 @@ def extractPattern(dists, distRange, filePrefix):
     plt.close()
 
     # measure distance to regression in that point
-    distsReg = [y[i] - (m*i + b) for i in range(len(x))]
+    distsReg = [y[i] - (m * i + b) for i in range(len(x))]
 
     # subtract value of minimum to all points
     distsReg -= min(distsReg)
 
-    ### fourier transform data
+    # fourier transform data
     time = x
     signal = distsReg
 
     # get frequencies from decomposed fft
-    W =  np.fft.fftfreq(signal.size, d=time[1]-time[0])
+    W = np.fft.fftfreq(signal.size, d=time[1] - time[0])
     f_signal = np.fft.fft(signal)
 
     # plot all frequencies, ask what is the amplitude of the signals
     freqs = dict()
     plt.figure(1)
-    for i in np.arange(0, len(x)/10., 0.01):
+    for i in np.arange(0, len(x) / 10., 0.01):
         if i == 0:
             continue
         else:
@@ -1227,7 +1225,7 @@ def extractPattern(dists, distRange, filePrefix):
     plt.plot(W, abs(cut_f_signal), 'o')
     plt.subplot(224)
     plt.plot(time, cut_signal, '-')
-    plt.savefig(filePrefix + ".fft_filter-{0}bp_ifft.pdf".format(int(1/top)), bbox_inches='tight')
+    plt.savefig(filePrefix + ".fft_filter-{0}bp_ifft.pdf".format(int(1 / top)), bbox_inches='tight')
     plt.close()
 
     return cut_signal.real
@@ -1249,7 +1247,7 @@ def correlatePatternProfile(pattern, profile, step=1):
         R = list()
         i = 0
         while i + len(pattern) <= len(profile):
-            R.append(pearsonr(pattern, profile[i:i+len(pattern)])[0])
+            R.append(pearsonr(pattern, profile[i:i + len(pattern)])[0])
             i += 1
         return np.array(R)
 
@@ -1261,7 +1259,7 @@ def fitKDE(X, bandwidth):
     X=numerical iterable.
     bandwidth=kernel bandwidth - float.
     """
-    return kde.kdensity(range(len(x)), bw=bandwidth, weights=x)[0]
+    return kde.kdensity(range(len(X)), bw=bandwidth, weights=X)[0]
 
 
 def fitRegression(X, degree):
@@ -1283,7 +1281,7 @@ def findPeaks(X, peakWidth):
     peakWidth=integer.
     """
     peaks = signal.find_peaks_cwt(X, widths=np.array([peakWidth]))
-    return {peak : (peak - peakWidth/2, peak + peakWidth/2) for peak in peaks}
+    return {peak: (peak - peakWidth / 2, peak + peakWidth / 2) for peak in peaks}
 
 
 def binarize(X):
@@ -1298,14 +1296,14 @@ def binarize(X):
     binary = list()
     prev_max = 0
     for i in xrange(len(X)):
-        if maximas[i] == True and X[i] > 0.05 and any(n < 0 for n in X[prev_max : i]): # watch out for namespace pollution with np.any
+        if maximas[i] == True and X[i] > 0.05 and any(n < 0 for n in X[prev_max: i]):  # watch out for namespace pollution with np.any
             # if from i to next_max there is no neg, then is max
             for j in xrange(i, len(X)):
                 if maximas[j] == True and X[j] > 0.05:
                     next_max = j
                     break
 
-            if not any(n > 0 for n in X[i : next_max]):
+            if not any(n > 0 for n in X[i: next_max]):
                 binary.append(1)
                 prev_max = i
             else:
@@ -1375,7 +1373,6 @@ def getDARNS(intervals, hmmOutput):
     return DARNS
 
 
-
 def getDARNSlimits(sequence):
     """
     sequence=iterable with sequence from HMM.
@@ -1411,7 +1408,7 @@ def measureDARNS(DARNS):
             # widths
             widths[width(d1)] += 1
             widths[width(d2)] += 1
-            
+
             # distance end-to-end
             if d1[end] <= d2[start]:
                 distances[abs(d2[start] - d1[end])] += 1
@@ -1438,7 +1435,7 @@ def exportWigFile(intervals, profiles, offset, filename, trackname):
         handle.write(track)
         for i in xrange(len(profiles)):
             header = "fixedStep  chrom={0}  start={1}  step=1\n".format(intervals[i].chrom, intervals[i].start + offset)
-            handle.write(header)    
+            handle.write(header)
             for j in xrange(len(profiles[i])):
                 handle.write(str(abs(profiles[i][j])) + "\n")
 
@@ -1462,7 +1459,7 @@ def exportBedFile(intervals, peaks, offset, filename, trackname, strand="."):
         handle.write(track)
         for name, peak in peaks.items():
             for center, tup in peak.items():
-                ### TODO: check peak boundaries
+                # TODO: check peak boundaries
                 entry = "{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n".format(
                     intervals[name].chrom,
                     intervals[name].start + offset + tup[0],
@@ -1479,4 +1476,3 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("Program canceled by user!")
         sys.exit(0)
-    
