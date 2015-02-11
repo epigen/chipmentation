@@ -354,6 +354,7 @@ slurm = DivideAndSlurm()
 signal = "PU1_K562_10mio_CM"
 sample = "CTCF_K562_10mio_CM"
 sample = "ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups"
+sample = "CTCF_K562_10mio_ChIP"
 
 # load ChIPmentation peaks
 peaks = pybedtools.BedTool(os.path.join(peakFilePath, signal + ".motifStrand.bed"))
@@ -376,10 +377,10 @@ for name, interval in peaks_notin_loops.iteritems():
         peaks_notin_loops.pop(name)
 
 loopsTask = Coverage(peaks_in_loops, 2, os.path.join(bamFilePath, sample + ".bam"),
-                     orientation=True, fragment_size=1, strand_wise=True, queue="shortq", cpusPerTask=2
+                     orientation=True, fragment_size=1, strand_wise=True, queue="develop", cpusPerTask=4
                      )
 notLoopsTask = Coverage(peaks_notin_loops, 2, os.path.join(bamFilePath, sample + ".bam"),
-                        orientation=True, fragment_size=1, strand_wise=True, queue="shortq", cpusPerTask=2
+                        orientation=True, fragment_size=1, strand_wise=True, queue="develop", cpusPerTask=4
                         )
 slurm.add_task(loopsTask)
 slurm.add_task(notLoopsTask)
@@ -390,7 +391,7 @@ slurm.submit(notLoopsTask)
 loopsCov = loopsTask.collect()
 notLoopsCov = notLoopsTask.collect()
 
-levels = [loopsCov.keys(), [".", "-"]]  # for strand_wise=True
+levels = [loopsCov.keys(), ["+", "-"]]  # for strand_wise=True
 labels = [[y for x in range(len(loopsCov)) for y in [x, x]], [y for x in range(len(loopsCov.keys())) for y in (0, 1)]]
 index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
 loopsDf = pd.DataFrame(np.vstack(loopsCov.values()), index=index)
@@ -437,7 +438,7 @@ plt.subplot(121)
 plt.plot(loopsAve['average'].index, loopsAve['average'], 'black', linewidth=0.7)
 plt.subplot(122)
 plt.plot(notLoopsAve['average'].index, notLoopsAve['average'], 'black', linewidth=0.7)
-plt.savefig(os.path.join(plotsDir, "CTCF_K562_10mio_CM_peaks.loops.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join(plotsDir, "%s_peaks.loops.pdf" % sample), bbox_inches='tight')
 plt.close()
 
 plt.subplot(121)
@@ -446,5 +447,5 @@ plt.plot(loopsAve['negative'].index, loopsAve['negative'], 'b', linewidth=0.7)
 plt.subplot(122)
 plt.plot(notLoopsAve['positive'].index, notLoopsAve['positive'], 'r', linewidth=0.7)
 plt.plot(notLoopsAve['negative'].index, notLoopsAve['negative'], 'b', linewidth=0.7)
-plt.savefig(os.path.join(plotsDir, "CTCF_K562_10mio_CM_peaks.loops.strandWise.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join(plotsDir, "%s_peaks.loops.strandWise.pdf" % sample), bbox_inches='tight')
 plt.close()

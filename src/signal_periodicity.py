@@ -18,8 +18,12 @@ In brief, this does:
     * ... plus several plots along the way.
 
 TODO:
-    Repeat read counting in regions minus repeats and gaps
+    Repeat read counting in regions minus repeats and gaps - ongoing
     Repeat read counting in regions without duplicates
+
+    Implement coverage and correlation at same time Task
+
+
 """
 
 
@@ -88,9 +92,6 @@ def main(args):
     args.results_dir = os.path.abspath(args.results_dir)
     args.plots_dir = os.path.abspath(args.plots_dir)
 
-    # Get sample names
-    samples = {re.sub("\.bam", "", os.path.basename(sampleFile)): os.path.abspath(sampleFile) for sampleFile in args.bam_files}
-
     # Get regions of interest in the genome
     gapsRepeats = BedTool(os.path.join("/home", "arendeiro", "reference/Homo_sapiens/hg19_gapsRepeats.bed"))
 
@@ -111,7 +112,7 @@ def main(args):
 
     # peaks not overlapping the other mark in 1kb-windows
     H3K27me3_only = H3K27me3.intersect(b=H3K4me3, v=True)
-    H3K4me3_only = H3K27me3.intersect(b=H3K27me3, v=True)
+    H3K4me3_only = H3K4me3.intersect(b=H3K27me3, v=True)
 
     # peaks overlapping each other in 1kb-windows
     H3K27me3_H3K4me3 = H3K4me3.intersect(b=H3K27me3)
@@ -126,16 +127,15 @@ def main(args):
     H3K27me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3, b=H3K27me3, w=args.window_width, s=args.window_width), strand=False, name=False)
     H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3, b=H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
 
-    regions = {
-        "whole_genome": whole_genome,
-        "dhs": dhs,
-        "non_dhs": non_dhs,
-        "H3K27me3": H3K27me3,
-        "H3K4me3": H3K4me3,
-        "H3K27me3_only": H3K27me3_only,
-        "H3K4me3_only": H3K4me3_only,
-        "H3K27me3_H3K4me3": H3K27me3_H3K4me3
-    }
+    regions = {"whole_genome": whole_genome,
+               "dhs": dhs,
+               "non_dhs": non_dhs,
+               "H3K27me3": H3K27me3,
+               "H3K4me3": H3K4me3,
+               "H3K27me3_only": H3K27me3_only,
+               "H3K4me3_only": H3K4me3_only,
+               "H3K27me3_H3K4me3": H3K27me3_H3K4me3
+               }
     assert all([len(region) > 1 for region in regions.values()])
     pickle.dump(regions, open(os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -146,21 +146,26 @@ def main(args):
     # Initialize Slurm object
     slurm = DivideAndSlurm()
     tasks = dict()
+
+    # Get sample names
+    samples = {re.sub("\.bam", "", os.path.basename(sampleFile)): os.path.abspath(sampleFile) for sampleFile in args.bam_files}
+
     # Submit tasks for combinations of regions and bam files
     for regionName, region in regions.items():
-        if regionName != "H3K4me3":
-            continue
         for sampleName, sampleFile in samples.items():
-            if sampleName != "DNase_UWashington_K562_mergedReplicates":
+            exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
+            if os.path.isfile(os.path.join(exportName + ".countsStranded-noRepeats-slurm.pickle")):
                 continue
             # Add new task
-            task = CountDistances(region, 5, os.path.abspath(sampleFile), permute=False, queue="shortq", time="4:00:00", permissive=True, cpusPerTask=2)
+            task = CountDistances(region, 4, os.path.abspath(sampleFile), permute=False, queue="shortq", time="4:00:00", permissive=True, cpusPerTask=4)
             slurm.add_task(task)
             slurm.submit(task)  # Submit new task
             tasks[task] = (sampleName, regionName, False)  # Keep track
             print(tasks[task])
+            if os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-noRepeats-slurm.pickle")):
+                continue
             # Add permuted
-            task = CountDistances(region, 5, os.path.abspath(sampleFile), permute=True, queue="shortq", time="4:00:00", permissive=True, cpusPerTask=2)
+            task = CountDistances(region, 4, os.path.abspath(sampleFile), permute=True, queue="shortq", time="4:00:00", permissive=True, cpusPerTask=4)
             slurm.add_task(task)
             slurm.submit(task)  # Submit new task
             tasks[task] = (sampleName, regionName, True)  # Keep track
@@ -187,8 +192,6 @@ def main(args):
 
     # For each signal extract most abundant periodic signal through FFT, IFFT
     for regionName, region in regions.items():
-        if regionName != "H3K4me3_only":
-            continue
         for sampleName, sampleFile in samples.items():
             exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
 
@@ -216,19 +219,23 @@ def main(args):
             permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand_permuted"))
             permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands_permuted"))
 
+    # Focus on H3K4me3 data and nucleosome positioning
+    #
+    #
     # calculate read coverage in H3K4me3 peaks
     sampleName = "H3K4me3_K562_500k_CM"
     sampleFile = samples[sampleName]
+    regionName = "H3K4me3_only"
 
     peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=sampleName))
     peaks = bedToolsInterval2GenomicInterval(peaks)
 
     exportName = os.path.join(args.data_dir, sampleName + "_" + sampleName)
 
-    task = Coverage(peaks, 40, os.path.abspath(sampleFile), fragment_size=args.fragment_size, strand_wise=True)
+    task = Coverage(peaks, 4, os.path.abspath(sampleFile), fragment_size=args.fragment_size, strand_wise=True, queue="develop", cpusPerTask=2)
     slurm.add_task(task)
     slurm.submit(task)
-    coverage = slurm.collect(task)
+    coverage = task.collect()
 
     pickle.dump(coverage, open(os.path.join(args.data_dir, exportName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     coverage = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCoverageStranded.pickle"), "r"))
@@ -236,19 +243,27 @@ def main(args):
     # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
 
     # Correlate coverage and signal pattern
+    # get pattern
+    dists = pickle.load(open(os.path.join(args.data_dir, sampleName + "_" + regionName + ".countsStranded-slurm.pickle"), "r"))
+    distsPos = {dist: count for dist, count in dists.items() if dist >= 0}
+    distsNeg = {abs(dist): count for dist, count in dists.items() if dist <= 0}
+    pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100),
+                             os.path.join(args.data_dir, sampleName + "_" + regionName + "_bothStrands")
+                             )
+
     # positive strand
-    coveragePos = [reads[0] for peak, reads in coverage.items()]
-    task = Correlation(coveragePos, 40, pattern, step=1)
-    slurm.add_task(task)
-    slurm.submit(task)
-    correlationsPos = slurm.collect(task)
+    coveragePos = {peak: reads[0] for peak, reads in coverage.items()}
+    taskPos = Correlation(coveragePos, 2, pattern, step=1, queue="develop", cpusPerTask=8)
+    slurm.add_task(taskPos)
+    slurm.submit(taskPos)
+    correlationsPos = taskPos.collect()
 
     # negative strand
-    coverageNeg = [reads[1] for peak, reads in coverage.items()]
-    task = Correlation(coverageNeg, 40, pattern, step=1)
-    slurm.add_task(task)
-    slurm.submit(task)
-    correlationsNeg = slurm.collect(task)
+    coverageNeg = {peak: reads[1] for peak, reads in coverage.items()}
+    taskNeg = Correlation(coverageNeg, 2, pattern, step=1, queue="develop", cpusPerTask=8)
+    slurm.add_task(taskNeg)
+    slurm.submit(taskNeg)
+    correlationsNeg = taskNeg.collect()
 
     pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.data_dir, exportName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationStranded.pickle"), "r"))
@@ -718,7 +733,7 @@ class Correlation(Task):
     Task to get read coverage under regions.
     """
     def __init__(self, data, fractions, *args, **kwargs):
-        super(Coverage, self).__init__(data, fractions, *args, **kwargs)
+        super(Correlation, self).__init__(data, fractions, *args, **kwargs)
         # Initialize rest
         now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1, 1000))], sep="_")
         self.name = "correlation_{0}".format(now)
@@ -765,16 +780,11 @@ class Correlation(Task):
                 # Activate virtual environment
                 source /home/arendeiro/venv/bin/activate
 
-                python correlation_parallel.py {0} {1} {2} """.format(inputPickle, outputPickle, self.patternPickle)
+                python correlation_parallel.py {0} {1} {2} --step {3}
 
-            if self.step:
-                task += "--step {0} ".format(self.step)
-
-            task += """
-
-            # Deactivate virtual environment
-            deactivate
-                """
+                # Deactivate virtual environment
+                deactivate
+                """.format(inputPickle, outputPickle, self.patternPickle, self.step)
 
             job += textwrap.dedent(task)
 
