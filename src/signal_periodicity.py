@@ -69,21 +69,20 @@ def main(args):
     parser.add_argument('--fragment-size', dest='fragment_size', type=int, default=1)
     parser.add_argument('--genome', dest='genome', type=str, default='hg19')
     args = parser.parse_args()
-    args = parser.parse_args([
-        "projects/chipmentation/results/periodicity-data",
-        "projects/chipmentation/results/periodicity",
-        "projects/chipmentation/results/plots/periodicity",
-        "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
-        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
-        "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
-        "data/human/chipmentation/mapped/merged/H3K27me3_K562_10k500k_CM.bam",
-        "data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
-        "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam",
-        "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam",
-        #"/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
-        "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
-        ]
-    )
+    args = parser.parse_args(["projects/chipmentation/results/periodicity-data",
+                              "projects/chipmentation/results/periodicity",
+                              "projects/chipmentation/results/plots/periodicity",
+                              "data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam",
+                              "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_CM.bam",
+                              "data/human/chipmentation/mapped/merged/H3K4me3_K562_500k_ChIP.bam",
+                              "data/human/chipmentation/mapped/merged/H3K27me3_K562_10k500k_CM.bam",
+                              "data/human/chipmentation/mapped/merged/H3K27me3_K562_500k_ChIP.bam",
+                              "data/human/chipmentation/mapped/merged/PU1_K562_10mio_CM.bam",
+                              "data/human/chipmentation/mapped/merged/CTCF_K562_10mio_CM.bam",
+                              #  "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_DOX_ATAC10-8_0_0.trimmed.bowtie2.shifted.dups.bam",
+                              "/fhgfs/groups/lab_bock/arendeiro/projects/atac-seq/data/mapped/ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups.bam"
+                              ]
+                             )
     # TODO: mkdirs
     args.data_dir = os.path.abspath(args.data_dir)
     args.results_dir = os.path.abspath(args.results_dir)
@@ -137,6 +136,7 @@ def main(args):
         "H3K4me3_only": H3K4me3_only,
         "H3K27me3_H3K4me3": H3K27me3_H3K4me3
     }
+    assert all([len(region) > 1 for region in regions.values()])
     pickle.dump(regions, open(os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     regions = pickle.load(open(os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle"), "r"))
@@ -148,15 +148,19 @@ def main(args):
     tasks = dict()
     # Submit tasks for combinations of regions and bam files
     for regionName, region in regions.items():
+        if regionName != "H3K4me3":
+            continue
         for sampleName, sampleFile in samples.items():
+            if sampleName != "DNase_UWashington_K562_mergedReplicates":
+                continue
             # Add new task
-            task = CountDistances(region, 5, os.path.abspath(sampleFile), permute=False, queue="shortq", time="4:00:00", permissive=True)
+            task = CountDistances(region, 5, os.path.abspath(sampleFile), permute=False, queue="shortq", time="4:00:00", permissive=True, cpusPerTask=2)
             slurm.add_task(task)
             slurm.submit(task)  # Submit new task
             tasks[task] = (sampleName, regionName, False)  # Keep track
             print(tasks[task])
             # Add permuted
-            task = CountDistances(region, 5, os.path.abspath(sampleFile), permute=True, queue="shortq", time="4:00:00", permissive=True)
+            task = CountDistances(region, 5, os.path.abspath(sampleFile), permute=True, queue="shortq", time="4:00:00", permissive=True, cpusPerTask=2)
             slurm.add_task(task)
             slurm.submit(task)  # Submit new task
             tasks[task] = (sampleName, regionName, True)  # Keep track
@@ -172,7 +176,7 @@ def main(args):
             print(textwrap.dedent("""\
             Task {0} is now ready! {1}, {2}, {3}
             Time to completion was: {4} minutes.
-            """.format(task, sampleName, regionName, permuted, int(time.time() - task.submission_time)/ 60.)))
+            """.format(task, sampleName, regionName, permuted, int(time.time() - task.submission_time) / 60.)))
             exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
             dists = task.collect()
             if not permuted:
@@ -183,19 +187,21 @@ def main(args):
 
     # For each signal extract most abundant periodic signal through FFT, IFFT
     for regionName, region in regions.items():
+        if regionName != "H3K4me3_only":
+            continue
         for sampleName, sampleFile in samples.items():
             exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
 
-            if not os.path.isfile(os.path.join(exportName + ".countsStranded-slurm.pickle")):
+            if not os.path.isfile(os.path.join(exportName + ".countsStranded-noRepeats-slurm.pickle")):
                 continue
-            dists = pickle.load(open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "r"))
+            dists = pickle.load(open(os.path.join(exportName + ".countsStranded-noRepeats-slurm.pickle"), "r"))
 
             distsPos = {dist: count for dist, count in dists.items() if dist >= 0}
             distsNeg = {abs(dist): count for dist, count in dists.items() if dist <= 0}
 
-            if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle")):
+            if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-noRepeats-slurm.pickle")):
                 continue
-            permutedDists = pickle.load(open(os.path.join(exportName + ".countsPermutedStranded-slurm.pickle"), "r"))
+            permutedDists = pickle.load(open(os.path.join(exportName + ".countsPermutedStranded-noRepeats-slurm.pickle"), "r"))
 
             permutedDistsPos = {dist: count for dist, count in permutedDists.items() if dist >= 0}
             permutedDistsNeg = {abs(dist): count for dist, count in permutedDists.items() if dist <= 0}
@@ -652,6 +658,8 @@ class Coverage(Task):
                 task += "--strand-wise "
             if self.duplicates:
                 task += "--duplicates "
+            if self.orientation:
+                task += "--orientation "
             if self.permute:
                 task += "--permute "
             task += "--fragment-size {0}".format(self.fragment_size)

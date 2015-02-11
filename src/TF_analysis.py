@@ -1,8 +1,8 @@
 #!/usr/env python
 #############################################################################################
-# 
+#
 # This code was used to produce the plots in the ChIPmentation paper (Schmidl, et al. 2015).
-# 
+#
 # It produces plots of average signal profiles around TSSs,
 # clusters of TSSs based on various signals,
 # and heatmaps of the same
@@ -19,6 +19,9 @@ import pandas as pd
 from divideAndSlurm import DivideAndSlurm, Task
 import string, time, random, textwrap
 
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 from ggplot import ggplot, aes, stat_smooth, facet_wrap, xlab, ylab, theme_bw, theme
 
 import rpy2.robjects as robj # for ggplot in R
@@ -31,11 +34,11 @@ import cPickle as pickle
 import plotly.plotly as plotly
 from plotly.graph_objs import Data, Heatmap, Layout, Figure
 
-signals = { "CTCF_K562_10mio_CM" : ["CTCF_K562_10mio_CM", "CTCF_K562_10mio_ChIP", "IgG_K562_10mio_CM"],
-            "PU1_K562_10mio_CM" : ["PU1_K562_10mio_CM", "PU1_K562_10mio_ChIP", "IgG_K562_10mio_CM"]} # DNase missing
+signals = {"CTCF_K562_10mio_CM": ["CTCF_K562_10mio_CM", "CTCF_K562_10mio_ChIP", "IgG_K562_10mio_CM"],
+           "PU1_K562_10mio_CM": ["PU1_K562_10mio_CM", "PU1_K562_10mio_ChIP", "IgG_K562_10mio_CM"]}  # DNase missing
 bamFilePath = "/home/arendeiro/data/human/chipmentation/mapped/merged"
 peakFilePath = "/home/arendeiro/data/human/chipmentation/bed"
-coverageFilePath = "/home/arendeiro/data/human/chipmentation/bed/newPython" # new output dir
+coverageFilePath = "/home/arendeiro/data/human/chipmentation/bed/newPython"  # new output dir
 plotsDir = "/home/arendeiro/"
 
 genome = "hg19"
@@ -48,18 +51,17 @@ plotly.sign_in("afrendeiro", "iixmygxac1")
 windowWidth = abs(windowRange[0]) + abs(windowRange[1])
 
 
-
 class Coverage(Task):
     """
     Task to get read coverage under regions.
     """
     def __init__(self, data, fractions, *args, **kwargs):
         super(Coverage, self).__init__(data, fractions, *args, **kwargs)
-        ### Initialize rest
-        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1,1000))], sep="_")
+        # Initialize rest
+        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1, 1000))], sep="_")
         self.name = "coverage_{0}".format(now)
 
-        ### Parse
+        # Parse
         # required argument
         if len(self.args) != 1:
             raise TypeError("Bam file argument is missing")
@@ -89,13 +91,13 @@ class Coverage(Task):
     def _prepare(self):
         """
         Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
-        """        
-        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep=".")) # add abspath
+        """
+        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep="."))  # add abspath
 
-        ### Split data in fractions
+        # Split data in fractions
         ids, groups, files = self._split_data()
 
-        ### Make jobs with groups of data
+        # Make jobs with groups of data
         self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
 
         # for each group of data
@@ -104,7 +106,7 @@ class Coverage(Task):
             inputPickle = files[i] + ".input.pickle"
             outputPickle = files[i] + ".output.pickle"
 
-            ### assemble job file
+            # assemble job file
             # header
             job = self._slurmHeader(ids[i])
 
@@ -119,6 +121,8 @@ class Coverage(Task):
                 task += "--strand-wise "
             if self.duplicates:
                 task += "--duplicates "
+            if self.orientation:
+                task += "--orientation "
             if self.permute:
                 task += "--permute "
             task += "--fragment-size {0}".format(self.fragment_size)
@@ -152,7 +156,7 @@ class Coverage(Task):
         """
         If self.is_ready(), return joined reduced data.
         """
-        if not hasattr(self, "output"): # if output is already stored, just return it
+        if not hasattr(self, "output"):  # if output is already stored, just return it
             if self.is_ready():
                 # load all pickles into list
                 if self.permissive:
@@ -163,8 +167,8 @@ class Coverage(Task):
                 if all([type(outputs[i]) == dict for i in range(len(outputs))]):
                     output = reduce(lambda x, y: dict(x, **y), outputs)
                     if type(output) == dict:
-                        self.output = output # store output in object
-                        self._rm_temps() # delete tmp files
+                        self.output = output  # store output in object
+                        self._rm_temps()  # delete tmp files
                         return self.output
             else:
                 raise TypeError("Task is not ready yet.")
@@ -191,7 +195,7 @@ def exportToJavaTreeView(df, filename):
     """
     Export cdt file of cluster to view in JavaTreeView.
     df - pandas.DataFrame object with numeric data.
-    filename - string.    
+    filename - string.
     """
     cols = ["X" + str(x) for x in df.columns]
     df.columns = cols
@@ -200,7 +204,6 @@ def exportToJavaTreeView(df, filename):
     df["GWEIGHT"] = 1
     df = df[["X", "NAME", "GWEIGHT"] + cols]
     df.to_csv(filename, sep="\t", index=False)
-
 
 
 slurm = DivideAndSlurm()
@@ -212,7 +215,7 @@ aveSignals = OrderedDict()
 for signal in signals.keys():
     # Load peak file from bed files, centered on motif
 
-    ## TODO: modify pipeline so that slop is done here
+    # TODO: modify pipeline so that slop is done here
     # peaks = pybedtools.BedTool(os.path.join(peakFilePath, signal + ".motifStrand.bed")).slop(genome=genome, b=windowWidth/2)
     peaks = pybedtools.BedTool(os.path.join(peakFilePath, signal + ".motifStrand.bed"))
     peaks = bedToolsInterval2GenomicInterval(peaks)
@@ -225,8 +228,8 @@ for signal in signals.keys():
         # Get dataframe of signal coverage in bed regions, append to dict
         # Make task
         task = Coverage(peaks, 30, os.path.join(bamFilePath, sample + ".bam"),
-            orientation=True, fragment_size=1, strand_specific=False, queue="shortq", cpusPerTask=8
-        )
+                        orientation=True, fragment_size=1, strand_wise=False, queue="shortq", cpusPerTask=8
+                        )
         slurm.add_task(task)
         slurm.submit(task)
         while not task.is_ready():
@@ -235,29 +238,28 @@ for signal in signals.keys():
 
         # Make multiindex dataframe
         levels = [cov.keys(), ["+", "-"]]
-        labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0,1)]]
+        labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
         index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
         df = pd.DataFrame(np.vstack(cov.values()), index=index)
         df.columns = range(windowRange[0], windowRange[1])
 
-        # For strand_specific=False
-        #cov = coverage(bamfile, peaks, fragmentsize)
-        #df = pd.DataFrame(cov).T
-        #df.columns = range(windowRange[0], windowRange[1])
+        # For strand_wise=False
+        # cov = coverage(bamfile, peaks, fragmentsize)
+        # df = pd.DataFrame(cov).T
+        # df.columns = range(windowRange[0], windowRange[1])
 
-        # append to dict   
+        # append to dict
         rawSignals[sample] = df
 
         # Save as csv
         df.to_csv(os.path.join(coverageFilePath, "{0}.tssSignal_{1}bp.csv".format(sample, str(windowWidth))), index=False)
 
         # Get average profiles and append to dict
-        ave = {
-            "signal" : sample,
-            "average" : df.apply(np.mean, axis=0),                              # both strands
-            "positive" : df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),    # positive strand
-            "negative" : df.ix[range(1, len(df), 2)].apply(np.mean, axis=0)     # negative strand
-        }
+        ave = {"signal": sample,
+               "average": df.apply(np.mean, axis=0),                              # both strands
+               "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),    # positive strand
+               "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0)     # negative strand
+               }
         aveSignals[sample] = pd.DataFrame(ave)
 
 # serialize with pickle
@@ -280,11 +282,11 @@ plotFunc = robj.r("""
     library(ggplot2)
 
     #cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-   
+
     function(df, plotsDir){
         p = ggplot(df, aes(x, value, colour = variable)) +
             geom_line() +
-            #stat_smooth(method = "gam", formula = y ~ s(x, k = 20), se = FALSE) + 
+            # stat_smooth(method = "gam", formula = y ~ s(x, k = 20), se = FALSE) +
             facet_wrap(~signal, scales="free", ncol=1) +
             xlab("Distance to peak") +
             ylab("Average tags per bp") +
@@ -294,7 +296,6 @@ plotFunc = robj.r("""
             scale_colour_manual(values=c("black", "dark blue","dark red")) +
             xlim(c(-200, 200))
 
-        
         ggsave(filename = paste0(plotsDir, "/tss_signal.pdf"), plot = p, height = 7, width = 7)
         ggsave(filename = paste0(plotsDir, "/tss_signal.wide.pdf"), plot = p, height = 7, width = 10)
     }
@@ -304,50 +305,46 @@ gr = importr('grDevices')
 # convert the pandas dataframe to an R dataframe
 robj.pandas2ri.activate()
 aveSignals_R = robj.conversion.py2ri(aveSignals)
- 
+
 # run the plot function on the dataframe
 plotFunc(aveSignals_R, plotsDir)
 
 # Loop through raw signals, normalize, k-means cluster, save pickle, plot heatmap, export cdt
 for signal in signals:
     exportName = "{0}.tssSignal_{1}bp.kmeans_{2}k".format(signal, str(windowWidth), n_clusters)
-    
+
     df = rawSignals[signal]
 
     # join strand signal (plus - minus)
-    df = df.xs('+',level="strand") - df.xs('-',level="strand")
+    df = df.xs('+', level="strand") - df.xs('-', level="strand")
 
     # scale row signal to 0:1 (normalization)
-    dfNorm = df.apply(lambda x : (x - min(x)) / (max(x) - min(x)), axis=1)
+    dfNorm = df.apply(lambda x: (x - min(x)) / (max(x) - min(x)), axis=1)
 
     clust = k_means(dfNorm,
-        n_clusters,
-        n_init=25,
-        max_iter=10000,
-        n_jobs=2
-    ) # returns centroid, label, inertia
-    
+                    n_clusters,
+                    n_init=25,
+                    max_iter=10000,
+                    n_jobs=2
+                    )  # returns centroid, label, inertia
+
     # save object
     pickle.dump(clust,
-        open(os.path.join(bamFilePath, exportName + ".pickl"), "wb"),
-        protocol = pickle.HIGHEST_PROTOCOL
-    )
+                open(os.path.join(bamFilePath, exportName + ".pickl"), "wb"),
+                protocol=pickle.HIGHEST_PROTOCOL
+                )
 
-    # Sort dataframe by cluster order 
-    dfNorm["cluster"] = clust[1] # clust[1] <- label from k-means clustering
+    # Sort dataframe by cluster order
+    dfNorm["cluster"] = clust[1]  # clust[1] <- label from k-means clustering
     dfNorm.sort_index(by="cluster", axis=0, inplace=True)
     dfNorm.drop("cluster", axis=1, inplace=True)
 
     # Plot heatmap
     data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
     plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".pdf"))
-    
+
     # Export as cdt
     exportToJavaTreeView(df, os.path.join(plotsDir, exportName + ".cdt"))
-
-
-
-
 
 
 """
@@ -378,12 +375,12 @@ for name, interval in peaks_notin_loops.iteritems():
     if interval.length < windowWidth:
         peaks_notin_loops.pop(name)
 
-loopsTask = Coverage(peaks_in_loops, 30, os.path.join(bamFilePath, sample + ".bam"),
-    orientation=True, fragment_size=1, strand_specific=False, queue="shortq", cpusPerTask=2
-)
-notLoopsTask = Coverage(peaks_notin_loops, 30, os.path.join(bamFilePath, sample + ".bam"),
-    orientation=True, fragment_size=1, strand_specific=False, queue="shortq", cpusPerTask=2
-)
+loopsTask = Coverage(peaks_in_loops, 2, os.path.join(bamFilePath, sample + ".bam"),
+                     orientation=True, fragment_size=1, strand_wise=True, queue="shortq", cpusPerTask=2
+                     )
+notLoopsTask = Coverage(peaks_notin_loops, 2, os.path.join(bamFilePath, sample + ".bam"),
+                        orientation=True, fragment_size=1, strand_wise=True, queue="shortq", cpusPerTask=2
+                        )
 slurm.add_task(loopsTask)
 slurm.add_task(notLoopsTask)
 
@@ -393,14 +390,14 @@ slurm.submit(notLoopsTask)
 loopsCov = loopsTask.collect()
 notLoopsCov = notLoopsTask.collect()
 
-levels = [loopsCov.keys(), ["+", "-"]]
-labels = [[y for x in range(len(loopsCov)) for y in [x, x]], [y for x in range(len(loopsCov.keys())) for y in (0,1)]]
+levels = [loopsCov.keys(), [".", "-"]]  # for strand_wise=True
+labels = [[y for x in range(len(loopsCov)) for y in [x, x]], [y for x in range(len(loopsCov.keys())) for y in (0, 1)]]
 index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
 loopsDf = pd.DataFrame(np.vstack(loopsCov.values()), index=index)
 loopsDf.columns = range(windowRange[0], windowRange[1])
 
 levels = [notLoopsCov.keys(), ["+", "-"]]
-labels = [[y for x in range(len(notLoopsCov)) for y in [x, x]], [y for x in range(len(notLoopsCov.keys())) for y in (0,1)]]
+labels = [[y for x in range(len(notLoopsCov)) for y in [x, x]], [y for x in range(len(notLoopsCov.keys())) for y in (0, 1)]]
 index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
 notLoopsDf = pd.DataFrame(np.vstack(notLoopsCov.values()), index=index)
 notLoopsDf.columns = range(windowRange[0], windowRange[1])
@@ -419,18 +416,16 @@ pickle.dump(notLoopsDf, open(os.path.join(coverageFilePath, "{0}_notinLoops.tssS
 
 
 # Get average profiles and append to dict
-loopsAve = {
-    "signal" : sample,
-    "average" : loopsDf.apply(np.mean, axis=0),                              # both strands
-    "positive" : loopsDf.ix[range(0, len(loopsDf), 2)].apply(np.mean, axis=0),    # positive strand
-    "negative" : loopsDf.ix[range(1, len(loopsDf), 2)].apply(np.mean, axis=0)     # negative strand
-}
-notLoopsAve = {
-    "signal" : sample,
-    "average" : notLoopsDf.apply(np.mean, axis=0),                              # both strands
-    "positive" : notLoopsDf.ix[range(0, len(notLoopsDf), 2)].apply(np.mean, axis=0),    # positive strand
-    "negative" : notLoopsDf.ix[range(1, len(notLoopsDf), 2)].apply(np.mean, axis=0)     # negative strand
-}
+loopsAve = {"signal": sample,
+            "average": loopsDf.apply(np.mean, axis=0),                              # both strands
+            "positive": loopsDf.ix[range(0, len(loopsDf), 2)].apply(np.mean, axis=0),    # positive strand
+            "negative": loopsDf.ix[range(1, len(loopsDf), 2)].apply(np.mean, axis=0)     # negative strand
+            }
+notLoopsAve = {"signal": sample,
+               "average": notLoopsDf.apply(np.mean, axis=0),                              # both strands
+               "positive": notLoopsDf.ix[range(0, len(notLoopsDf), 2)].apply(np.mean, axis=0),    # positive strand
+               "negative": notLoopsDf.ix[range(1, len(notLoopsDf), 2)].apply(np.mean, axis=0)     # negative strand
+               }
 pickle.dump(loopsAve, open(os.path.join(coverageFilePath, "{0}_inLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 pickle.dump(notLoopsAve, open(os.path.join(coverageFilePath, "{0}_notinLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 # loopsAve = pickle.load(open(os.path.join(coverageFilePath, "{0}_inLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "r"))
@@ -438,11 +433,18 @@ pickle.dump(notLoopsAve, open(os.path.join(coverageFilePath, "{0}_notinLoops_ave
 
 
 # Plot
-import matplotlib.pyplot as plt
-plt.plot(loopsAve['positive'].index, loopsAve['positive'])
-plt.plot(loopsAve['negative'].index, loopsAve['negative'])
-plt.plot(loopsAve['average'].index, loopsAve['average'])
-plt.plot(notLoopsAve['positive'].index, notLoopsAve['positive'])
-plt.plot(notLoopsAve['negative'].index, notLoopsAve['negative'])
-plt.plot(notLoopsAve['average'].index, notLoopsAve['average'])
-plt.show()
+plt.subplot(121)
+plt.plot(loopsAve['average'].index, loopsAve['average'], 'black', linewidth=0.7)
+plt.subplot(122)
+plt.plot(notLoopsAve['average'].index, notLoopsAve['average'], 'black', linewidth=0.7)
+plt.savefig(os.path.join(plotsDir, "CTCF_K562_10mio_CM_peaks.loops.pdf"), bbox_inches='tight')
+plt.close()
+
+plt.subplot(121)
+plt.plot(loopsAve['positive'].index, loopsAve['positive'], 'r', linewidth=0.7)
+plt.plot(loopsAve['negative'].index, loopsAve['negative'], 'b', linewidth=0.7)
+plt.subplot(122)
+plt.plot(notLoopsAve['positive'].index, notLoopsAve['positive'], 'r', linewidth=0.7)
+plt.plot(notLoopsAve['negative'].index, notLoopsAve['negative'], 'b', linewidth=0.7)
+plt.savefig(os.path.join(plotsDir, "CTCF_K562_10mio_CM_peaks.loops.strandWise.pdf"), bbox_inches='tight')
+plt.close()
