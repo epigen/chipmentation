@@ -92,54 +92,59 @@ def main(args):
     args.results_dir = os.path.abspath(args.results_dir)
     args.plots_dir = os.path.abspath(args.plots_dir)
 
-    # Get regions of interest in the genome
-    gapsRepeats = BedTool(os.path.join("/home", "arendeiro", "reference/Homo_sapiens/hg19_gapsRepeats.bed"))
+    # Skip creating regions if exist (dedicated to Nathan)
+    regionsPickle = os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle")
+    if os.path.isfile(regionsPickle):
+        regions = pickle.load(open(regionsPickle), "r")
+    else:
+        # Get regions of interest in the genome
+        gapsRepeats = BedTool(os.path.join("/home", "arendeiro", "reference/Homo_sapiens/hg19_gapsRepeats.bed"))
 
-    # Whole genome in 1kb-windows
-    whole_genome = BedTool.window_maker(BedTool(), genome='hg19', w=args.window_width, s=args.window_width)
-    whole_genome = whole_genome.intersect(b=gapsRepeats, v=True, wa=True)
+        # Whole genome in 1kb-windows
+        whole_genome = BedTool.window_maker(BedTool(), genome='hg19', w=args.window_width, s=args.window_width)
+        whole_genome = whole_genome.intersect(b=gapsRepeats, v=True, wa=True)
 
-    # DHS and non-DHS in 1kb-windows
-    dhs = BedTool(os.path.join("/home", "arendeiro", "wgEncodeOpenChromDnaseK562Pk.narrowPeak"))
-    dhs = dhs.intersect(b=gapsRepeats, v=True, wa=True)
-    non_dhs = whole_genome.intersect(b=dhs, v=True)
+        # DHS and non-DHS in 1kb-windows
+        dhs = BedTool(os.path.join("/home", "arendeiro", "wgEncodeOpenChromDnaseK562Pk.narrowPeak"))
+        dhs = dhs.intersect(b=gapsRepeats, v=True, wa=True)
+        non_dhs = whole_genome.intersect(b=dhs, v=True)
 
-    # Bed files
-    H3K27me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k27me3bUcdPk.narrowPeak"))
-    H3K27me3 = H3K27me3.intersect(b=gapsRepeats, v=True, wa=True)
-    H3K4me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k4me3bUcdPk.narrowPeak"))
-    H3K4me3 = H3K4me3.intersect(b=gapsRepeats, v=True, wa=True)
+        # Bed files
+        H3K27me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k27me3bUcdPk.narrowPeak"))
+        H3K27me3 = H3K27me3.intersect(b=gapsRepeats, v=True, wa=True)
+        H3K4me3 = BedTool(os.path.join("/home", "arendeiro", "wgEncodeSydhHistoneK562H3k4me3bUcdPk.narrowPeak"))
+        H3K4me3 = H3K4me3.intersect(b=gapsRepeats, v=True, wa=True)
 
-    # peaks not overlapping the other mark in 1kb-windows
-    H3K27me3_only = H3K27me3.intersect(b=H3K4me3, v=True)
-    H3K4me3_only = H3K4me3.intersect(b=H3K27me3, v=True)
+        # peaks not overlapping the other mark in 1kb-windows
+        H3K27me3_only = H3K27me3.intersect(b=H3K4me3, v=True)
+        H3K4me3_only = H3K4me3.intersect(b=H3K27me3, v=True)
 
-    # peaks overlapping each other in 1kb-windows
-    H3K27me3_H3K4me3 = H3K4me3.intersect(b=H3K27me3)
+        # peaks overlapping each other in 1kb-windows
+        H3K27me3_H3K4me3 = H3K4me3.intersect(b=H3K27me3)
 
-    # Make 1kb windows and convert to HTSeq
-    whole_genome = bedToolsInterval2GenomicInterval(whole_genome, strand=False, name=False)
-    non_dhs = bedToolsInterval2GenomicInterval(BedTool.window_maker(non_dhs, b=non_dhs, w=args.window_width, s=args.window_width), strand=False, name=False)
-    dhs = bedToolsInterval2GenomicInterval(BedTool.window_maker(dhs, b=dhs, w=args.window_width, s=args.window_width), strand=False, name=False)
-    H3K27me3_only = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3_only, b=H3K27me3_only, w=args.window_width, s=args.window_width), strand=False, name=False)
-    H3K4me3_only = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3_only, b=H3K4me3_only, w=args.window_width, s=args.window_width), strand=False, name=False)
-    H3K27me3_H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3_H3K4me3, b=H3K27me3_H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
-    H3K27me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3, b=H3K27me3, w=args.window_width, s=args.window_width), strand=False, name=False)
-    H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3, b=H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
+        # Make 1kb windows and convert to HTSeq
+        whole_genome = bedToolsInterval2GenomicInterval(whole_genome, strand=False, name=False)
+        non_dhs = bedToolsInterval2GenomicInterval(BedTool.window_maker(non_dhs, b=non_dhs, w=args.window_width, s=args.window_width), strand=False, name=False)
+        dhs = bedToolsInterval2GenomicInterval(BedTool.window_maker(dhs, b=dhs, w=args.window_width, s=args.window_width), strand=False, name=False)
+        H3K27me3_only = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3_only, b=H3K27me3_only, w=args.window_width, s=args.window_width), strand=False, name=False)
+        H3K4me3_only = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3_only, b=H3K4me3_only, w=args.window_width, s=args.window_width), strand=False, name=False)
+        H3K27me3_H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3_H3K4me3, b=H3K27me3_H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
+        H3K27me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K27me3, b=H3K27me3, w=args.window_width, s=args.window_width), strand=False, name=False)
+        H3K4me3 = bedToolsInterval2GenomicInterval(BedTool.window_maker(H3K4me3, b=H3K4me3, w=args.window_width, s=args.window_width), strand=False, name=False)
 
-    regions = {"whole_genome": whole_genome,
-               "dhs": dhs,
-               "non_dhs": non_dhs,
-               "H3K27me3": H3K27me3,
-               "H3K4me3": H3K4me3,
-               "H3K27me3_only": H3K27me3_only,
-               "H3K4me3_only": H3K4me3_only,
-               "H3K27me3_H3K4me3": H3K27me3_H3K4me3
-               }
+        regions = {"whole_genome": whole_genome,
+                   "dhs": dhs,
+                   "non_dhs": non_dhs,
+                   "H3K27me3": H3K27me3,
+                   "H3K4me3": H3K4me3,
+                   "H3K27me3_only": H3K27me3_only,
+                   "H3K4me3_only": H3K4me3_only,
+                   "H3K27me3_H3K4me3": H3K27me3_H3K4me3
+                   }
+        pickle.dump(regions, open(os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
     assert all([len(region) > 1 for region in regions.values()])
-    pickle.dump(regions, open(os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-    regions = pickle.load(open(os.path.join(args.data_dir, "genomic_regions.no_repeats.pickle"), "r"))
     # with repeats, load:
     # regions = pickle.load(open(os.path.join(args.data_dir, "genomic_regions.pickle"), "r"))
 
@@ -181,7 +186,7 @@ def main(args):
             print(textwrap.dedent("""\
             Task {0} is now ready! {1}, {2}, {3}
             Time to completion was: {4} minutes.
-            """.format(task, sampleName, regionName, permuted, int(time.time() - task.submission_time) / 60.)))
+            """.format(task, sampleName, regionName, permuted, int(time.time() - task.submissiontime) / 60.)))
             exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
             dists = task.collect()
             if not permuted:
@@ -195,29 +200,33 @@ def main(args):
         for sampleName, sampleFile in samples.items():
             exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
 
-            if not os.path.isfile(os.path.join(exportName + ".countsStranded-noRepeats-slurm.pickle")):
+            try:
+                dists = pickle.load(open(os.path.join(exportName + ".countsStranded-noRepeats-slurm.pickle"), "r"))
+            except IOError("Can't open file."):
                 continue
-            dists = pickle.load(open(os.path.join(exportName + ".countsStranded-noRepeats-slurm.pickle"), "r"))
 
             distsPos = {dist: count for dist, count in dists.items() if dist >= 0}
             distsNeg = {abs(dist): count for dist, count in dists.items() if dist <= 0}
 
-            if not os.path.isfile(os.path.join(exportName + ".countsPermutedStranded-noRepeats-slurm.pickle")):
+            # Extract most abundant periodic pattern from signal
+            # for DNase, extract from a different window (70-150bp)
+            patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.data_dir, exportName + "_posStrand-noRepeats"))
+            patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand-noRepeats"))
+            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands-noRepeats"))
+
+            try:
+                permutedDists = pickle.load(open(os.path.join(exportName + ".countsPermutedStranded-noRepeats-slurm.pickle"), "r"))
+            except IOError("Can't open file."):
                 continue
-            permutedDists = pickle.load(open(os.path.join(exportName + ".countsPermutedStranded-noRepeats-slurm.pickle"), "r"))
 
             permutedDistsPos = {dist: count for dist, count in permutedDists.items() if dist >= 0}
             permutedDistsNeg = {abs(dist): count for dist, count in permutedDists.items() if dist <= 0}
 
             # Extract most abundant periodic pattern from signal
             # for DNase, extract from a different window (70-150bp)
-            patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.data_dir, exportName + "_posStrand"))
-            patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand"))
-            pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands"))
-
-            permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.data_dir, exportName + "_posStrand_permuted"))
-            permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand_permuted"))
-            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands_permuted"))
+            permutedPatternPos = extractPattern(permutedDistsPos, range(60, 100), os.path.join(args.data_dir, exportName + "_posStrand_permuted-noRepeats"))
+            permutedPatternNeg = extractPattern(permutedDistsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand_permuted-noRepeats"))
+            permutedPattern = extractPattern(Counter(permutedDistsPos) + Counter(permutedDistsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands_permuted-noRepeats"))
 
     # Focus on H3K4me3 data and nucleosome positioning
     #
@@ -227,79 +236,59 @@ def main(args):
     sampleFile = samples[sampleName]
     regionName = "H3K4me3_only"
 
-    peaks = BedTool("data/human/chipmentation/peaks/{sample}_peaks/{sample}_peaks.narrowPeak".format(sample=sampleName))
-    peaks = bedToolsInterval2GenomicInterval(peaks)
-
-    exportName = os.path.join(args.data_dir, sampleName + "_" + sampleName)
-
-    task = Coverage(peaks, 4, os.path.abspath(sampleFile), fragment_size=args.fragment_size, strand_wise=True, queue="develop", cpusPerTask=2)
-    slurm.add_task(task)
-    slurm.submit(task)
-    coverage = task.collect()
-
-    pickle.dump(coverage, open(os.path.join(args.data_dir, exportName + ".peakCoverageStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    coverage = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCoverageStranded.pickle"), "r"))
-
-    # coverage = {name : reads for name, reads in coverage.items() if len(reads) >= 1000} # Filter out peaks smaller than 1kb
-
     # Correlate coverage and signal pattern
     # get pattern
-    dists = pickle.load(open(os.path.join(args.data_dir, sampleName + "_" + regionName + ".countsStranded-slurm.pickle"), "r"))
+    exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
+    dists = pickle.load(open(os.path.join(exportName + ".countsStranded-noRepeats-slurm.pickle"), "r"))
     distsPos = {dist: count for dist, count in dists.items() if dist >= 0}
     distsNeg = {abs(dist): count for dist, count in dists.items() if dist <= 0}
     pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100),
-                             os.path.join(args.data_dir, sampleName + "_" + regionName + "_bothStrands")
-                             )
+                             os.path.join(args.data_dir, exportName + "_bothStrands-noRepeats"))
 
-    # positive strand
-    coveragePos = {peak: reads[0] for peak, reads in coverage.items()}
-    taskPos = Correlation(coveragePos, 2, pattern, step=1, queue="develop", cpusPerTask=8)
-    slurm.add_task(taskPos)
-    slurm.submit(taskPos)
-    correlationsPos = taskPos.collect()
+    # Task get coverage and correlate with pattern
+    slurm = DivideAndSlurm()
+    # make windows genome-wide with overlapping size of pattern
+    width = 1000
+    step = width - len(pattern)
+    genome_windows = BedTool.window_maker(BedTool(), g={"chr1": (1, 249250621)}, w=width, s=step)
+    # genome_windows = BedTool.window_maker(BedTool(), genome='hg19', w=width, s=step)
+    genome_windows = bedToolsInterval2GenomicInterval(genome_windows, strand=False, name=False)
 
-    # negative strand
-    coverageNeg = {peak: reads[1] for peak, reads in coverage.items()}
-    taskNeg = Correlation(coverageNeg, 2, pattern, step=1, queue="develop", cpusPerTask=8)
-    slurm.add_task(taskNeg)
-    slurm.submit(taskNeg)
-    correlationsNeg = taskNeg.collect()
+    task = CorrelatePatternBam(genome_windows.items(), 80, pattern, os.path.abspath(sampleFile), cpusPerTask=8)
+    slurm.add_task(task)
+    slurm.submit(task)
+    binary = task.collect()
 
-    pickle.dump((correlationsPos, correlationsNeg), open(os.path.join(args.data_dir, exportName + ".peakCorrelationStranded.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    correlationsPos, correlationsNeg = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationStranded.pickle"), "r"))
+    assert len(genome_windows) == len(binary)  # compare sizes
+    assert all([len(window) == width - len(pattern) + 1 for window in binary.values()])  # will probably fail
 
-    # Binarize data for HMM
-    # binarize data strand-wise
-    pos = dict()
-    for name, cor in correlationsPos.items():
-        b = binarize(cor)
-        pos[name] = b
+    # serialize
+    pickle.dump(binary, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinary.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    binary = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinary.pickle"), "r"))
 
-    neg = dict()
-    for name, cor in correlationsNeg.items():
-        b = binarize(cor)
-        neg[name] = b
-
-    # join strands in one sequence
-    binary = {peak: getConsensus(pos[peak], neg[peak]) for peak in pos.keys()}
-
-    # get zeroes for rest of the genome
+    # assert all(concatenateBinary(binary.items(), len(pattern)).values()[0] == np.hstack([v for n, v in sorted(binary.items())]))
+    # implement concatenation of binary sequence
+    genome_binary = concatenateBinary(binary, len(pattern))
+    pickle.dump(genome_binary, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     # HMM
+    # Train with subset of data, see probabilities
+    i = 100
     model = WinterHMM()
-    # Train
-    model.train(binary.values()[:100])  # subset data for training
+    model.train(genome_binary.values()[:i])  # subset data for training
     # see new probabilities
-    [(s.name, s.distribution) for s in model.model.states]
-    model.model.dense_transition_matrix()
+    [(s.name, s.distribution) for s in model.model.states]  # emission
+    print(model.model.dense_transition_matrix())  # transition
+
     # save model with trained parameters
-    pickle.dump(model, open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    model = pickle.load(open(os.path.join(args.results_dir, "hmm_trained_with_" + sampleName + ".pickle"), "r"))
+    pickle.dump(model, open(os.path.join(args.results_dir, sampleName + "_hmModel_trained_%i.pickle" % i), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    model = pickle.load(open(os.path.join(args.results_dir, sampleName + "_hmModel_trained_%i.pickle" % i), "r"))
+
     # Predict
-    hmmOutput = {peak: model.predict(sequence) for peak, sequence in binary.items()}
+    hmmOutput = {window: model.predict(sequence) for window, sequence in genome_binary.items()[:100]}
 
     # Get DARNS from hmmOutput
-    DARNS = getDARNS(peaks, hmmOutput)
+    DARNS = getDARNS(windows, hmmOutput)
 
     # Plot attributes
     widths, distances, midDistances = measureDARNS(DARNS)
@@ -310,14 +299,14 @@ def main(args):
     sns.violinplot(widths)
 
     # Get scores from DARNS
-    probs = {peak: model.retrieveProbabilities(sequence) for peak, sequence in binary.items()}
+    probs = {peak: model.retrieveProbabilities(sequence) for peak, sequence in genome_binary.items()}
 
     # plot predicted darns and post probs
     i = 3
     sequence = hmmOutput.values()[i]
 
     limits = getDARNSlimits(sequence)
-    probs = model.retrieveProbabilities(binary.items()[i][1])
+    probs = model.retrieveProbabilities(genome_binary.items()[i][1])
 
     from matplotlib.patches import Rectangle
     colors = sns.color_palette('deep', n_colors=6, desat=0.5)
@@ -341,11 +330,7 @@ def main(args):
                  c=colors[2], alpha=0.7)
     plt.show()
 
-    ### Output bed/wig
-
-
-
-
+    # Output bed/wig
     # Export wig files with raw correlations
     exportWigFile(
         [peaks[i] for i in correlationsPos.keys()],
@@ -412,7 +397,7 @@ def main(args):
 
     ##### ALTERNATIVE WAYS TO HANDLE CORRELATIONS
     # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
-   
+
     # X = abs(correlationsPos.values()[1])
     # for bandwidth in xrange(1, 10):
     #     density = kde.kdensity(range(len(X)), bw=bandwidth / 10., weights=X)[0]
@@ -583,24 +568,24 @@ class CountDistances(Task):
         """
         If self.is_ready(), return joined reduced data.
         """
-        if hasattr(self, "output"):  # if output is already stored, just return it
-            return self.output
-
-        if self.is_ready():
-            # load all pickles into list
-            if self.permissive:
-                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+        if not hasattr(self, "output"):  # if output is already stored, just return it
+            if self.is_ready():
+                # load all pickles into list
+                if self.permissive:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+                else:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
+                # if all are counters, and their elements are counters, sum them
+                if all([type(outputs[i]) == Counter for i in range(len(outputs))]):
+                    output = reduce(lambda x, y: x + y, outputs)  # reduce
+                    if type(output) == Counter:
+                        self.output = output    # store output in object
+                        self._rm_temps()  # delete tmp files
+                        return self.output
             else:
-                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
-            # if all are counters, and their elements are counters, sum them
-            if all([type(outputs[i]) == Counter for i in range(len(outputs))]):
-                output = reduce(lambda x, y: x + y, outputs)  # reduce
-                if type(output) == Counter:
-                    self.output = output    # store output in object
-                    self._rm_temps()  # delete tmp files
-                    return self.output
+                raise TypeError("Task is not ready yet.")
         else:
-            raise TypeError("Task is not ready yet.")
+            return self.output
 
 
 class Coverage(Task):
@@ -708,24 +693,24 @@ class Coverage(Task):
         """
         If self.is_ready(), return joined reduced data.
         """
-        if hasattr(self, "output"):  # if output is already stored, just return it
-            return self.output
-
-        if self.is_ready():
-            # load all pickles into list
-            if self.permissive:
-                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+        if not hasattr(self, "output"):  # if output is already stored, just return it
+            if self.is_ready():
+                # load all pickles into list
+                if self.permissive:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+                else:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
+                # if all are counters, and their elements are counters, sum them
+                if all([type(outputs[i]) == dict for i in range(len(outputs))]):
+                    output = reduce(lambda x, y: dict(x, **y), outputs)
+                    if type(output) == dict:
+                        self.output = output  # store output in object
+                        self._rm_temps()  # delete tmp files
+                        return self.output
             else:
-                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
-            # if all are counters, and their elements are counters, sum them
-            if all([type(outputs[i]) == dict for i in range(len(outputs))]):
-                output = reduce(lambda x, y: dict(x, **y), outputs)
-                if type(output) == dict:
-                    self.output = output  # store output in object
-                    self._rm_temps()  # delete tmp files
-                    return self.output
+                raise TypeError("Task is not ready yet.")
         else:
-            raise TypeError("Task is not ready yet.")
+            return self.output
 
 
 class Correlation(Task):
@@ -809,24 +794,159 @@ class Correlation(Task):
         """
         If self.is_ready(), return joined reduced data.
         """
-        if hasattr(self, "output"):  # if output is already stored, just return it
+        if not hasattr(self, "output"):  # if output is already stored, just return it
+            if self.is_ready():
+                # load all pickles into list
+                if self.permissive:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+                else:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
+                # if all are dicts, and their elements are dicts, sum them
+                if all([type(outputs[i]) == dict for i in range(len(outputs))]):
+                    output = reduce(lambda x, y: dict(x, **y), outputs)
+                    if type(output) == dict:
+                        self.output = output  # store output in object
+                        self._rm_temps()  # delete tmp files
+                        return self.output
+            else:
+                raise TypeError("Task is not ready yet.")
+        else:
             return self.output
 
-        if self.is_ready():
-            # load all pickles into list
-            if self.permissive:
-                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
-            else:
-                outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
-            # if all are counters, and their elements are counters, sum them
-            if all([type(outputs[i]) == dict for i in range(len(outputs))]):
-                output = reduce(lambda x, y: dict(x, **y), outputs)
-                if type(output) == dict:
-                    self.output = output  # store output in object
-                    self._rm_temps()  # delete tmp files
-                    return self.output
+
+class CorrelatePatternBam(Task):
+    """
+    Task to get read coverage under regions.
+    """
+    def __init__(self, data, fractions, *args, **kwargs):
+        super(CorrelatePatternBam, self).__init__(data, fractions, *args, **kwargs)
+        # Initialize rest
+        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1, 1000))], sep="_")
+        self.name = "CorrelatePatternBam_{0}".format(now)
+
+        # Parse
+        # required argument
+        if len(self.args) != 2:
+            raise TypeError("You must specify two arguments: Pattern, Bam")
+        self.pattern = self.args[0]
+        self.bam_file = self.args[1]
+        # additional arguments
+        if "strand_wise" in kwargs.keys():
+            self.strand_wise = kwargs["strand_wise"]
         else:
-            raise TypeError("Task is not ready yet.")
+            self.strand_wise = True
+        if "duplicates" in kwargs.keys():
+            self.duplicates = kwargs["duplicates"]
+        else:
+            self.duplicates = True
+        if "orientation" in kwargs.keys():
+            self.orientation = kwargs["orientation"]
+        else:
+            self.orientation = False
+        if "permute" in kwargs.keys():
+            self.permute = kwargs["permute"]
+        else:
+            self.permute = False
+        if "fragment_size" in kwargs.keys():
+            self.fragment_size = kwargs["fragment_size"]
+        else:
+            self.fragment_size = 1
+        if "step" in kwargs.keys():
+            self.step = kwargs["step"]
+        else:
+            self.step = 1
+
+    def _prepare(self):
+        """
+        Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
+        """
+        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep="."))  # add abspath
+
+        # Pickle pattern
+        self.patternPickle = os.path.join(self.slurm.tmpDir, self.name + "_pattern.pickle")
+        pickle.dump(self.pattern, open(self.patternPickle, "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
+        # Split data in fractions
+        ids, groups, files = self._split_data()
+
+        # Make jobs with groups of data
+        self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
+
+        # for each group of data
+        for i in xrange(len(ids)):
+            jobFile = files[i] + "_correlatePatternBam.sh"
+            inputPickle = files[i] + ".input.pickle"
+            outputPickle = files[i] + ".output.pickle"
+
+            # assemble job file
+            # header
+            job = self._slurmHeader(ids[i])
+
+            # command - add abspath to python script!
+            task = """\
+                # Activate virtual environment
+                source /home/arendeiro/venv/bin/activate
+
+                python correlatePatternBam_parallel.py {0} {1} {2} {3} """.format(inputPickle, outputPickle, self.patternPickle, self.bam_file)
+
+            task += "--step {0} ".format(self.step)
+            task += "--fragment-size {0} ".format(self.fragment_size)
+            if self.strand_wise:
+                task += "--strand-wise "
+            if self.duplicates:
+                task += "--duplicates "
+            if self.orientation:
+                task += "--orientation "
+            if self.permute:
+                task += "--permute "
+
+            task += """
+
+                # Deactivate virtual environment
+                deactivate
+                    """
+
+            job += textwrap.dedent(task)
+
+            # footer
+            job += self._slurmFooter()
+
+            # add to save attributes
+            self.jobs.append(job)
+            self.jobFiles.append(jobFile)
+            self.inputPickles.append(inputPickle)
+            self.outputPickles.append(outputPickle)
+
+            # write job file to disk
+            with open(jobFile, 'w') as handle:
+                handle.write(textwrap.dedent(job))
+
+        # Delete data if jobs are ready to submit and data is serialized
+        if hasattr(self, "jobs") and hasattr(self, "jobFiles"):
+            del self.data
+
+    def collect(self):
+        """
+        If self.is_ready(), return joined reduced data.
+        """
+        if not hasattr(self, "output"):  # if output is already stored, just return it
+            if self.is_ready():
+                # load all pickles into list
+                if self.permissive:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+                else:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
+                # if all are dicts, and their elements are dicts, sum them
+                if all([type(outputs[i]) == dict for i in range(len(outputs))]):
+                    output = reduce(lambda x, y: dict(x, **y), outputs)
+                    if type(output) == dict:
+                        self.output = output  # store output in object
+                        self._rm_temps()  # delete tmp files
+                        return self.output
+            else:
+                raise TypeError("Task is not ready yet.")
+        else:
+            return self.output
 
 
 class WinterHMM(object):
@@ -857,7 +977,7 @@ class WinterHMM(object):
         })
 
         # Create states
-        b = yahmm.State(background, name="B")      
+        b = yahmm.State(background, name="B")
         minus = yahmm.State(neg, name="-")
         in1 = yahmm.State(zero, name="in1")
         in2 = yahmm.State(zero, name="in2")
@@ -874,20 +994,8 @@ class WinterHMM(object):
 
         self.model = yahmm.Model(name="winter-2013")
 
-        self.model.add_state(b)
-        self.model.add_state(in1)
-        self.model.add_state(in2)
-        self.model.add_state(in3)
-        self.model.add_state(in4)
-        self.model.add_state(minus)
-        self.model.add_state(in5)
-        self.model.add_state(in6)
-        self.model.add_state(in7)
-        self.model.add_state(in8)
-        self.model.add_state(in9)
-        self.model.add_state(in10)
-        self.model.add_state(in11)
-        self.model.add_state(plus)
+        for state in [b, minus, in1, in2, in3, plus, in4, in5, in6, in7, in8, in9, in10, in11]:
+            self.model.add_state(state)
 
         self.model.add_transition(self.model.start, b, 0.5)       # start in background
         self.model.add_transition(self.model.start, minus, 0.25)  # start in minus
@@ -1267,7 +1375,7 @@ def correlatePatternProfile(pattern, profile, step=1):
         while i + len(pattern) <= len(profile):
             R.append(pearsonr(pattern, profile[i:i + len(pattern)])[0])
             i += 1
-        return np.array(R)
+        return np.nan_to_num(np.array(R))  # replace nan with 0
 
 
 def fitKDE(X, bandwidth):
@@ -1357,6 +1465,58 @@ def getConsensus(seq1, seq2):
                     else:
                         binary.append(0)
         return np.array(binary)
+
+
+def concatenateBinary(binaryDict, patternLength, debug=True):
+    """
+    Concatenates string of binary signals from several consecutive windows.
+    Returns dict of chr:binary.
+
+    binaryDict=dict - name: 1D numpy.array of ~binary (1,0,-1) signals.
+    """
+    # sort window names alphanumerically
+    names = list()
+    for window, _ in binaryDict.items():
+        chrom, start, end = str(window).split("_")
+        names.append((chrom, int(start), int(end)))
+    names = ["{0}_{1}_{2}".format(chrom, start, end) for chrom, start, end in sorted(names)]
+
+    binaries = dict()
+    prev_chrom = ""
+    prev_end = 1
+
+    for i in xrange(len(names)):
+        sequence = binaryDict[names[i]]
+        chrom, start, end = names[i].split("_")
+        start = int(start)
+        end = int(end)
+        if debug: print(i, names[i])
+        if not chrom == prev_chrom:  # new chromossome
+            binaries[chrom] = sequence
+        else:  # same chromossome as before
+            if names[i] == names[-1]:  # if last window just append remaining
+                if debug: print("Last of all")
+                binaries[chrom] = np.hstack((binaries[chrom], sequence))
+            elif names[i + 1].split("_")[0] != chrom:  # if last window in chromossome, just append remaining
+                if debug: print("Last of chromossome")
+                binaries[chrom] = np.hstack((binaries[chrom], sequence))
+            else:  # not last window
+                if prev_end - patternLength == start - 1:
+                    if len(sequence) == (end - start) - patternLength + 1:
+                        binaries[chrom] = np.hstack((binaries[chrom], sequence))
+                    elif len(sequence) > (end - start) - patternLength + 1:
+                        if debug: print(names[i], len(sequence), (end - start) - patternLength + 1)
+                        raise ValueError("Sequence is bigger than its coordinates.")
+                    elif len(sequence) < (end - start) - patternLength + 1:
+                        if debug: print(names[i], len(sequence), (end - start) - patternLength + 1)
+                        raise ValueError("Sequence is shorter than its coordinates.")
+                else:
+                    if debug: print(names[i], prev_end, start)
+                    raise ValueError("Window is missing.")
+                
+        prev_chrom = chrom
+        prev_end = end
+    return binaries
 
 
 def getDARNS(intervals, hmmOutput):
