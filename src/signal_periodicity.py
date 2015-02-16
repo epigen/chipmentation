@@ -232,6 +232,7 @@ def main(args):
     #
     #
     # calculate read coverage in H3K4me3 peaks
+    samples = {re.sub("\.bam", "", os.path.basename(sampleFile)): os.path.abspath(sampleFile) for sampleFile in args.bam_files}
     sampleName = "H3K4me3_K562_500k_CM"
     sampleFile = samples[sampleName]
     regionName = "H3K4me3_only"
@@ -245,37 +246,48 @@ def main(args):
     pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100),
                              os.path.join(args.data_dir, exportName + "_bothStrands-noRepeats"))
 
-    # Task get coverage and correlate with pattern
+    # Task get coverage and correlate with pattern, separate strands
     slurm = DivideAndSlurm()
     # make windows genome-wide with overlapping size of pattern
     width = 1000
     step = width - len(pattern)
-    genome_windows = BedTool.window_maker(BedTool(), g={"chr1": (1, 249250621)}, w=width, s=step)
-    # genome_windows = BedTool.window_maker(BedTool(), genome='hg19', w=width, s=step)
+    genome_windows = BedTool.window_maker(BedTool(), g={"chr1": (1, 249250621)}, w=width, s=step)  # genome_windows = BedTool.window_maker(BedTool(), genome='hg19', w=width, s=step)
     genome_windows = bedToolsInterval2GenomicInterval(genome_windows, strand=False, name=False)
 
-    task = CorrelatePatternBam(genome_windows.items(), 80, pattern, os.path.abspath(sampleFile), cpusPerTask=8)
+    task = CorrelatePatternBam(genome_windows.items(), 4, pattern, os.path.abspath(sampleFile), cpusPerTask=8)
     slurm.add_task(task)
     slurm.submit(task)
-    binary = task.collect()
+    taskP = CorrelatePatternBam(genome_windows.items(), 4, pattern, os.path.abspath(sampleFile), permute=True, cpusPerTask=8, queue="develop")
+    slurm.add_task(taskP)
+    slurm.submit(taskP)
 
+    binary = task.collect()
     assert len(genome_windows) == len(binary)  # compare sizes
-    assert all([len(window) == width - len(pattern) + 1 for window in binary.values()])  # will probably fail
+    assert all([len(window) == width - len(pattern) + 1 for window in binary.values()])
+    pickle.dump(binary, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinary.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
+    binaryP = taskP.collect()
+    assert len(genome_windows) == len(binary)  # compare sizes
+    assert all([len(window) == width - len(pattern) + 1 for window in binary.values()])
+    pickle.dump(binaryP, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     # serialize
-    pickle.dump(binary, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinary.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     binary = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinary.pickle"), "r"))
-
-    # assert all(concatenateBinary(binary.items(), len(pattern)).values()[0] == np.hstack([v for n, v in sorted(binary.items())]))
-    # implement concatenation of binary sequence
+    binaryP = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryPermuted.pickle"), "r"))
 
     # sort dict by chrom, start, end
-    b = {(key.split("_")[0], int(key.split("_")[1]), int(key.split("_")[2])): value for key, value in binary.items()}
-    binary = OrderedDict(sorted(b.items(), key=lambda x: (x[0][0], x[0][1])))
+    binary = splitAndSortDict(binary)  # temporary
+    binaryP = splitAndSortDict(binaryP)  # temporary
 
+    # to subset, pass: OrderedDict(sorted((binary.items()[4000:10000]))) <- 6Mb of sequence
     genome_binary = concatenateBinary(OrderedDict(sorted((binary.items()[4000:10000]))), len(pattern))
     pickle.dump(genome_binary, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
+    genome_binaryP = concatenateBinary(OrderedDict(sorted((binaryP.items()[4000:10000]))), len(pattern))
+    pickle.dump(genome_binaryP, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenatedPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    
     genome_binary = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "r"))
+    genome_binaryP = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenatedPermuted.pickle"), "r"))
 
     # HMM
     # Train with subset of data, see probabilities
@@ -292,12 +304,15 @@ def main(args):
 
     # Predict
     hmmOutput = {chrom: model.predict(sequence) for chrom, sequence in genome_binary.items()}
+    hmmOutputP = {chrom: model.predict(sequence) for chrom, sequence in genome_binaryP.items()}
 
     # Get DARNS from hmmOutput
     DARNS = {chrom: getDARNS(sequence) for chrom, sequence in hmmOutput.items()}
+    DARNSP = {chrom: getDARNS(sequence) for chrom, sequence in hmmOutputP.items()}
 
     # Plot attributes
-    widths, distances, midDistances = measureDARNS(DARNS)
+    widths = Counter([darn[1] - darn[0] for darn in DARNS.values()])
+    distances, midDistances = measureDARNS(DARNS)
 
     plt.plot(widths.keys(), widths.values(), 'o')
     plt.plot(distances.keys(), distances.values(), 'o')
@@ -308,10 +323,9 @@ def main(args):
     probs = {peak: model.retrieveProbabilities(sequence) for peak, sequence in genome_binary.items()}
 
     # plot predicted darns and post probs
-    i = 3
-    sequence = hmmOutput.values()[i]
+    i = 0
+    sequence = hmmOutput["chr1"][i]
 
-    limits = getDARNSlimits(sequence)
     probs = model.retrieveProbabilities(genome_binary.items()[i][1])
 
     from matplotlib.patches import Rectangle
@@ -358,15 +372,13 @@ def main(args):
 
     # Export bed files with DARNS
 
-
     # Genome arithmetics with DARNS:
     # Plot :
     # distances between DARNS borders
     # distances between DARNS centers
     # DARNS length
 
-
-    ### TODO:
+    # TODO:
     # Get regions in extreme quantiles of correlation
     # Check for enrichment in ...
     #     mnase signal
@@ -416,7 +428,7 @@ class CountDistances(Task):
         # Split data in fractions
         ids, groups, files = self._split_data()
 
-        ### Make jobs with groups of data
+        # Make jobs with groups of data
         self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
 
         # for each group of data
@@ -845,8 +857,12 @@ class CorrelatePatternBam(Task):
                 if all([type(outputs[i]) == dict for i in range(len(outputs))]):
                     output = reduce(lambda x, y: dict(x, **y), outputs)
                     if type(output) == dict:
-                        self.output = output  # store output in object
-                        self._rm_temps()  # delete tmp files
+                        # Split name into chrom start end
+                        output = {(key.split("_")[0], int(key.split("_")[1]), int(key.split("_")[2])): value for key, value in output.items()}
+                        # Sort, make ordered dict, store output in object
+                        self.output = OrderedDict(sorted(output.items(), key=lambda x: (x[0][0], x[0][1])))
+                        # Delete tmp files
+                        self._rm_temps()
                         return self.output
             else:
                 raise TypeError("Task is not ready yet.")
@@ -976,7 +992,7 @@ def makeGenomeWindows(windowWidth, genome, step=None):
     windowWidth=int.
     genome=str.
     """
-    if step == None:
+    if step is None:
         step = windowWidth
     w = BedTool.window_maker(BedTool(), genome=genome, w=windowWidth, s=step)
     windows = dict()
@@ -1000,7 +1016,7 @@ def makeBedWindows(windowWidth, bedtool, step=None):
     windowWidth=int.
     bedtool=pybedtools.BedTool object.
     """
-    if step == None:
+    if step is None:
         step = windowWidth
     w = BedTool.window_maker(BedTool(), b=bedtool, w=windowWidth, s=step)
     windows = dict()
@@ -1268,6 +1284,7 @@ def concatenateBinary(binaryDict, patternLength, debug=False):
     Returns dict of chr:binary.
 
     binaryDict=dict - name: 1D numpy.array of ~binary (1,0,-1) signals.
+    patternLength=int - length of pattern used to create binary correlation peaks.
     """
     # TODO: make sure windows are sorted alphanumerically
     items = binaryDict.items()
@@ -1278,47 +1295,58 @@ def concatenateBinary(binaryDict, patternLength, debug=False):
     for i in xrange(len(items)):
         window, sequence = items[i]
         chrom, start, end = (str(window[0]), int(window[1]), int(window[2]))
-        if debug: name = "_".join([str(j) for j in window])
-        if debug: print name, (chrom, start, end)
+        if debug:
+            name = "_".join([str(j) for j in window])
+            print name, (chrom, start, end)
         if not chrom == prev_chrom:  # new chromossome
             binaries[chrom] = sequence
         else:  # same chromossome as before
             if window == items[-1][0]:  # if last window just append remaining
-                if debug: print("Last of all")
+                if debug:
+                    print("Last of all")
                 binaries[chrom] = np.hstack((binaries[chrom], sequence))
             elif items[i + 1][0][0] != chrom:  # if last window in chromossome, just append remaining
-                if debug: print("Last of chromossome")
+                if debug:
+                    print("Last of chromossome")
                 binaries[chrom] = np.hstack((binaries[chrom], sequence))
             else:  # not last window
-                if prev_end - patternLength == start: # windows are continuous
+                if prev_end - patternLength == start:  # windows are continuous
                     if len(sequence) == (end - start) - patternLength + 1:
                         binaries[chrom] = np.hstack((binaries[chrom], sequence))
                     elif len(sequence) > (end - start) - patternLength + 1:
-                        if debug: print(name, len(sequence), (end - start) - patternLength + 1)
+                        if debug:
+                            print(name, len(sequence), (end - start) - patternLength + 1)
                         raise ValueError("Sequence is bigger than its coordinates.")
                     elif len(sequence) < (end - start) - patternLength + 1:
-                        if debug: print(name, len(sequence), (end - start) - patternLength + 1)
+                        if debug:
+                            print(name, len(sequence), (end - start) - patternLength + 1)
                         raise ValueError("Sequence is shorter than its coordinates.")
                 else:
-                    if debug: print(name, prev_end, start)
+                    if debug:
+                        print(name, prev_end, start)
                     raise ValueError("Windows are not continuous or some are missing.")
-                
+
         prev_chrom = chrom
         prev_end = end
     return binaries
 
 
+def splitAndSortDict(binary):
+    """
+    Splits dictionary keys in chrom, start, end; sorts dict based on that and returns collections.OrderedDict object.
+
+    binary=dict - keys must be strings that when separated give a chrom (string), start and end (both ints).
+    """    
+    b = {(key.split("_")[0], int(key.split("_")[1]), int(key.split("_")[2])): value for key, value in binary.items()}
+    return OrderedDict(sorted(b.items(), key=lambda x: (x[0][0], x[0][1])))
+
+
 def getDARNS(sequence, debug=False):
     """
-    Returns list of HTSeq.GenomicInterval objects for all DARNS in hmmOutput (a dict of name:sequence).
+    Returns list of tuples with start and end positions (0-based) of DARNS.
     DARNS are stretches of sequences which belong to the "nucleosome" states (see WinterHMM object definition).
 
-    DARNS cannot:
-        - start at the last element of the sequence.
-        - be of length <= 1
-
-    intervals=dict - name:HTSeq.GenomicInterval objects.
-    hmmOutput=dict - name:iterable with sequence from HMM.
+    sequence=str.
     """
     outside = ["B"]
     DARNS = list()
@@ -1351,33 +1379,26 @@ def getDARNS(sequence, debug=False):
     return DARNS
 
 
-def measureDARNS(DARNS):
+def measureDARNS(tuples):
     """
     Computes distributions of DARNS attributes: width, interdistance, distance between midpoints.
 
-    DARNS=iterable of list with [chrom, start, end, name] of DARN.
+    tuples=list - list of tuples: (start,end).
     """
-    chrom, start, end, name = range(4)
-    width = lambda x: x[end] - x[start]
-    widths = Counter()
+    start, end = range(2)
     distances = Counter()
     midDistances = Counter()
 
-    for d1, d2 in itertools.permutations(DARNS, 2):
-        if d1[chrom] == d2[chrom]:
-            # widths
-            widths[width(d1)] += 1
-            widths[width(d2)] += 1
+    for d1, d2 in itertools.permutations(tuples, 2):
+        # distance end-to-end
+        if d1[end] <= d2[start]:
+            distances[abs(d2[start] - d1[end])] += 1
+        else:
+            distances[d1[start] - d2[end]] += 1
 
-            # distance end-to-end
-            if d1[end] <= d2[start]:
-                distances[abs(d2[start] - d1[end])] += 1
-            else:
-                distances[d1[start] - d2[end]] += 1
-
-            # distance midpoint-midpoint
-            midDistances[abs((d1[end] - d1[start]) - (d2[end] - d2[start]))] += 1
-    return (widths, distances, midDistances)
+        # distance midpoint-midpoint
+        midDistances[abs((d1[end] - d1[start]) - (d2[end] - d2[start]))] += 1
+    return (distances, midDistances)
 
 
 def exportWigFile(intervals, profiles, offset, filename, trackname):
