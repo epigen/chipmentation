@@ -268,14 +268,20 @@ def main(args):
 
     # assert all(concatenateBinary(binary.items(), len(pattern)).values()[0] == np.hstack([v for n, v in sorted(binary.items())]))
     # implement concatenation of binary sequence
-    genome_binary = concatenateBinary(binary, len(pattern))
+
+    # sort dict by chrom, start, end
+    b = {(key.split("_")[0], int(key.split("_")[1]), int(key.split("_")[2])): value for key, value in binary.items()}
+    binary = OrderedDict(sorted(b.items(), key=lambda x: (x[0][0], x[0][1])))
+
+    genome_binary = concatenateBinary(OrderedDict(sorted((binary.items()[4000:10000]))), len(pattern))
     pickle.dump(genome_binary, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    genome_binary = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "r"))
 
     # HMM
     # Train with subset of data, see probabilities
-    i = 100
+    i = len(genome_binary)
     model = WinterHMM()
-    model.train(genome_binary.values()[:i])  # subset data for training
+    model.train(genome_binary.values())  # subset data for training
     # see new probabilities
     [(s.name, s.distribution) for s in model.model.states]  # emission
     print(model.model.dense_transition_matrix())  # transition
@@ -285,10 +291,10 @@ def main(args):
     model = pickle.load(open(os.path.join(args.results_dir, sampleName + "_hmModel_trained_%i.pickle" % i), "r"))
 
     # Predict
-    hmmOutput = {window: model.predict(sequence) for window, sequence in genome_binary.items()[:100]}
+    hmmOutput = {chrom: model.predict(sequence) for chrom, sequence in genome_binary.items()}
 
     # Get DARNS from hmmOutput
-    DARNS = getDARNS(windows, hmmOutput)
+    DARNS = {chrom: getDARNS(sequence) for chrom, sequence in hmmOutput.items()}
 
     # Plot attributes
     widths, distances, midDistances = measureDARNS(DARNS)
@@ -359,107 +365,6 @@ def main(args):
     # distances between DARNS centers
     # DARNS length
 
-
-
-    # ### Find correlation peaks (broadish regions around region of high pattern-reads correlation)
-    # # i = 0
-    # corPeaksPos = dict()
-    # for name, cor in correlationsPos.items():
-    #     corPeak = findPeaks(abs(cor), 50)
-    #     corPeaksPos[name] = corPeak
-    #     # plt.subplot(5,2,i)
-    #     # plt.plot(abs(cor))
-    #     # plt.plot(corPeak.keys(), [0.2] * len(corPeak.keys()), 'o')
-    #     # for center, peak in corPeak.items():
-    #     #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
-    #     # i += 1
-
-    # exportBedFile(
-    #     {name : peaks[name] for name, peak in corPeaksPos.items()},
-    #     corPeaksPos,
-    #     len(pattern)/2,
-    #     os.path.join(args.results_dir, sampleName + ".correlationPeaksPos.bed"),
-    #     sampleName + " correlation peaks - positive strand"
-    # )
-
-    # corPeaksNeg = dict()
-    # for name, cor in correlationsNeg.items():
-    #     corPeak = findPeaks(abs(cor), 50)
-    #     corPeaksNeg[name] = corPeak
-
-    # exportBedFile(
-    #     {name : peaks[name] for name, peak in corPeaksNeg.items()},
-    #     corPeaksNeg,
-    #     len(pattern)/2,
-    #     os.path.join(args.results_dir, sampleName + ".correlationPeaksNeg.bed"),
-    #     sampleName + " correlation peaks - negative strand"
-    # )
-
-    ##### ALTERNATIVE WAYS TO HANDLE CORRELATIONS
-    # density = {name : fitKDE(values) for name, values in correlationsPos.items()}
-
-    # X = abs(correlationsPos.values()[1])
-    # for bandwidth in xrange(1, 10):
-    #     density = kde.kdensity(range(len(X)), bw=bandwidth / 10., weights=X)[0]
-    #     plt.plot(density * 100)
-
-    # for degree in xrange(10, 50):
-    #     coeffs = np.poly1d(np.polyfit(range(len(X)), X, 50))
-    #     plt.plot(np.polyval(coeffs, range(len(X))) * 2)
-
-    # # smooth with interpolate
-    # from scipy.interpolate import interp1d
-    # for degree in xrange(2, 15):
-    #     xn_ax = interp1d(range(len(X)), X, kind=degree)
-    #     plt.plot(xn_ax(X))
-
-    # # find local minima
-    # mins = np.r_[True, X[1:] < X[:-1]] & np.r_[X[:-1] < X[1:], True]
-
-    # min_index = [np.where(X==X[x]) for x in mins]
-
-    # [np.mean(x - 1, x + 1) for x in mins if x == True]
-
-
-    # find peaks
-    # X = [abs(i) for l in correlationsPos.values() for i in l]
-    # corPeaks = findPeaks(np.array(X), 50)
-
-    # plt.plot(X)
-    # plt.plot(corPeaks.keys(), [0.2] * len(corPeaks.keys()), 'o')
-    # for center, peak in corPeaks.items():
-    #     plt.plot(range(peak[0], peak[1]), [0.19] * (peak[1] - peak[0]), '-')
-
-
-    # plot correlations for 20 peaks
-    # for i in xrange(len(correlations)):
-    #     plt.subplot(len(correlations)/10, len(correlations)/2,i)
-    #     plt.plot(correlations.values()[i])
-
-    # plot concatenation of correlations for some peaks
-    # plt.plot([abs(i) for l in correlations.values()[:5] for i in l])
-
-
-
-    # Winter2013 fig.4 - chr19 comparison
-    # peaksWinter = {"winter" : HTSeq.GenomicInterval("chr19", 37016000, 37022000)}
-    # covWinter = coverageInWindows(bam, peaksWinter, args.fragment_size)
-    # RWinter = OrderedDict()
-    # RWinter["winter"] = correlatePatternProfile(pattern, covWinter["winter"])
-    # exportWigFile(
-    #     [peaksWinter[i] for i in RWinter.keys()],
-    #     RWinter.values(),
-    #     len(pattern)/2,
-    #     os.path.join(args.results_dir, sampleName + ".peakCorrelation.Winter.wig"),
-    #     sampleName
-    # )
-
-    # with paralelization
-    # import multiprocessing as mp
-    # pool = mp.Pool()
-    # correlations = [pool.apply(correlatePatternProfile, args=(pattern, reads)) for reads in coverage.values()[:50]]
-    # for i in xrange(len(correlations)):
-    #    plt.plot(correlations[i])
 
     ### TODO:
     # Get regions in extreme quantiles of correlation
@@ -1357,169 +1262,53 @@ def extractPattern(dists, distRange, filePrefix):
     return cut_signal.real
 
 
-def correlatePatternProfile(pattern, profile, step=1):
-    """
-    Fits a sliding window of len(pattern) through a profile and calculates the Pearson
-    correlation between the pattern and each window.
-    Returns array with correlation values of dimensions (((profile - pattern) + 1) / step).
-
-    profile=np.array.
-    pattern=np.array.
-    """
-
-    if (((len(profile) - len(pattern)) + 1) / step) <= 0:
-        return None
-    else:
-        R = list()
-        i = 0
-        while i + len(pattern) <= len(profile):
-            R.append(pearsonr(pattern, profile[i:i + len(pattern)])[0])
-            i += 1
-        return np.nan_to_num(np.array(R))  # replace nan with 0
-
-
-def fitKDE(X, bandwidth):
-    """
-    Fit gaussian kernel density estimator to array, return
-
-    X=numerical iterable.
-    bandwidth=kernel bandwidth - float.
-    """
-    return kde.kdensity(range(len(X)), bw=bandwidth, weights=X)[0]
-
-
-def fitRegression(X, degree):
-    """
-    Fit regression with degree.
-
-    X=numerical iterable.
-    degree=int.
-    """
-    coeffs = np.poly1d(np.polyfit(range(len(X)), X, degree))
-    return np.polyval(coeffs, range(len(X)))
-
-
-def findPeaks(X, peakWidth):
-    """
-    Find peaks of local maxima with width peakWidth and returns them with that width.
-
-    X=dict with iterable with numerical values as dict values.
-    peakWidth=integer.
-    """
-    peaks = signal.find_peaks_cwt(X, widths=np.array([peakWidth]))
-    return {peak: (peak - peakWidth / 2, peak + peakWidth / 2) for peak in peaks}
-
-
-def binarize(X):
-    """
-    Convert a numerical iterable (X) in a np.array with binary values by finding local maximas (1)
-    and setting the rest to zeros (0). Local maximas are required to be higher than 0.05, and have negative
-    values between them.
-
-    X=iterable with numerical values.
-    """
-    maximas = np.r_[True, X[1:] > X[:-1]] & np.r_[X[:-1] > X[1:], True]
-    binary = list()
-    prev_max = 0
-    for i in xrange(len(X)):
-        if maximas[i] == True and X[i] > 0.05 and any(n < 0 for n in X[prev_max: i]):  # watch out for namespace pollution with np.any
-            # if from i to next_max there is no neg, then is max
-            for j in xrange(i, len(X)):
-                if maximas[j] == True and X[j] > 0.05:
-                    next_max = j
-                    break
-
-            if not any(n > 0 for n in X[i: next_max]):
-                binary.append(1)
-                prev_max = i
-            else:
-                binary.append(0)
-        else:
-            binary.append(0)
-    return np.array(binary)
-
-
-def getConsensus(seq1, seq2):
-    """
-    Given two binary (1, 0) sequences, return one sequence with:
-    1 if only one of them is 1, 0 otherwise.
-
-    seq1,seq2=iterables with binary numerical values (0 or 1).
-    """
-    if not len(seq1) == len(seq2):
-        return None
-    else:
-        binary = list()
-        for i in xrange(len(seq1)):
-            if seq1[i] == np.nan or seq1[i] == np.nan:
-                binary.append(0)
-            else:
-                if seq1[i] == 1:
-                    if seq2[i] == 1:
-                        binary.append(0)
-                    else:
-                        binary.append(1)
-                else:
-                    if seq2[i] == 1:
-                        binary.append(-1)
-                    else:
-                        binary.append(0)
-        return np.array(binary)
-
-
-def concatenateBinary(binaryDict, patternLength, debug=True):
+def concatenateBinary(binaryDict, patternLength, debug=False):
     """
     Concatenates string of binary signals from several consecutive windows.
     Returns dict of chr:binary.
 
     binaryDict=dict - name: 1D numpy.array of ~binary (1,0,-1) signals.
     """
-    # sort window names alphanumerically
-    names = list()
-    for window, _ in binaryDict.items():
-        chrom, start, end = str(window).split("_")
-        names.append((chrom, int(start), int(end)))
-    names = ["{0}_{1}_{2}".format(chrom, start, end) for chrom, start, end in sorted(names)]
-
-    binaries = dict()
+    # TODO: make sure windows are sorted alphanumerically
+    items = binaryDict.items()
+    binaries = OrderedDict()
     prev_chrom = ""
     prev_end = 1
 
-    for i in xrange(len(names)):
-        sequence = binaryDict[names[i]]
-        chrom, start, end = names[i].split("_")
-        start = int(start)
-        end = int(end)
-        if debug: print(i, names[i])
+    for i in xrange(len(items)):
+        window, sequence = items[i]
+        chrom, start, end = (str(window[0]), int(window[1]), int(window[2]))
+        if debug: name = "_".join([str(j) for j in window])
+        if debug: print name, (chrom, start, end)
         if not chrom == prev_chrom:  # new chromossome
             binaries[chrom] = sequence
         else:  # same chromossome as before
-            if names[i] == names[-1]:  # if last window just append remaining
+            if window == items[-1][0]:  # if last window just append remaining
                 if debug: print("Last of all")
                 binaries[chrom] = np.hstack((binaries[chrom], sequence))
-            elif names[i + 1].split("_")[0] != chrom:  # if last window in chromossome, just append remaining
+            elif items[i + 1][0][0] != chrom:  # if last window in chromossome, just append remaining
                 if debug: print("Last of chromossome")
                 binaries[chrom] = np.hstack((binaries[chrom], sequence))
             else:  # not last window
-                if prev_end - patternLength == start - 1:
+                if prev_end - patternLength == start: # windows are continuous
                     if len(sequence) == (end - start) - patternLength + 1:
                         binaries[chrom] = np.hstack((binaries[chrom], sequence))
                     elif len(sequence) > (end - start) - patternLength + 1:
-                        if debug: print(names[i], len(sequence), (end - start) - patternLength + 1)
+                        if debug: print(name, len(sequence), (end - start) - patternLength + 1)
                         raise ValueError("Sequence is bigger than its coordinates.")
                     elif len(sequence) < (end - start) - patternLength + 1:
-                        if debug: print(names[i], len(sequence), (end - start) - patternLength + 1)
+                        if debug: print(name, len(sequence), (end - start) - patternLength + 1)
                         raise ValueError("Sequence is shorter than its coordinates.")
                 else:
-                    if debug: print(names[i], prev_end, start)
-                    raise ValueError("Window is missing.")
+                    if debug: print(name, prev_end, start)
+                    raise ValueError("Windows are not continuous or some are missing.")
                 
         prev_chrom = chrom
         prev_end = end
     return binaries
 
 
-def getDARNS(intervals, hmmOutput):
+def getDARNS(sequence, debug=False):
     """
     Returns list of HTSeq.GenomicInterval objects for all DARNS in hmmOutput (a dict of name:sequence).
     DARNS are stretches of sequences which belong to the "nucleosome" states (see WinterHMM object definition).
@@ -1533,40 +1322,33 @@ def getDARNS(intervals, hmmOutput):
     """
     outside = ["B"]
     DARNS = list()
-    for name, sequence in hmmOutput.items():
-        DARN = False
-        for i in xrange(len(sequence)):
-            if not DARN and sequence[i] not in outside and i != len(sequence):
+    DARN = False
+    l = len(sequence)
+    for i in xrange(l):
+        if not i == l - 1:  # not last element
+            if debug: print(i, "Not last element")
+            # Entering DARN
+            if not DARN and (sequence[i] not in outside) and i != len(sequence):
+                if debug: print(i, "Entered DARN")
                 DARN = True
                 DARN_start = i
-            if DARN and sequence[i] in outside and i - DARN_start > 1:
+                # Handle 1-element DARNS
+                if sequence[i + 1] in outside:
+                    if debug: print(i, "1bp DARN")
+                    DARNS.append((DARN_start, i + 1))
+                    DARN = False
+            # DARN ends at next element
+            elif DARN and (sequence[i] not in outside) and (sequence[i + 1] in outside):
+                if debug: print(i, "Exited DARN")
                 DARN = False
                 DARN_end = i
-                DARNS.append([
-                    intervals[name].chrom,
-                    intervals[name].start + DARN_start,
-                    intervals[name].start + DARN_end,
-                    name + "_DARN{0}".format(i)
-                ])
+                DARNS.append((DARN_start, DARN_end))
+        elif i == l - 1 and DARN:  # last element
+            if debug: print(i, "Last element")
+            if DARN:  # finish DARN at end
+                if debug: print(i, "Finishing DARN in last element")
+                DARNS.append((DARN_start, i))
     return DARNS
-
-
-def getDARNSlimits(sequence):
-    """
-    sequence=iterable with sequence from HMM.
-    """
-    outside = ["B"]
-    DARN = False
-    starts = list()
-    ends = list()
-    for i in xrange(len(sequence)):
-        if not DARN and sequence[i] not in outside:
-            DARN = True
-            starts.append(i)
-        if DARN and sequence[i] in outside:
-            DARN = False
-            ends.append(i)
-    return zip(starts, ends)
 
 
 def measureDARNS(DARNS):
