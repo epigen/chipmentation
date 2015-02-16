@@ -285,7 +285,7 @@ def main(args):
 
     genome_binaryP = concatenateBinary(OrderedDict(sorted((binaryP.items()[4000:10000]))), len(pattern))
     pickle.dump(genome_binaryP, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenatedPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    
+
     genome_binary = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "r"))
     genome_binaryP = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenatedPermuted.pickle"), "r"))
 
@@ -311,72 +311,89 @@ def main(args):
     DARNSP = {chrom: getDARNS(sequence) for chrom, sequence in hmmOutputP.items()}
 
     # Plot attributes
-    widths = Counter([darn[1] - darn[0] for darn in DARNS.values()])
-    distances, midDistances = measureDARNS(DARNS)
+    assert len(DARNS) == len(DARNSP)
+    for data in (DARNS, DARNSP):
+        widths = Counter([darn[1] - darn[0] for darn in data.values()])
+        distances, midDistances = measureDARNS(data)
 
-    plt.plot(widths.keys(), widths.values(), 'o')
-    plt.plot(distances.keys(), distances.values(), 'o')
-    plt.plot(midDistances.keys(), midDistances.values(), 'o')
-    sns.violinplot(widths)
+        plt.plot(widths.keys(), widths.values(), 'o')
+        plt.plot(distances.keys(), distances.values(), 'o')
+        plt.plot(midDistances.keys(), midDistances.values(), 'o')
+        sns.violinplot(widths)
+        # decide how to save
 
     # Get scores from DARNS
     probs = {peak: model.retrieveProbabilities(sequence) for peak, sequence in genome_binary.items()}
 
-    # plot predicted darns and post probs
-    i = 0
-    sequence = hmmOutput["chr1"][i]
+    # Plot predicted darns and post probs in an example region
+    #
+    chrom = "chr1"
+    start = 5990
+    end = 6000
+    width = (end - start) * 1000  # length in bp
 
-    probs = model.retrieveProbabilities(genome_binary.items()[i][1])
+    # retrieve post. probs for selected region
+    probs = model.retrieveProbabilities(OrderedDict(sorted((genome_binary[chrom][start:end]))))  # random 10kb region
+    probsP = model.retrieveProbabilities(OrderedDict(sorted((genome_binaryP[chrom][start:end]))))  # random 10kb region
 
+    # start plotting
     from matplotlib.patches import Rectangle
     colors = sns.color_palette('deep', n_colors=6, desat=0.5)
     sns.set_context(rc={"figure.figsize": (14, 6)})
     sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
-    sns.plt.xlim([1, len(sequence) + 1])
+    sns.plt.xlim([1, width + 1])
     sns.plt.ylim([0, 1.2])
     sns.plt.ylabel(r'posterior probs, $\gamma_k$')
     sns.plt.xlabel(r'$k$')
     axis = sns.plt.gca()
 
-    # Plot viterbi predicted TMDs
-    for start, end in limits:
+    # viterbi predicted DARNS
+    # get darns in window
+    DARNSinWindow = [darn for darn in DARNS[chrom] if darn[0] >= start and darn[1] <= end]
+    # for each darn in window draw a box
+    for start, end in DARNSinWindow:
         axis.add_patch(Rectangle((start + 1, 1.075), end - start + 1, 0.05,
                                  facecolor=colors[0], alpha=0.7))
 
-    # Get indices of states
-    indices = {state.name: i for i, state in enumerate(model.model.states)}
-
-    sns.plt.plot(range(1, len(sequence) + 1), probs,
+    # line plot of post. probs
+    sns.plt.plot(range(1, width + 1), probs,  # post. probs of real data
                  c=colors[2], alpha=0.7)
-    plt.show()
+    sns.plt.plot(range(1, width + 1), probsP,  # post. probs of permuted data
+                 c=colors[3], alpha=0.5)
+    plt.show()  # decide how to save
 
-    # Output bed/wig
+    # TO IMPLEMENT:
+    # Export bed files of predicted DARNS for both real data and permuted
+    exportBedFile(
+        DARNS,
+        os.path.join(args.results_dir, sampleName + ".DARNS.bed"),
+        "DARNS predicted from %s" % sampleName
+    )
+    exportBedFile(
+        DARNS,
+        os.path.join(args.results_dir, sampleName + ".DARNS.permuted.bed"),
+        "DARNS predicted from %s permuted reads" % sampleName
+    )
+    # Get overal score for darn from post. prob (or something else)
+
+    # Get overal score for darn over permuted
+
+    # Output bed/wig with scores!
     # Export wig files with raw correlations
-    exportWigFile(
-        [peaks[i] for i in correlationsPos.keys()],
-        correlationsPos.values(),
-        len(pattern) / 2,
-        os.path.join(args.results_dir, sampleName + ".peakCorrelationPos.wig"),
-        sampleName + " raw absolute correlation - positive strand"
-    )
-    exportWigFile(
-        [peaks[i] for i in correlationsNeg.keys()],
-        correlationsNeg.values(),
-        len(pattern) / 2,
-        os.path.join(args.results_dir, sampleName + ".peakCorrelationNeg.wig"),
-        sampleName + " raw absolute correlation - negative strand"
-    )
-    # Export wig files with correlations peaks
-
-    # Export wig files with DARNS
-
-    # Export bed files with DARNS
-
-    # Genome arithmetics with DARNS:
-    # Plot :
-    # distances between DARNS borders
-    # distances between DARNS centers
-    # DARNS length
+    # exportWigFile(
+    #     [peaks[i] for i in correlationsPos.keys()],
+    #     correlationsPos.values(),
+    #     len(pattern) / 2,
+    #     os.path.join(args.results_dir, sampleName + ".peakCorrelationPos.wig"),
+    #     sampleName + " raw absolute correlation - positive strand"
+    # )
+    # exportWigFile(
+    #     [peaks[i] for i in correlationsNeg.keys()],
+    #     correlationsNeg.values(),
+    #     len(pattern) / 2,
+    #     os.path.join(args.results_dir, sampleName + ".peakCorrelationNeg.wig"),
+    #     sampleName + " raw absolute correlation - negative strand"
+    # )
 
     # TODO:
     # Get regions in extreme quantiles of correlation
@@ -1336,7 +1353,7 @@ def splitAndSortDict(binary):
     Splits dictionary keys in chrom, start, end; sorts dict based on that and returns collections.OrderedDict object.
 
     binary=dict - keys must be strings that when separated give a chrom (string), start and end (both ints).
-    """    
+    """
     b = {(key.split("_")[0], int(key.split("_")[1]), int(key.split("_")[2])): value for key, value in binary.items()}
     return OrderedDict(sorted(b.items(), key=lambda x: (x[0][0], x[0][1])))
 
@@ -1389,7 +1406,7 @@ def measureDARNS(tuples):
     distances = Counter()
     midDistances = Counter()
 
-    for d1, d2 in itertools.permutations(tuples, 2):
+    for d1, d2 in itertools.combinations(tuples, 2):
         # distance end-to-end
         if d1[end] <= d2[start]:
             distances[abs(d2[start] - d1[end])] += 1
@@ -1397,7 +1414,7 @@ def measureDARNS(tuples):
             distances[d1[start] - d2[end]] += 1
 
         # distance midpoint-midpoint
-        midDistances[abs((d1[end] - d1[start]) - (d2[end] - d2[start]))] += 1
+        midDistances[abs(((d1[end] + d1[start]) / 2) - ((d2[end] + d2[start]) / 2))] += 1
     return (distances, midDistances)
 
 
@@ -1421,35 +1438,27 @@ def exportWigFile(intervals, profiles, offset, filename, trackname):
                 handle.write(str(abs(profiles[i][j])) + "\n")
 
 
-def exportBedFile(intervals, peaks, offset, filename, trackname, strand="."):
+def exportBedFile(intervals, filename, trackname):
     """
-    Exports a bed file track.
+    Exports a bed file track from dict with genomic positions.
 
-    intervals=iterable with HTSeq.GenomicInterval objects.
-    peaks=dict with tuple of start,end positions.
-    offset=int.
+    intervals=dict - chrom:(start, end) dict.
     filename=str.
     trackname=str.
     strand=str.
     """
-    if len(intervals) != len(peaks):
-        raise TypeError("Intervals and peaks sequences have different lengths.")
-
     with open(filename, 'w') as handle:
-        track = 'track name="{0}" description="{0}" visibility=pack autoScale=off colorByStrand="255,0,0 0,0,255"\n'.format(trackname)
-        handle.write(track)
-        for name, peak in peaks.items():
-            for center, tup in peak.items():
-                # TODO: check peak boundaries
-                entry = "{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n".format(
-                    intervals[name].chrom,
-                    intervals[name].start + offset + tup[0],
-                    intervals[name].start + offset + tup[1],
-                    name,
-                    1,      # score
-                    strand  # strand
-                )
-                handle.write(entry)
+        header = 'track name="{0}" description="{0}" visibility=pack autoScale=off colorByStrand="255,0,0 0,0,255"\n'.format(trackname)
+        handle.write(header)
+        for chrom, (start, end) in intervals.items():
+            name = "DARN_{0}_{1}_{2}".format(chrom, start, end)
+            entry = "{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n".format(
+                chrom, start, end,
+                name,  # name
+                1,  # score
+                "."  # strand
+            )
+            handle.write(entry)
 
 if __name__ == '__main__':
     try:
