@@ -11,18 +11,15 @@ In brief, this does:
     * Extract pattern from the read distances distribution.
     * Decompose pattern into signals with various frequencies (using FFT) and retrieve
     most abundant.
-    * Calculate correlations between pattern and ChIPmentation read coverage along the genome.
+    * Calculate correlations between pattern and ChIPmentation read coverage/permuted reads along the genome.
     * Extract local maxima from correlation into a binary signal.
     * Feed to a HMM modeling a nucleossome, output predicted nucleossome-associated regions.
+    * Measure length of and pairwise distance between predicted regions.
 
     * ... plus several plots along the way.
 
 TODO:
-    Repeat read counting in regions minus repeats and gaps - ongoing
-    Repeat read counting in regions without duplicates
-
-    Implement coverage and correlation at same time Task
-
+    Patch: windows with binary signal different than supossed, replace with np.zeros()
 
 """
 
@@ -236,10 +233,10 @@ def main(args):
     sampleName = "H3K4me3_K562_500k_CM"
     sampleFile = samples[sampleName]
     regionName = "H3K4me3_only"
+    exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
 
     # Correlate coverage and signal pattern
     # get pattern
-    exportName = os.path.join(args.data_dir, sampleName + "_" + regionName)
     dists = pickle.load(open(os.path.join(exportName + ".countsStranded-noRepeats-slurm.pickle"), "r"))
     distsPos = {dist: count for dist, count in dists.items() if dist >= 0}
     distsNeg = {abs(dist): count for dist, count in dists.items() if dist <= 0}
@@ -254,36 +251,32 @@ def main(args):
     genome_windows = BedTool.window_maker(BedTool(), g={"chr1": (1, 249250621)}, w=width, s=step)  # genome_windows = BedTool.window_maker(BedTool(), genome='hg19', w=width, s=step)
     genome_windows = bedToolsInterval2GenomicInterval(genome_windows, strand=False, name=False)
 
-    task = CorrelatePatternBam(genome_windows.items(), 4, pattern, os.path.abspath(sampleFile), cpusPerTask=8)
+    task = CorrelatePatternBam(genome_windows.items(), 40, pattern, os.path.abspath(sampleFile), cpusPerTask=8)
     slurm.add_task(task)
     slurm.submit(task)
-    taskP = CorrelatePatternBam(genome_windows.items(), 4, pattern, os.path.abspath(sampleFile), permute=True, cpusPerTask=8, queue="develop")
+    taskP = CorrelatePatternBam(genome_windows.items(), 40, pattern, os.path.abspath(sampleFile), permute=True, cpusPerTask=8)
     slurm.add_task(taskP)
     slurm.submit(taskP)
 
+    # collect and serialize
     binary = task.collect()
     assert len(genome_windows) == len(binary)  # compare sizes
-    assert all([len(window) == width - len(pattern) + 1 for window in binary.values()])
+    assert all([len(window) == width - len(pattern) + 1 for window in binary.values()])  # likely to fail - patched downstream
     pickle.dump(binary, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinary.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     binaryP = taskP.collect()
-    assert len(genome_windows) == len(binary)  # compare sizes
-    assert all([len(window) == width - len(pattern) + 1 for window in binary.values()])
+    assert len(genome_windows) == len(binaryP)  # compare sizes
+    assert all([len(window) == width - len(pattern) + 1 for window in binaryP.values()])  # likely to fail - patched downstream
     pickle.dump(binaryP, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-    # serialize
     binary = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinary.pickle"), "r"))
     binaryP = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryPermuted.pickle"), "r"))
 
-    # sort dict by chrom, start, end
-    binary = splitAndSortDict(binary)  # temporary
-    binaryP = splitAndSortDict(binaryP)  # temporary
-
-    # to subset, pass: OrderedDict(sorted((binary.items()[4000:10000]))) <- 6Mb of sequence
-    genome_binary = concatenateBinary(OrderedDict(sorted((binary.items()[4000:10000]))), len(pattern))
+    # to subset, pass: OrderedDict(sorted((binary.items()[9000:10000]))) <- 1Mb of sequence
+    genome_binary = concatenateBinary(OrderedDict(sorted((binary.items()[9000:10000]))), len(pattern))
     pickle.dump(genome_binary, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-    genome_binaryP = concatenateBinary(OrderedDict(sorted((binaryP.items()[4000:10000]))), len(pattern))
+    genome_binaryP = concatenateBinary(OrderedDict(sorted((binaryP.items()[9000:10000]))), len(pattern))
     pickle.dump(genome_binaryP, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenatedPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     genome_binary = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "r"))
@@ -293,7 +286,7 @@ def main(args):
     # Train with subset of data, see probabilities
     i = len(genome_binary)
     model = WinterHMM()
-    model.train(genome_binary.values())  # subset data for training
+    model.train([genome_binary.values()[0][:10000]])  # subset data for training
     # see new probabilities
     [(s.name, s.distribution) for s in model.model.states]  # emission
     print(model.model.dense_transition_matrix())  # transition
@@ -303,7 +296,7 @@ def main(args):
     model = pickle.load(open(os.path.join(args.results_dir, sampleName + "_hmModel_trained_%i.pickle" % i), "r"))
 
     # Predict
-    hmmOutput = {chrom: model.predict(sequence) for chrom, sequence in genome_binary.items()}
+    hmmOutput = {chrom: model.predict(sequence[:100000]) for chrom, sequence in genome_binary.items()}
     hmmOutputP = {chrom: model.predict(sequence) for chrom, sequence in genome_binaryP.items()}
 
     # Get DARNS from hmmOutput
@@ -316,9 +309,9 @@ def main(args):
         widths = Counter([darn[1] - darn[0] for darn in data.values()])
         distances, midDistances = measureDARNS(data)
 
-        plt.plot(widths.keys(), widths.values(), 'o')
-        plt.plot(distances.keys(), distances.values(), 'o')
-        plt.plot(midDistances.keys(), midDistances.values(), 'o')
+        plt.plot(widths.keys(), widths.values(), '-')
+        plt.plot(distances.keys(), distances.values(), '-')
+        plt.plot(midDistances.keys(), midDistances.values(), '-')
         sns.violinplot(widths)
         # decide how to save
 
@@ -750,7 +743,7 @@ class Correlation(Task):
 
 class CorrelatePatternBam(Task):
     """
-    Task to get read coverage under regions.
+    Task to get Correlation peaks from reads and a given pattern.
     """
     def __init__(self, data, fractions, *args, **kwargs):
         super(CorrelatePatternBam, self).__init__(data, fractions, *args, **kwargs)
@@ -893,25 +886,67 @@ class WinterHMM(object):
     """
     def __init__(self):
         super(WinterHMM, self).__init__()
+
+        self.mapping = {v: k for k, v in enumerate(itertools.product([1, 0, -1], repeat=2))}
+        # self.mapping = {
+        #     (-1, -1):   8,
+        #     (-1, 0):    7,
+        #     (-1, 1):    6,
+        #     (0, -1):    5,
+        #     (0, 0):     4,
+        #     (0, 1):     3,
+        #     (1, -1):    2,
+        #     (1, 0):     1,
+        #     (1, 1):     0
+        # }
+
+        # rewrite like this:
+        # matrix = array([
+        #     [-inf,-inf, -0.69314718,-inf, -0.69314718,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -inf,-inf],
+        #     [-inf,-inf,-inf,-inf,-inf,-inf,-inf, -0.69314718,-inf,-inf, -0.69314718,-inf,-inf,-inf, -inf,-inf],
+        #     [-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -0.10536052,-inf,-inf,-inf,-inf, -2.30258509, -inf,-inf],
+        #     [-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -0.69314718, -0.69314718,-inf,-inf, -inf,-inf],
+        #     [-inf,-inf, -0.69314718,-inf,-inf,-inf,-inf,-inf, -0.69314718,-inf,-inf,-inf,-inf,-inf, -inf,-inf],
+        #     [-inf,  0.,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -inf,-inf],
+        #     [-inf,-inf,-inf,-inf,-inf,  0.,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -inf,-inf],
+        #     [-inf,-inf,-inf, -0.69314718,-inf,-inf,-inf,-inf,-inf,-inf, -0.69314718,-inf,-inf,-inf, -inf,-inf],
+        #     [-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,  0.,-inf,-inf,-inf,-inf, -inf,-inf],
+        #     [-inf,-inf,-inf,-inf,-inf,-inf,  0.,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -inf,-inf],
+        #     [-inf,-inf, -0.7985077 ,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -0.7985077 , -2.30258509, -inf,-inf],
+        #     [-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,  0.,-inf,-inf,-inf, -inf,-inf],
+        #     [-0.69314718,-inf, -0.69314718,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -inf,-inf],
+        #     [-inf,-inf, -2.30258509,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -2.30258509,-inf,-inf, -0.22314355, -inf,-inf],
+        #     [-inf,-inf, -2.30258509,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -2.30258509,-inf,-inf, -0.22314355, -inf,-inf],
+        #     [-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf,-inf, -inf,-inf]
+        # ])
+
+        # distributions = [NormalDistribution(1, .5), NormalDistribution(5, 2)]
+        # starts = [ 1., 0. ]
+        # ends = [ .1., .1 ]
+        # state_names= [ "A", "B" ]
+
+        # model = Model.from_matrix( matrix, distributions, starts, ends, 
+        #         state_names, name="test_model" )
+
         background = yahmm.DiscreteDistribution({
-            1: 0.33,
-            0: 0.33,
-            -1: 0.33
+            0: 0.001, 1: 0.001, 2: 0.001,
+            3: 0.001, 4: 0.99, 5: 0.002,
+            6: 0.001, 7: 0.002, 8: 0.001
         })
         pos = yahmm.DiscreteDistribution({
-            1: 0.7,
-            0: 0.2,
-            -1: 0.1
+            0: 0.33, 1: 0.33, 2: 0.33,
+            3: 0.001, 4: 0.001, 5: 0.001,
+            6: 0.001, 7: 0.001, 8: 0.001
         })
         neg = yahmm.DiscreteDistribution({
-            1: 0.1,
-            0: 0.2,
-            -1: 0.7
+            0: 0.33, 1: 0.001, 2: 0.001,
+            3: 0.33, 4: 0.001, 5: 0.001,
+            6: 0.33, 7: 0.001, 8: 0.001
         })
         zero = yahmm.DiscreteDistribution({
-            1: 0,
-            0: 1,
-            -1: 0
+            0: 0.001, 1: 0.2, 2: 0.001,
+            3: 0.2, 4: 0.2, 5: 0.2,
+            6: 0.001, 7: 0.2, 8: 0.001
         })
 
         # Create states
@@ -935,17 +970,17 @@ class WinterHMM(object):
         for state in [b, minus, in1, in2, in3, plus, in4, in5, in6, in7, in8, in9, in10, in11]:
             self.model.add_state(state)
 
-        self.model.add_transition(self.model.start, b, 0.5)       # start in background
-        self.model.add_transition(self.model.start, minus, 0.25)  # start in minus
-        self.model.add_transition(self.model.start, plus, 0.25)   # start in plus
+        self.model.add_transition(self.model.start, b, 0.8)       # start in background
+        self.model.add_transition(self.model.start, minus, 0.1)   # start in minus
+        self.model.add_transition(self.model.start, plus, 0.1)    # start in plus
 
         self.model.add_transition(b, b, 0.8)                      # stay in background
         self.model.add_transition(b, minus, 0.1)                  # enter in minus
         self.model.add_transition(b, plus, 0.1)                   # enter in plus
 
-        self.model.add_transition(minus, b, 0.25)                 # can exit from plus
-        self.model.add_transition(minus, in1, 0.25)
-        self.model.add_transition(minus, plus, 0.25)
+        self.model.add_transition(minus, b, 0.1)                  # can exit from plus
+        self.model.add_transition(minus, in1, 0.45)
+        self.model.add_transition(minus, plus, 0.45)
 
         self.model.add_transition(in1, in2, 0.5)                  # states 1-3 can go directly to plus or follow a string 1 to 4
         self.model.add_transition(in1, plus, 0.5)
@@ -954,8 +989,8 @@ class WinterHMM(object):
         self.model.add_transition(in3, in4, 0.5)
         self.model.add_transition(in3, plus, 0.5)
 
-        self.model.add_transition(plus, b, 0.50)                  # can exit from plus
-        self.model.add_transition(plus, in4, 0.50)
+        self.model.add_transition(plus, b, 0.1)                  # can exit from plus
+        self.model.add_transition(plus, in4, 0.9)
         self.model.add_transition(in4, in5, 1)                    # string of 4 to 8 at least
         self.model.add_transition(in5, in6, 1)
         self.model.add_transition(in6, in7, 1)
@@ -1396,7 +1431,7 @@ def getDARNS(sequence, debug=False):
     return DARNS
 
 
-def measureDARNS(tuples):
+def measureDARNS(DARNS):
     """
     Computes distributions of DARNS attributes: width, interdistance, distance between midpoints.
 
@@ -1406,15 +1441,16 @@ def measureDARNS(tuples):
     distances = Counter()
     midDistances = Counter()
 
-    for d1, d2 in itertools.combinations(tuples, 2):
-        # distance end-to-end
-        if d1[end] <= d2[start]:
-            distances[abs(d2[start] - d1[end])] += 1
-        else:
-            distances[d1[start] - d2[end]] += 1
+    for chrom, darns in DARNS.items():
+        for d1, d2 in itertools.combinations(darns, 2):
+            # distance end-to-end
+            if d1[end] <= d2[start]:
+                distances[abs(d2[start] - d1[end])] += 1
+            else:
+                distances[d1[start] - d2[end]] += 1
 
-        # distance midpoint-midpoint
-        midDistances[abs(((d1[end] + d1[start]) / 2) - ((d2[end] + d2[start]) / 2))] += 1
+            # distance midpoint-midpoint
+            midDistances[abs(((d1[end] + d1[start]) / 2) - ((d2[end] + d2[start]) / 2))] += 1
     return (distances, midDistances)
 
 

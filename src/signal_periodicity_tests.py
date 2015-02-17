@@ -2,6 +2,18 @@
 
 from signal_periodicity import *
 import numpy as np
+from collections import Counter
+import itertools
+
+
+def test_binarize():
+    X = np.array([j for i in [range(-10, 10), range(-11, 9)[::-1]] * 10 for j in i])
+    observed = binarize(X)
+    assert len(observed) == len(X)
+
+    X = np.zeros(2000)
+    observed = binarize(X)
+    assert len(observed) == len(X)
 
 
 def test_getConsensus():
@@ -12,6 +24,38 @@ def test_getConsensus():
     result = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 1, 0, 0, 0, 0, 0, 0, 0, 0, -1, 1, 0,
            0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, -1])
     assert all(getConsensus(seq1, seq2) == result)
+
+
+def test_reduceToOne():
+    seq1 = []
+    seq2 = [0] * 10
+    output = reduceToOne(seq1, seq2)
+    assert output is None
+
+    seq1 = []
+    seq2 = []
+    output = reduceToOne(seq1, seq2)
+    assert output == np.array([])
+
+    seq1 = [0] * 10
+    seq2 = [0] * 10
+    output = reduceToOne(seq1, seq2)
+    assert all([i == 4 for i in output])
+
+    seq1 = [0] * 10
+    seq2 = [1] * 10
+    output = reduceToOne(seq1, seq2)
+    assert all([i == 3 for i in output])
+
+    seq1 = [0, 1, -1, 0, 1, -1]
+    seq2 = [1, -1, 0, 1, -1, 0]
+    output = reduceToOne(seq1, seq2)
+    assert all(output == [3, 2, 7, 3, 2, 7])
+
+    seq1 = [0, 1, -1, 0, 1, -1]
+    seq2 = [-1, 0, 1, -1, 0, 1]
+    output = reduceToOne(seq1, seq2)
+    assert all(output == [5, 1, 6, 5, 1, 6])
 
 
 def test_concatenateBinary():
@@ -44,7 +88,7 @@ def test_concatenateBinary():
         ("chr1", 951, 1950): np.zeros(window - patternLength),
         ("chr1", 1901, 2900): np.zeros(window - patternLength),
         ("chr1", 2851, 3850): np.ones(window - patternLength)
-        }.items()))
+    }.items()))
     # bad test. Windows not sorted in right side
     # assert all(concatenateBinary(binaryDict, patternLength).values()[0] == np.hstack([v for n, v in sorted(binaryDict.items())]))
 
@@ -86,3 +130,28 @@ def test_getDARNS():
     DARNS = getDARNS(sequence)
     assert len(DARNS) == 2
     assert DARNS[0][0] == 3 and DARNS[0][1] == 8 and DARNS[1][0] == 12 and DARNS[1][-1] == 17
+
+def test_measureDARNS():
+    DARNS = []
+    d, m = measureDARNS(DARNS)
+    assert d == Counter() and m == Counter()
+    
+    DARNS = [()]
+    d, m = measureDARNS(DARNS)
+    assert d == Counter() and m == Counter()
+
+    DARNS = [(0, 0), (0, 0)]
+    d, m = measureDARNS(DARNS)
+    assert d == Counter({0 : 1}) and m == Counter({0: 1})
+
+    DARNS = [(1, 1), (2, 2)]
+    d, m = measureDARNS(DARNS)
+    assert d == Counter({1 : 1}) and m == Counter({1: 1})
+
+    DARNS = [(1, 10), (2, 11)]
+    d, m = measureDARNS(DARNS)
+    assert d == Counter({-10 : 1}) and m == Counter({1: 1})
+
+    DARNS = [(0, 9), (10, 19), (20, 29), (30, 39)]
+    d, m = measureDARNS(DARNS)
+    assert d == Counter({1: 3, 11: 2, 21: 1}) and m == Counter({10: 3, 20: 2, 30: 1})
