@@ -273,7 +273,7 @@ def main(args):
     binaryP = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryPermuted.pickle"), "r"))
 
     # to subset, pass: OrderedDict(sorted((binary.items()[9000:10000]))) <- 1Mb of sequence
-    genome_binary = concatenateBinary(OrderedDict(sorted((binary.items()[9000:10000]))), len(pattern))
+    genome_binary = concatenateBinary(binary, len(pattern))  # 40
     pickle.dump(genome_binary, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     genome_binaryP = concatenateBinary(OrderedDict(sorted((binaryP.items()[9000:10000]))), len(pattern))
@@ -283,36 +283,39 @@ def main(args):
     genome_binaryP = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenatedPermuted.pickle"), "r"))
 
     # HMM
-    # Train with subset of data, see probabilities
-    i = len(genome_binary)
+    #
+    #
     model = WinterHMM()
-    model.train([genome_binary.values()[0][:10000]])  # subset data for training
-    # see new probabilities
-    [(s.name, s.distribution) for s in model.model.states]  # emission
-    print(model.model.dense_transition_matrix())  # transition
+    # Train with subset of data, see probabilities
+    # i = len(genome_binary)
+    # model.train([genome_binary.values()[0][:10000]])  # subset data for training
+    # # see new probabilities
+    # [(s.name, s.distribution) for s in model.model.states]  # emission
+    # print(model.model.dense_transition_matrix())  # transition
 
-    # save model with trained parameters
-    pickle.dump(model, open(os.path.join(args.results_dir, sampleName + "_hmModel_trained_%i.pickle" % i), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    model = pickle.load(open(os.path.join(args.results_dir, sampleName + "_hmModel_trained_%i.pickle" % i), "r"))
+    # # save model with trained parameters
+    # pickle.dump(model, open(os.path.join(args.results_dir, sampleName + "_hmModel_trained_%i.pickle" % i), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    # model = pickle.load(open(os.path.join(args.results_dir, sampleName + "_hmModel_trained_%i.pickle" % i), "r"))
 
-    # Predict
-    hmmOutput = {chrom: model.predict(sequence[:100000]) for chrom, sequence in genome_binary.items()}
+    # Predict and get DARNS
+    hmmOutput = {chrom: model.predict(sequence[:1000000]) for chrom, sequence in genome_binary.items()}
+    DARNS = {chrom: getDARNS(sequence) for chrom, sequence in hmmOutput.items()}; len(DARNS.items()[0][1])
+    pickle.dump(DARNS, open(os.path.join(args.results_dir, sampleName + "_DARNS.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
     hmmOutputP = {chrom: model.predict(sequence) for chrom, sequence in genome_binaryP.items()}
-
-    # Get DARNS from hmmOutput
-    DARNS = {chrom: getDARNS(sequence) for chrom, sequence in hmmOutput.items()}
     DARNSP = {chrom: getDARNS(sequence) for chrom, sequence in hmmOutputP.items()}
+    pickle.dump(DARNSP, open(os.path.join(args.results_dir, sampleName + "_DARNSPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     # Plot attributes
     assert len(DARNS) == len(DARNSP)
     for data in (DARNS, DARNSP):
-        widths = Counter([darn[1] - darn[0] for darn in data.values()])
+        widths = Counter([darn[1] - darn[0] for darn in data.values()[0]])
         distances, midDistances = measureDARNS(data)
 
-        plt.plot(widths.keys(), widths.values(), '-')
-        plt.plot(distances.keys(), distances.values(), '-')
-        plt.plot(midDistances.keys(), midDistances.values(), '-')
-        sns.violinplot(widths)
+        plt.plot(widths.keys(), widths.values(), '-', color='orange')
+        plt.plot(distances.keys(), distances.values(), '-', color='purple')
+        plt.plot(midDistances.keys(), midDistances.values(), '-', color='green')
+        # sns.violinplot(widths.values())
         # decide how to save
 
     # Get scores from DARNS
@@ -975,8 +978,8 @@ class WinterHMM(object):
         self.model.add_transition(self.model.start, plus, 0.1)    # start in plus
 
         self.model.add_transition(b, b, 0.8)                      # stay in background
-        self.model.add_transition(b, minus, 0.1)                  # enter in minus
-        self.model.add_transition(b, plus, 0.1)                   # enter in plus
+        self.model.add_transition(b, minus, 0.1)                 # enter in minus
+        self.model.add_transition(b, plus, 0.1)                  # enter in plus
 
         self.model.add_transition(minus, b, 0.1)                  # can exit from plus
         self.model.add_transition(minus, in1, 0.45)
@@ -989,7 +992,7 @@ class WinterHMM(object):
         self.model.add_transition(in3, in4, 0.5)
         self.model.add_transition(in3, plus, 0.5)
 
-        self.model.add_transition(plus, b, 0.1)                  # can exit from plus
+        self.model.add_transition(plus, b, 0.1)                   # can exit from plus
         self.model.add_transition(plus, in4, 0.9)
         self.model.add_transition(in4, in5, 1)                    # string of 4 to 8 at least
         self.model.add_transition(in5, in6, 1)
@@ -1105,137 +1108,6 @@ def bedToolsInterval2GenomicInterval(bedtool, strand=True, name=True):
                 intervals[string.join(iv.fields[:3], sep="_")] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end)
 
     return intervals
-
-
-def distances(bam, intervals, fragmentsize, duplicates=True, strand_wise=True, permutate=False):
-    """
-    Gets pairwise distance between reads in intervals. Returns dict with distance:count.
-    If permutate=True, it will randomize the reads in each interval along it.
-
-    bam=HTSeq.BAM_Reader object.
-    intervals=dict - HTSeq.GenomicInterval objects as values.
-    fragmentsize=int.
-    duplicates=bool.
-    strand_wise=bool.
-    permutate=bool.
-    """
-    dists = Counter()
-    chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrX']
-
-    # for name, feature in intervals.iteritems():
-    for name, feature in intervals.items():
-        if feature.chrom not in chroms:
-            continue
-        # Fetch all alignments in feature window
-        alnsInWindow = bam[feature]
-        if permutate:
-            # randomize each alignment's position in window
-            alns = list()
-            for aln in alnsInWindow:
-                aln.iv.start_d = random.randrange(feature.start, feature.end)
-                alns.append(aln)
-            alnsInWindow = alns
-
-        # Measure distance between reads in window, pairwisely
-        for aln1, aln2 in itertools.combinations(alnsInWindow, 2):
-            # check if duplicate
-            if not duplicates and (aln1.pcr_or_optical_duplicate or aln2.pcr_or_optical_duplicate):
-                continue
-            # check if in same strand
-            if not strand_wise and aln1.iv.strand != aln2.iv.strand:
-                continue
-            # adjust fragment to size
-            aln1.iv.length = fragmentsize
-            aln2.iv.length = fragmentsize
-
-            # get position relative
-            dist = abs(aln1.iv.start_d - aln2.iv.start_d)
-            # add +1 to dict
-            if strand_wise:
-                if aln1.iv.strand == "+":
-                    dists[dist] += 1
-                if aln1.iv.strand == "-":
-                    dists[-dist] += 1
-            else:
-                dists[dist] += 1
-    return dists
-
-
-def coverageInWindows(bam, intervals, fragmentsize, orientation=False, duplicates=True, strand_wise=False, permutate=False):
-    """
-    Gets read coverage in intervals. Returns dict of regionName:numpy.array if strand_wise=False,
-    a dict of "+" and "-" keys with regionName:numpy.array.
-
-    bam=HTSeq.BAM_Reader object - Must be sorted and indexed with .bai file!
-    intervals=dict - HTSeq.GenomicInterval objects as values.
-    fragmentsize=int.
-    stranded=bool.
-    duplicates=bool.
-    """
-    # Loop through TSSs, get coverage, append to dict
-    chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrM', 'chrX']
-    coverage = OrderedDict()
-    n = len(intervals)
-    i = 0
-    for name, feature in intervals.iteritems():
-        if i % 1000 == 0:
-            print(n - i)
-        # Initialize empty array for this feature
-        if not strand_wise:
-            profile = np.zeros(feature.length, dtype=np.float64)
-        else:
-            profile = np.zeros((2, feature.length), dtype=np.float64)
-
-        # Check if feature is in bam index
-        if feature.chrom not in chroms or feature.chrom == "chrM":
-            i += 1
-            continue
-
-        # Fetch all alignments in feature window
-        alnsInWindow = bam[feature]
-        if permutate:
-            # randomize each alignment's position in window
-            alns = list()
-            for aln in alnsInWindow:
-                aln.iv.start_d = random.randrange(feature.start, feature.end)
-                alns.append(aln)
-            alnsInWindow = alns
-
-        for aln in alnsInWindow:
-            # check if duplicate
-            if not duplicates and aln.pcr_or_optical_duplicate:
-                continue
-            aln.iv.length = fragmentsize  # adjust to size
-
-            # get position in relative to window
-            if orientation:
-                if feature.strand == "+" or feature.strand == ".":
-                    start_in_window = aln.iv.start - feature.start - 1
-                    end_in_window = aln.iv.end - feature.start - 1
-                else:
-                    start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
-                    end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
-            else:
-                start_in_window = aln.iv.start - feature.start - 1
-                end_in_window = aln.iv.end - feature.start - 1
-
-            # check fragment is within window; this is because of fragmentsize adjustment
-            if start_in_window <= 0 or end_in_window > feature.length:
-                continue
-
-            # add +1 to all positions overlapped by read within window
-            if not strand_wise:
-                profile[start_in_window: end_in_window] += 1
-            else:
-                if aln.iv.strand == "+":
-                    profile[0][start_in_window: end_in_window] += 1
-                else:
-                    profile[1][start_in_window: end_in_window] += 1
-
-        # append feature profile to dict
-        coverage[name] = profile
-        i += 1
-    return coverage
 
 
 def extractPattern(dists, distRange, filePrefix):
@@ -1404,6 +1276,8 @@ def getDARNS(sequence, debug=False):
     DARNS = list()
     DARN = False
     l = len(sequence)
+
+    # Detect DARNS start and end
     for i in xrange(l):
         if not i == l - 1:  # not last element
             if debug: print(i, "Not last element")
@@ -1415,7 +1289,7 @@ def getDARNS(sequence, debug=False):
                 # Handle 1-element DARNS
                 if sequence[i + 1] in outside:
                     if debug: print(i, "1bp DARN")
-                    DARNS.append((DARN_start, i + 1))
+                    #DARNS.append((DARN_start, i + 1))
                     DARN = False
             # DARN ends at next element
             elif DARN and (sequence[i] not in outside) and (sequence[i + 1] in outside):
@@ -1428,7 +1302,23 @@ def getDARNS(sequence, debug=False):
             if DARN:  # finish DARN at end
                 if debug: print(i, "Finishing DARN in last element")
                 DARNS.append((DARN_start, i))
-    return DARNS
+
+    # Find DARNS middle point
+    DARNS_middle = list()
+    for start, end in DARNS:
+        seq = sequence[start: end + 1]
+        middle = int(((end + 1) - start) / 2)
+        negative_peaks = [i for i in xrange(len(seq)) if seq[i] == '-']
+
+        if len(negative_peaks) is not 0:
+            # find middle most negative peak
+            peak = start + min(negative_peaks, key=lambda x: abs(x - middle))
+        else:
+            peak = start + middle
+
+        DARNS_middle.append((start, end, peak))
+
+    return DARNS_middle
 
 
 def measureDARNS(DARNS):
@@ -1441,17 +1331,20 @@ def measureDARNS(DARNS):
     distances = Counter()
     midDistances = Counter()
 
-    for chrom, darns in DARNS.items():
-        for d1, d2 in itertools.combinations(darns, 2):
-            # distance end-to-end
-            if d1[end] <= d2[start]:
-                distances[abs(d2[start] - d1[end])] += 1
-            else:
-                distances[d1[start] - d2[end]] += 1
+    try:
+        for chrom, darns in DARNS.items():
+            for d1, d2 in itertools.combinations(darns, 2):
+                # distance end-to-end
+                if d1[end] <= d2[start]:
+                    distances[abs(d2[start] - d1[end])] += 1
+                else:
+                    distances[d1[start] - d2[end]] += 1
 
-            # distance midpoint-midpoint
-            midDistances[abs(((d1[end] + d1[start]) / 2) - ((d2[end] + d2[start]) / 2))] += 1
-    return (distances, midDistances)
+                # distance midpoint-midpoint
+                midDistances[abs(((d1[end] + d1[start]) / 2) - ((d2[end] + d2[start]) / 2))] += 1
+        return (distances, midDistances)
+    except KeyboardInterrupt:
+        return (distances, midDistances)
 
 
 def exportWigFile(intervals, profiles, offset, filename, trackname):
