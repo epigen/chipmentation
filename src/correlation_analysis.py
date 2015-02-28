@@ -1,9 +1,9 @@
 #!/usr/env python
 
 #############################################################################################
-# 
+#
 # This code was used to produce the plots in the ChIPmentation paper (Schmidl, et al. 2015).
-# 
+#
 # It produces plots of sample correlation over windows genome-wide.
 #
 #############################################################################################
@@ -14,8 +14,6 @@ import HTSeq
 import string
 import numpy as np
 import pandas as pd
-from scipy.stats.stats import pearsonr
-
 import rpy2.robjects as robj # for ggplot in R
 import rpy2.robjects.pandas2ri # for R dataframe conversion
 
@@ -33,6 +31,7 @@ windowWidth = 1000
 fragmentsize = 1
 duplicates = False
 
+
 def coverage(bam, intervals, fragmentsize, duplicates=False):
     """ Gets read coverage in bed regions, returns dict with region:count.
     bam - Bam object from HTSeq.BAM_Reader.
@@ -48,7 +47,7 @@ def coverage(bam, intervals, fragmentsize, duplicates=False):
         if feature.chrom not in chroms:
             continue
         count = 0
-        
+
         # Fetch alignments in feature window
         for aln in bam[feature]:
             # check if duplicate
@@ -57,10 +56,10 @@ def coverage(bam, intervals, fragmentsize, duplicates=False):
 
             # adjust fragment to size
             aln.iv.length = fragmentsize
-            
+
             # add +1 to all positions overlapped by read within window
             count += 1
-        
+
         # append feature profile to dict
         cov[name] = count
     return cov
@@ -89,8 +88,8 @@ for signal in signals:
 
 df = pd.DataFrame(rawSignals)
 
-# Normalize to library size 
-dfNorm = df.apply(lambda x: np.log2( 1 + (x / x.sum()) * 1000000))
+# Normalize to library size
+dfNorm = df.apply(lambda x: np.log2(1 + (x / x.sum()) * 1000000))
 
 # Plot with R
 plotFunc = robj.r("""
@@ -98,7 +97,7 @@ plotFunc = robj.r("""
     library(reshape2)
 
     function(df, plotsDir){
-        # scatterplot 
+        # scatterplot
         pdf(paste(projectDir, "results/plots/correlations_1kb_windows_scatter_mergedReplicates.pdf", sep = ""), height = 11, width = 7)
         m = matrix(c(1,2,3,4,5,5,6,7) ,nrow = 4,ncol = 2, byrow = TRUE)
         layout(mat = m, heights = c(1,1,0.2,1))
@@ -170,11 +169,9 @@ plotFunc = robj.r("""
 # convert the pandas dataframe to an R dataframe
 robj.pandas2ri.activate()
 df_R = robj.conversion.py2ri(dfNorm)
- 
+
 # run the plot function on the dataframe
 plotFunc(df_R, plotsDir)
-
-
 
 # TODO: implement multipleCorrelations function
 # def multipleCorrelations(dataframe):
@@ -184,16 +181,14 @@ plotFunc(df_R, plotsDir)
 #
 # cor = multipleCorrelations(df)
 
-
-
 # plotFunc = robj.r("""
 #     library(ggplot2)
 #     library(reshape2)
 
 #     function(df, plotsDir){
-#         # scatterplot 
+#         # scatterplot
 #         pdf(paste0(plotsDir, "/correlations_1kb_windows.pdf", sep = ""), height = 11, width = 7)
-        
+
 #         smoothScatter(log2(df$H3K4me3), log2(df$H3K4me2),
 #             col = rgb(104,104,104,50 , maxColorValue = 255), pch = 16, nrpoints = 0, ann = FALSE, xaxt = 'n')
 #         text(par('usr')[1] + 1.8, par('usr')[4] - 0.5,
@@ -203,7 +198,7 @@ plotFunc(df_R, plotsDir)
 #         mtext(side = 2, "500.000 cells", line = 2)
 #         mtext(side = 3, "H3K4me3")
 
-        
+
 #         title(xlab = "ChIPmentation",
 #               ylab = "ChIPmentation",
 #               outer = TRUE, cex.lab = 1.5)

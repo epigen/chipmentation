@@ -26,6 +26,7 @@ All downstram analysis is performed with scripts in `src` using libraries such a
 - Show ChIPmentation is more likely to generate only one (pair) of read from each IPed fragment at least for TFs
 - Explain differences of footprints by showing ChIP, ATAC-seq and DNAse data (ChIPmentation should be a mixture of all)
 - Compare number of peaks with footprints between DNAase, ATAC-seq and ChIPmentation
+- Detect footprints of CM TFs on histone data (H3K4me1, H3K27Ac on TFs)
 
 ### Manuscript
 - Better tracks to display the data
