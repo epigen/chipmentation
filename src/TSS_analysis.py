@@ -29,11 +29,13 @@ import cPickle as pickle
 # from plotly.graph_objs import Data, Heatmap, Layout, Figure
 
 # Define variables
-signals = ["H3K4me3_K562_500k_CM", "H3K4me3_K562_500k_ChIP", "IgG_K562_500k_CM", "DNase_UWashington_K562_mergedReplicates"]
-bamFilePath = "/home/arendeiro/data/human/chipmentation/mapped/merged"
-bedFilePath = "/fhgfs/groups/lab_bock/shared/data/cage_tss/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
-plotsDir = "/home/arendeiro/projects/chipmentation/results/plots"
+projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
+plotsDir = projectRoot + "results/plots"
+samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.biol_replicates.annotation_sheet.csv"))
+# subset
+samples = samples[samples['sampleName'].str.contains("PBMC")].reset_index()
 
+bedFilePath = "/home/arendeiro/reference/Homo_sapiens/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
 genome = "hg19"
 windowRange = (-60, 60)
 fragmentsize = 1
@@ -193,9 +195,11 @@ for name, interval in tsss.iteritems():
 # save dicts with coverage and average profiles
 rawSignals = OrderedDict()
 aveSignals = OrderedDict()
-for signal in signals:
+for i in range(len(samples)):
+    name = samples['sampleName'][i]
+
     # Load bam
-    bamfile = HTSeq.BAM_Reader(os.path.join(bamFilePath, signal + ".bam"))
+    bamfile = HTSeq.BAM_Reader(samples['filePath'][i])
 
     # Get dataframe of signal coverage in bed regions, append to dict
     cov = coverage(bamfile, tsss, fragmentsize, strand_specific=True)
@@ -212,25 +216,22 @@ for signal in signals:
     # df.columns = range(windowRange[0], windowRange[1])
 
     # append to dict
-    rawSignals[signal] = df
-
-    # Save as csv
-    # df.to_csv(os.path.join(bamFilePath, "{1}.tssSignal_{2}bp.csv".format(signal, str(windowWidth))))
+    rawSignals[name] = df
 
     # Get average profiles and append to dict
     ave = {
-        "signal": signal,
+        "name": name,
         "average": df.apply(np.mean, axis=0),                              # both strands
         "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),    # positive strand
         "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0)     # negative strand
     }
-    aveSignals[signal] = pd.DataFrame(ave)
+    aveSignals[name] = pd.DataFrame(ave)
 
 
 # Plot average profiles for all signals with ggplot
 aveSignals = pd.concat(aveSignals, axis=0)
 aveSignals["x"] = [i[1] for i in aveSignals.index]
-aveSignals = pd.melt(aveSignals, id_vars=["x", "signal"])
+aveSignals = pd.melt(aveSignals, id_vars=["x", "name"])
 
 plotFunc = robj.r("""
     library(ggplot2)
@@ -248,10 +249,10 @@ plotFunc = robj.r("""
             #scale_colour_manual(values=cbPalette[c("grey", ,3,7)])
             scale_colour_manual(values=c("grey", "dark blue","dark red"))
 
-        ggsave(filename = paste0(plotsDir, "/tssSignals_{0}bp.pdf"), plot = p, height = 4, width = 4)
-        ggsave(filename = paste0(plotsDir, "/tssSignals_{0}bp.wide.pdf"), plot = p, height = 4, width = 6)
+        ggsave(filename = paste0(plotsDir, "/PBMCs_tssSignals_{0}bp.pdf"), plot = p, height = 4, width = 4)
+        ggsave(filename = paste0(plotsDir, "/PBMCs_tssSignals_{0}bp.wide.pdf"), plot = p, height = 4, width = 6)
     }}
-    """.format(str(windowWidth))
+    """.format(windowWidth)
 )
 
 gr = importr('grDevices')
@@ -269,13 +270,14 @@ pickle.dump(rawSignals,
             )
 
 # Loop through raw signals, normalize, k-means cluster, save pickle, plot heatmap, export cdt
-for signal in signals:
-    print("Clustering based on %s" % signal)
-    exportName = "{0}.tssSignal_{1}bp.kmeans_{2}k".format(signal, str(windowWidth), n_clusters)
+for i in range(len(samples)):
+    name = samples['sampleName'][i]
+    print("Clustering based on %s" % name)
+    exportName = "{0}.tssSignal_{1}bp.kmeans_{2}k".format(name, str(windowWidth), n_clusters)
 
-    df = rawSignals[signal]
+    df = rawSignals[name]
 
-    # join strand signal (plus + minus)
+    # join strand name (plus + minus)
     df = df.sum(axis=0, level="tss")
 
     # scale row signal to 0:1 (standardization)
@@ -295,19 +297,21 @@ for signal in signals:
     clustOrder = pd.DataFrame(
         clust[1],
         columns=["cluster"],
-        index=dfNorm.index.values)
+        index=dfNorm.index.values
+    )
 
     # save object
     pickle.dump(
         clust,
-        open(os.path.join(plotsDir, "..", exportName + ".pickl"), "wb"),
+        open(os.path.join(plotsDir, "..", exportName + ".pickle"), "wb"),
         protocol=pickle.HIGHEST_PROTOCOL
     )
 
     # Sort all signals by dataframe by cluster order
-    for s in signals:
-        print("Exporting heatmaps for %s" % s)
-        df = rawSignals[s]
+    for j in range(len(samples)):
+        name2 = samples['sampleName'][j]
+        print("Exporting heatmaps for %s" % name2)
+        df = rawSignals[name2]
         df = df.xs('+', level="strand") + df.xs('-', level="strand")
 
         # scale row signal to 0:1 (standardization)
@@ -323,7 +327,7 @@ for signal in signals:
         # Plot heatmap
         # data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
         # plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".plotly.pdf"))
-        plotHeatmap(dfNorm, os.path.join(plotsDir, exportName + "." + s + "_signal.matplotlib.pdf"))
+        plotHeatmap(dfNorm, os.path.join(plotsDir, exportName + "." + name2 + "_signal.matplotlib.pdf"))
 
         # Export as cdt
-        exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "." + s + "_signal.cdt"))
+        exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "." + name2 + "_signal.cdt"))
