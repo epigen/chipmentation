@@ -20,7 +20,7 @@ All downstram analysis is performed with scripts in `src` using libraries such a
 - Paired end sequencing of ChIPmentation (H3K4me3 and PU.1)
 
 ### Analysis
-- Address transposition event sequence biases at the TATA box with tagmented ChIP DNA
+- Address transposition event sequence biases at the TATA box with tagmented ChIP DNA (see commit [ d217292](https://github.com/ComputationalEpigenetics/chipmentation/commit/d2172920013bb20dd19101c4cc7795caa0113c18) and [relevant plot](https://raw.githubusercontent.com/ComputationalEpigenetics/chipmentation/d2172920013bb20dd19101c4cc7795caa0113c18/results/tn5_bias/PBMCs_tssSignals_120bp.pdf?token=AB-DNi0N3KrNebMmbLmiRuKx_S3Efcbwks5U_W8bwA%3D%3D))
 - Address transposition event sequence biases genome-wide (read frequency by k-mers genome-wide?)
 - Show ChIPmentation does produce subnucleosomal fragments using paired end data
 - Show ChIPmentation is more likely to generate only one (pair) of read from each IPed fragment at least for TFs
