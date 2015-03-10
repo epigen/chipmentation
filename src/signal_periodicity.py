@@ -276,7 +276,7 @@ def main(args):
     genome_binary = concatenateBinary(binary, len(pattern))  # 40
     pickle.dump(genome_binary, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-    genome_binaryP = concatenateBinary(OrderedDict(sorted((binaryP.items()[9000:10000]))), len(pattern))
+    genome_binaryP = concatenateBinary(binaryP, len(pattern))
     pickle.dump(genome_binaryP, open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenatedPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     genome_binary = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenated.pickle"), "r"))
@@ -298,12 +298,37 @@ def main(args):
     # model = pickle.load(open(os.path.join(args.results_dir, sampleName + "_hmModel_trained_%i.pickle" % i), "r"))
 
     # Predict and get DARNS
-    hmmOutput = {chrom: model.predict(sequence[:1000000]) for chrom, sequence in genome_binary.items()}
-    DARNS = {chrom: getDARNS(sequence) for chrom, sequence in hmmOutput.items()}; len(DARNS.items()[0][1])
+    DARNS = dict()
+    ite = range(0, len(genome_binary.values()[0]), 5000000)
+    prev = 0
+    last = [-1]
+    for cur in ite[1:]:
+        print(cur)
+        if not cur == last:
+            hmmOutput = {chrom: model.predict(sequence[prev:cur]) for chrom, sequence in genome_binary.items()}
+        else:
+            hmmOutput = {chrom: model.predict(sequence[prev:last]) for chrom, sequence in genome_binary.items()}
+        # add darns to dict
+        for chrom, sequence in hmmOutput.items():
+            DARNS[chrom] = getDARNS(sequence)
+        prev = cur
     pickle.dump(DARNS, open(os.path.join(args.results_dir, sampleName + "_DARNS.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-    hmmOutputP = {chrom: model.predict(sequence) for chrom, sequence in genome_binaryP.items()}
-    DARNSP = {chrom: getDARNS(sequence) for chrom, sequence in hmmOutputP.items()}
+    # predict from permuted data
+    DARNSP = dict()
+    ite = range(0, len(genome_binaryP.values()[0]), 5000000)
+    prev = 0
+    last = [-1]
+    for cur in ite[1:]:
+        print(cur)
+        if not cur == last:
+            hmmOutputP = {chrom: model.predict(sequence[prev:cur]) for chrom, sequence in genome_binaryP.items()}
+        else:
+            hmmOutputP = {chrom: model.predict(sequence[prev:last]) for chrom, sequence in genome_binaryP.items()}
+        # add darns to dict
+        for chrom, sequence in hmmOutputP.items():
+            DARNSP[chrom] = getDARNS(sequence)
+        prev = cur
     pickle.dump(DARNSP, open(os.path.join(args.results_dir, sampleName + "_DARNSPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     # Plot attributes
