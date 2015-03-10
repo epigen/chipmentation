@@ -10,6 +10,13 @@ The current version uses my Python repository [`chipseq-pipelines`](https://gith
 All downstram analysis is performed with scripts in `src` using libraries such as HTSeq and pybedtools for efficiency and clarity.
 
 
+### Data
+
+See annotation sheet here: [CSV](https://github.com/ComputationalEpigenetics/chipmentation/blob/master/cm.replicates.annotation_sheet.controlPaired.csv)
+
+See tracks here: [UCSC](http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://www.biomedical-sequencing.at/bocklab/arendeiro/cm/bigWig/trackHub_hg19_2.txt)
+
+
 # TODO list (response to reviewers)
 
 ### Experimental procedures
