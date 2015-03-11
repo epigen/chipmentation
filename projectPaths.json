@@ -1,0 +1,50 @@
+{
+    "type": "directory",
+    "name": ".",
+    "children": [
+        {
+            "type": "directory",
+            "name": "data",
+            "children": [
+                {
+                    "type": "directory",
+                    "name": "fastq"
+                },
+                {
+                    "type": "directory",
+                    "name": "fastqc"
+                },
+                {
+                    "type": "directory",
+                    "name": "raw"
+                },
+                {
+                    "type": "directory",
+                    "name": "coverage"
+                },
+                {
+                    "type": "directory",
+                    "name": "mapped"
+                },
+                {
+                    "type": "directory",
+                    "name": "peaks"
+                },
+                {
+                    "type": "directory",
+                    "name": "motifs"
+                }
+            ]
+        },
+        {
+            "type": "directory",
+            "name": "results",
+            "children": [
+                {
+                    "type": "directory",
+                    "name": "plots"
+                }
+            ]
+        }
+    ]
+}

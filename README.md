@@ -5,20 +5,45 @@ Schmidl 2015 'ChIPmentation' project
 -----
 In its first version (prior to submission) most preprocessing was writen in `bash` and downstream analysis was done with `R`. `src/main.sh` was the main script which called some of the code in `src/pipelines,scripts,lib` etc...
 
-The current version uses my Python repository [`chipseq-pipelines`](https://github.com/afrendeiro/chipseq-pipelines) to manage preprocessing of files much more efficiently using only the sample annotation sheet ([`chipmentation_annotation.csv`](chipmentation_annotation.csv)).
+The current version uses my Python repository [`chipseq-pipelines`](https://github.com/afrendeiro/chipseq-pipelines) to manage preprocessing of files much more efficiently using only the sample annotation sheet ([`chipmentation.sample_annotation.csv`](chipmentation.sample_annotation.csv)).
 
 All downstram analysis is performed with scripts in `src` using libraries such as HTSeq and pybedtools for efficiency and clarity.
 
 
 ### Data
-
-See annotation sheet here: [CSV](https://github.com/ComputationalEpigenetics/chipmentation/blob/master/cm.replicates.annotation_sheet.controlPaired.csv)
+See annotation sheet here: [CSV](chipmentation.sample_annotation.csv)
 
 See tracks here: [UCSC](http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://www.biomedical-sequencing.at/bocklab/arendeiro/cm/bigWig/trackHub_hg19_2.txt)
 
+### Project structure
+As defined in [`chipseq-pipelines`](https://github.com/afrendeiro/chipseq-pipelines):
+
+projectsroot=/fhgfs/groups/lab_bock/shared/projects/
+htmlroot=/fhgfs/groups/lab_bock/public_html/arendeiro/
+
+```
+projectsroot
+|__ chipmentation
+    |__ runs
+    |__ data
+    |   |__ fastq
+    |   |__ fastqc
+    |   |__ raw
+    |   |__ mapped
+    |   |__ coverage
+    |   |__ peaks
+    |   |__ motifs
+    |__ results
+         |__ plots
+
+htmlroot
+|__ chipmentation
+    |__ bigwig
+```
+JSON description [here](https://github.com/ComputationalEpigenetics/chipmentation/blob/master/projectPaths.json).
+
 
 # TODO list (response to reviewers)
-
 ### Experimental procedures
 - Transposase titration on H3K4me3 ChIPmentation (up to saturation)
 - ChIPmentation on TFs with less cells (*e.g.* 100k, 200k, 500k, 1-2mio)
