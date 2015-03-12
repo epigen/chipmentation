@@ -273,6 +273,50 @@ def bedToolsInterval2GenomicInterval(bedtool):
     return intervals
 
 
+def getMNaseProfile(chrom, start, end):
+    command = "bigWigToWig -chrom={0} -start={1} -end={2} ".format(chrom, start, end)
+    command += "/home/arendeiro/encode_mnase_k562/wgEncodeSydhNsomeK562Sig.bigWig tmp.wig; "
+    command += "tail -n +2 tmp.wig | cut -f 4 > tmp2.wig"
+    os.system(command)
+
+    try:
+        df = pd.read_csv("tmp2.wig", sep="\t", header=-1)
+        return df[0].tolist()
+    except ValueError:
+        return [0] * (end - start)
+
+
+# # Get MNase data
+# # Loop through all samples, submit tasks to compute coverage in peak regions centered on motifs
+# for i in range(len(sampleSubset)):
+#     sampleName = sampleSubset['sampleName'][i]
+#     motifCentered = re.sub("\..*", ".", sampleSubset['peakFile'][i]) + "motifCentered.bed"
+
+#     # Load peak file from bed files centered on motif, make window around
+#     try:
+#         peaks = pybedtools.BedTool(motifCentered)  # .slop(genome=genome, b=windowWidth / 2)
+#     except IOError("File not found"), e:
+#         raise e
+
+#     # Exclude peaks in gaps or repeats
+#     peaks.intersect(b=gapsRepeats, v=True, wa=True)
+#     peaks = bedToolsInterval2GenomicInterval(peaks)
+
+#     # Filter peaks near chrm borders
+#     for peak, interval in peaks.iteritems():
+#         if interval.length < windowWidth:
+#             peaks.pop(peak)
+
+#     cov = {peak: getMNaseProfile(iv.chrom, iv.start, iv.end) for peak, iv in peaks.items()}
+
+#     df = pd.DataFrame({
+#         "sample": sampleName,
+#         "signal": "K562_MNase",
+#         "average": df.apply(np.mean, axis=0),                            # both strands
+#         "x": df.columns
+#     })
+
+
 def exportToJavaTreeView(df, filename):
     """
     Export cdt file of cluster to view in JavaTreeView.
@@ -289,24 +333,14 @@ def exportToJavaTreeView(df, filename):
 
 
 # Define paths
-projectRoot = "/fhgfs/groups/lab_bock/shared/projects/cm/"
+projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
 resultsDir = projectRoot + "results"
 plotsDir = resultsDir + "/plots"
-bedFilePath = "/home/arendeiro/reference/Homo_sapiens/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
+DNase = "/home/arendeiro/data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam"
+MNase = "/home/arendeiro/encode_mnase_k562wgEncodeSydhNsomeK562Sig.merged.bam"
 
 # Get samples
-samples = pd.read_csv(os.path.abspath(projectRoot + "cm.replicates.annotation_sheet.csv"))
-
-samples["controlSampleFilePath"] = None
-for sample in samples.index:
-    if type(samples.ix[sample]["controlSampleName"]) is str:
-        controlName = samples.ix[sample]["controlSampleName"]
-        if samples.ix[sample]["technique"] in ["CM", "ATAC"]:
-            path = "/fhgfs/groups/lab_bock/shared/projects/cm/data/mapped/" + controlName + ".trimmed.bowtie2.shifted.dups.bam"
-        else:
-            path = "/fhgfs/groups/lab_bock/shared/projects/cm/data/mapped/" + controlName + ".trimmed.bowtie2.dups.bam"
-        samples.loc[sample, "controlSampleFilePath"] = path
-
+samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
 
 # subset samples
 sampleSubset = samples[samples['sampleName'].str.contains(
@@ -387,6 +421,21 @@ for i in range(len(sampleSubset)):
         task.id = exportName
         slurm.add_task(task)
         slurm.submit(task)
+
+    # Get DNAse coverage
+    for signal in ["DNase", "MNase"]:
+        signalName = "K562" + signal
+        exportName = "-".join([sampleName, signalName])
+        if not os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+            print(sampleName, signalName)
+            bamFile = eval(signal)
+
+            task = Coverage(peaks, 2, os.path.join(bamFile),
+                            orientation=True, fragment_size=1, strand_wise=True, queue="shortq", cpusPerTask=8
+                            )
+            task.id = exportName
+            slurm.add_task(task)
+            slurm.submit(task)
 
     # Get coverage over other signals
     for j in range(len(signals)):
@@ -477,6 +526,25 @@ for i in range(len(sampleSubset)):
         aveSignals = pd.concat([aveSignals, df])
         pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
+    # DNase and MNase
+    for signalName in ["K562_DNase", "K562_MNase"]:
+        exportName = "-".join([sampleName, signalName])
+        print(exportName)
+
+        if exportName not in names:
+            # Get control average profiles and append to dataframe
+            df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
+            df = pd.DataFrame({
+                "sample": sampleName,
+                "signal": signalName,
+                "average": df.apply(np.mean, axis=0),                            # both strands
+                "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
+                "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
+                "x": df.columns
+            })
+            aveSignals = pd.concat([aveSignals, df])
+            pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
     for j in range(len(signals)):
         signalName = signals['sampleName'][j]
         exportName = "-".join([sampleName, signalName])
@@ -562,10 +630,7 @@ plotFunc(aveSignals_R, 500, plotsDir, "norm")
 
 
 
-
-
-
-
+##### OLD #####
 
 # Clustering
 

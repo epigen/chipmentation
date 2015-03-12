@@ -51,14 +51,23 @@ def coverageInWindow(feature, bam, fragmentsize, orientation, duplicates, strand
             continue
         aln.iv.length = fragmentsize  # adjust to size
 
-        # get position in relative to window
+        # get position in relative to window and considering the strand aligned to
+        # (if it is the same as the window or not)
         if orientation:
             if feature.strand == "+" or feature.strand == ".":
-                start_in_window = aln.iv.start - feature.start - 1
-                end_in_window = aln.iv.end - feature.start - 1
+                if aln.iv.strand == "+" or aln.iv.strand == ".":
+                    start_in_window = aln.iv.start - feature.start - 1
+                    end_in_window = aln.iv.end - feature.start - 1
+                else:
+                    start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
+                    end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
             else:
-                start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
-                end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
+                if aln.iv.strand == "+" or aln.iv.strand == ".":
+                    start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
+                    end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
+                else:
+                    start_in_window = aln.iv.start - feature.start - 1
+                    end_in_window = aln.iv.end - feature.start - 1
         else:
             start_in_window = aln.iv.start - feature.start - 1
             end_in_window = aln.iv.end - feature.start - 1
