@@ -14,12 +14,25 @@ In brief, this does:
     * Calculate correlations between pattern and ChIPmentation read coverage/permuted reads along the genome.
     * Extract local maxima from correlation into a binary signal.
     * Feed to a HMM modeling a nucleosome, output predicted nucleosome-associated regions.
+This will do:
     * Measure several features of predicted regions.
     * Plot and calculate p-values for each feature between real data and permuted.
     * Train multivariate linear regression (logistic) classifier with features from real and permuted data.
     * Classify the rest of data 10 times independently and calculate FDR for each nucleosome-associated region.
+    * Export only nucleosome-associated regions with FDR<0.5.
 
     * ... plus several plots along the way.
+
+TODO:
+    * Plot CM, DNase, MNase in DARNS:
+        * From the middle of the DARN (mid-peak)
+        * From the 5' and 3' end of nucleosome Dyads (get external data)
+        * DARNS frequency around TSSs (models and CAGE) and TTSs
+        * DARNS frequency around CpGs islands
+
+    * Try:
+        * Do the same on concatenated histone ChIPmentation data.
+        * Do the same using IGG data as background.
 """
 
 
@@ -33,6 +46,7 @@ import cPickle as pickle
 import HTSeq
 import itertools
 import numpy as np
+import pandas as pd
 import os
 import sys
 import random
@@ -42,6 +56,7 @@ import string
 import textwrap
 import time
 import yahmm
+from sklearn.linear_model import LinearRegression
 
 np.set_printoptions(linewidth=200)
 
@@ -276,10 +291,11 @@ def main(args):
     genome_binaryP = pickle.load(open(os.path.join(args.data_dir, exportName + ".peakCorrelationBinaryConcatenatedPermuted.pickle"), "r"))
 
     # HMM
-    #
-    #
     model = WinterHMM()
-    # Train with subset of data, see probabilities
+
+    # Model training
+    #
+    # Train on subset of data, see probabilities
     # i = len(genome_binary)
     # model.train([genome_binary.values()[0][:10000]])  # subset data for training
     # # see new probabilities
@@ -294,7 +310,7 @@ def main(args):
     DARNS = dict()
     ite = range(0, len(genome_binary.values()[0]), 5000000)
     prev = 0
-    last = [-1]
+    last = -1
     for cur in ite[1:]:
         print(cur)
         if not cur == last:
@@ -311,7 +327,7 @@ def main(args):
     DARNSP = dict()
     ite = range(0, len(genome_binaryP.values()[0]), 5000000)
     prev = 0
-    last = [-1]
+    last = -1
     for cur in ite[1:]:
         print(cur)
         if not cur == last:
@@ -323,6 +339,110 @@ def main(args):
             DARNSP[chrom] = getDARNS(sequence)
         prev = cur
     pickle.dump(DARNSP, open(os.path.join(args.results_dir, sampleName + "_DARNSPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
+    # Measure attributes:
+    # value of maximum positive strand correlation peak
+    # value of maximum negative strand correlation peak
+    # mean of positive strand correlation peak values
+    # mean of negative strand correlation peak values
+    # sum of positive strand correlation peak values
+    # sum of negative strand correlation peak values
+
+    # number of cycles through HMM “nucleosome” states (0.5 for each peak state passed)
+    # the HMM posterior probability of the path through the background state
+    # and the HMM posterior probability of the path through the nucleosome set of states
+
+    # length (bp)
+    # sum of reads within the DARNS
+    # read density
+    # spacing to nearest upstream DARNS (bp)
+    # spacing to nearest downstream DARNS (bp)
+
+    # Measure read count and density in DARNS
+    slurm = DivideAndSlurm()
+    # make windows genome-wide with overlapping size of pattern
+    intervals = DARNS2GenomicInterval(DARNS)
+
+    task = Coverage(intervals, 40, os.path.abspath(samples["H3K4me3_K562_500k_CM"]), cpusPerTask=8)
+    slurm.add_task(task)
+    slurm.submit(task)
+
+    while not task.is_ready():
+        time.sleep(10)
+
+    # collect and serialize
+    cov = task.collect()
+
+    # Add all features
+    features = ["length", "space_upstream", "space_downstream", "read_count", "read_density", "n_pospeaks", "n_negpeaks"]
+    DARNS_features = pd.DataFrame()
+    for chrm, _ in DARNS.items():
+        for i in range(len(DARNS[chrom])):
+            start, end, center = DARNS[chrm][i]
+            name = "_".join([chrm, str(start), str(end), str(center)])
+
+            s = pd.Series(index=["name"] + features)
+            s["name"] = name
+
+            # measure length
+            s["length"] = end - start
+
+            # measure distance to neighbours
+            if i != 0:
+                s["space_upstream"] = abs(start - DARNS[chrom][i - 1][1])  # current start minus previous end
+            else:
+                s["space_upstream"] = None
+            if i != len(DARNS[chrom]) - 1:
+                s["space_downstream"] = abs(DARNS[chrom][i + 1][0] - end)  # current end minus next start
+            else:
+                s["space_downstream"] = None
+
+            # get posterior prob
+            sequence = genome_binary[chrom][start: end]
+            s["post_prob"] = model.retrieveProbabilities(sequence)
+
+            # get read count and density
+            s["read_count"] = cov[name].sum()
+            s["read_density"] = cov[name].sum()  # this should be the whole array
+
+            # n. of positive peaks in nucleosome model
+            s["n_pospeaks"] = hmmOutput[chrom][start: end].count("+")
+
+            # n. of negative peaks in nucleosome model
+            s["n_negpeaks"] = hmmOutput[chrom][start: end].count("-")
+
+            # append
+            DARNS_features = DARNS_features.append(s, ignore_index=True)
+
+    # serialize
+    pickle.dump(
+        DARNS_features,
+        open(os.path.join(args.results_dir, sampleName + "_DARNS.features.pickle"), "wb"),
+        protocol=pickle.HIGHEST_PROTOCOL
+    )
+
+    # Train classifier on features
+    # get random tenth of data to train on
+    randomRows = [random.randrange(0, len(DARNS[chrom])) for _ in range(len(DARNS[chrom]) / 10)]
+    train_features = DARNS_features.loc[randomRows, features]
+
+    # get class labels for data
+    labels = ["real" for _ in range(len(DARNS[chrom]) / 10)]
+
+    lr = LinearRegression()
+    lr.fit(np.array(train_features), labels, n_jobs=-1)
+
+    # Predict for all data
+    pred = lr.predict(DARNS_features.loc[: features])
+
+
+
+
+
+
+
+
+    ##### OLD #####
 
     # Plot attributes
     assert len(DARNS) == len(DARNSP)
@@ -555,7 +675,7 @@ class Coverage(Task):
         if "strand_wise" in kwargs.keys():
             self.strand_wise = kwargs["strand_wise"]
         else:
-            self.strand_wise = True
+            self.strand_wise = False
         if "duplicates" in kwargs.keys():
             self.duplicates = kwargs["duplicates"]
         else:
@@ -1056,6 +1176,17 @@ class WinterHMM(object):
         prob_nucleosome = 1 - self.probs[:, background_state]  # prob of all states but background
         return prob_nucleosome
 
+    def retrieveBackgroundProbabilities(self, observations):
+        """
+        Retrieve the posterior probabilities of being in a "nucleosome" state for a sequence of observations.
+        """
+        trans, ems = self.model.forward_backward(observations)
+        ems = np.exp(ems)
+        self.probs = ems / np.sum(ems, axis=1)[:, np.newaxis]  # probs of all states
+        background_state = 0
+        prob_background = self.probs[:, background_state]  # prob of all states but background
+        return prob_background
+
 
 def makeGenomeWindows(windowWidth, genome, step=None):
     """
@@ -1124,6 +1255,18 @@ def bedToolsInterval2GenomicInterval(bedtool, strand=True, name=True):
                 intervals[iv.name] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end)
             else:
                 intervals[string.join(iv.fields[:3], sep="_")] = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end)
+
+    return intervals
+
+
+def DARNS2GenomicInterval(DARNS):
+    """
+    """
+    intervals = OrderedDict()
+    for chrom, values in DARNS.items():
+        for start, end, center in values:
+            name = "_".join([chrom, str(start), str(end), str(center)])
+            intervals[name] = HTSeq.GenomicInterval(chrom, start, end)
 
     return intervals
 
