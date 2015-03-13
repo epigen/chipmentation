@@ -1,26 +1,25 @@
 #!/usr/env python
 
 """
-A more deep analysis of ChIPmentation data.
+Predicting nucleosome associated-regions from ChIPmentation data.
 
 In brief, this does:
-    * Count pairwise distances between reads from several samples (from several
+    * Pairwise distance count between reads from several samples (from several
     techniques - ChIP, ChIPmentation, DNase-seq, ATAC-seq) in several genomic
     locations (H3K4me3/H3K27me3 peaks, DHS regions, whole genome, etc...) in strand-
     -specific way and also for permuted reads.
-    * Extract pattern from the read distances distribution.
+    * Get pattern from the read distances distribution (correlogram).
     * Decompose pattern into signals with various frequencies (using FFT) and retrieve
-    most abundant.
+    most abundant (10bp).
     * Calculate correlations between pattern and ChIPmentation read coverage/permuted reads along the genome.
     * Extract local maxima from correlation into a binary signal.
-    * Feed to a HMM modeling a nucleossome, output predicted nucleossome-associated regions.
-    * Measure length of and pairwise distance between predicted regions.
+    * Feed to a HMM modeling a nucleosome, output predicted nucleosome-associated regions.
+    * Measure several features of predicted regions.
+    * Plot and calculate p-values for each feature between real data and permuted.
+    * Train multivariate linear regression (logistic) classifier with features from real and permuted data.
+    * Classify the rest of data 10 times independently and calculate FDR for each nucleosome-associated region.
 
     * ... plus several plots along the way.
-
-TODO:
-    Patch: windows with binary signal different than supossed, replace with np.zeros()
-
 """
 
 
@@ -30,7 +29,6 @@ from divideAndSlurm import DivideAndSlurm, Task
 from matplotlib import pyplot as plt
 from pybedtools import BedTool
 from scipy import signal
-from scipy.stats.stats import pearsonr
 import cPickle as pickle
 import HTSeq
 import itertools
@@ -40,9 +38,7 @@ import sys
 import random
 import re
 import seaborn as sns
-import statsmodels.nonparametric.kde as kde
 import string
-import subprocess
 import textwrap
 import time
 import yahmm
@@ -52,10 +48,7 @@ np.set_printoptions(linewidth=200)
 
 def main(args):
     # Parse command-line arguments
-    parser = ArgumentParser(
-        description='read_distances.py',
-        usage='python read_distances.py <directory> file1, file2... '
-    )
+    parser = ArgumentParser()
 
     # Global options
     # positional arguments
@@ -207,8 +200,8 @@ def main(args):
 
             # Extract most abundant periodic pattern from signal
             # for DNase, extract from a different window (70-150bp)
-            patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.data_dir, exportName + "_posStrand-noRepeats"))
-            patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand-noRepeats"))
+            # patternPos = extractPattern(distsPos, range(60, 100), os.path.join(args.data_dir, exportName + "_posStrand-noRepeats"))
+            # patternNeg = extractPattern(distsNeg, range(60, 100), os.path.join(args.data_dir, exportName + "_negStrand-noRepeats"))
             pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100), os.path.join(args.data_dir, exportName + "_bothStrands-noRepeats"))
 
             try:
@@ -953,7 +946,7 @@ class WinterHMM(object):
         # ends = [ .1., .1 ]
         # state_names= [ "A", "B" ]
 
-        # model = Model.from_matrix( matrix, distributions, starts, ends, 
+        # model = Model.from_matrix( matrix, distributions, starts, ends,
         #         state_names, name="test_model" )
 
         background = yahmm.DiscreteDistribution({
@@ -1054,14 +1047,14 @@ class WinterHMM(object):
 
     def retrieveProbabilities(self, observations):
         """
-        Retrieve the posterior probabilities of being in a "nucleossome" state for a sequence of observations.
+        Retrieve the posterior probabilities of being in a "nucleosome" state for a sequence of observations.
         """
         trans, ems = self.model.forward_backward(observations)
         ems = np.exp(ems)
         self.probs = ems / np.sum(ems, axis=1)[:, np.newaxis]  # probs of all states
         background_state = 0
-        prob_nucleossome = 1 - self.probs[:, background_state]  # prob of all states but background
-        return prob_nucleossome
+        prob_nucleosome = 1 - self.probs[:, background_state]  # prob of all states but background
+        return prob_nucleosome
 
 
 def makeGenomeWindows(windowWidth, genome, step=None):
