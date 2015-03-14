@@ -321,7 +321,8 @@ def main(args):
         for chrom, sequence in hmmOutput.items():
             DARNS[chrom] = getDARNS(sequence)
         prev = cur
-    pickle.dump(DARNS, open(os.path.join(args.results_dir, sampleName + "_DARNS.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    pickle.dump((hmmOutput, DARNS), open(os.path.join(args.results_dir, sampleName + "_HMMResult.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    hmmOutput, DARNS = pickle.load(open(os.path.join(args.results_dir, sampleName + "_HMMResult.pickle"), "r"))
 
     # predict from permuted data
     DARNSP = dict()
@@ -338,7 +339,8 @@ def main(args):
         for chrom, sequence in hmmOutputP.items():
             DARNSP[chrom] = getDARNS(sequence)
         prev = cur
-    pickle.dump(DARNSP, open(os.path.join(args.results_dir, sampleName + "_DARNSPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    pickle.dump((hmmOutputP, DARNSP), open(os.path.join(args.results_dir, sampleName + "_HMMResultPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    hmmOutputP, DARNSP = pickle.load(open(os.path.join(args.results_dir, sampleName + "_HMMResultPermuted.pickle"), "r"))
 
     # Measure attributes:
     # value of maximum positive strand correlation peak
@@ -360,59 +362,71 @@ def main(args):
 
     # Measure read count and density in DARNS
     slurm = DivideAndSlurm()
-    # make windows genome-wide with overlapping size of pattern
-    intervals = DARNS2GenomicInterval(DARNS)
 
-    task = Coverage(intervals, 40, os.path.abspath(samples["H3K4me3_K562_500k_CM"]), cpusPerTask=8)
-    slurm.add_task(task)
-    slurm.submit(task)
+    for regions in ["DARNS", "DARNSP"]:
+        # make windows genome-wide with overlapping size of pattern
+        intervals = DARNS2GenomicInterval(eval(regions))
 
-    while not task.is_ready():
+        task = Coverage(intervals, 40, os.path.abspath(samples["H3K4me3_K562_500k_CM"]), cpusPerTask=8)
+        task.id = regions
+        slurm.add_task(task)
+        slurm.submit(task)
+
+    while not all([t.is_ready() for t in slurm.tasks]):
         time.sleep(10)
 
     # collect and serialize
-    cov = task.collect()
+    cov = dict()
+    for task in slurm.tasks:
+        cov[task.id] = task.collect()
 
     # Add all features
-    features = ["length", "space_upstream", "space_downstream", "read_count", "read_density", "n_pospeaks", "n_negpeaks"]
+    features = ["length", "space_upstream", "space_downstream",
+                "read_count", "read_density", "n_pospeaks", "n_negpeaks"]
+
     DARNS_features = pd.DataFrame()
-    for chrm, _ in DARNS.items():
-        for i in range(len(DARNS[chrom])):
-            start, end, center = DARNS[chrm][i]
-            name = "_".join([chrm, str(start), str(end), str(center)])
 
-            s = pd.Series(index=["name"] + features)
-            s["name"] = name
+    for regionName in ["DARNS", "DARNSP"]:
+        regions = eval(regionName)
+        for chrm, _ in regions.items():
+            for i in range(len(regions[chrom])):
+                start, end, center = regions[chrm][i]
+                name = "_".join([chrm, str(start), str(end), str(center)])
 
-            # measure length
-            s["length"] = end - start
+                s = pd.Series(index=["type"] + ["name"] + features)
+                s["type"] = regionName
+                s["name"] = name
 
-            # measure distance to neighbours
-            if i != 0:
-                s["space_upstream"] = abs(start - DARNS[chrom][i - 1][1])  # current start minus previous end
-            else:
-                s["space_upstream"] = None
-            if i != len(DARNS[chrom]) - 1:
-                s["space_downstream"] = abs(DARNS[chrom][i + 1][0] - end)  # current end minus next start
-            else:
-                s["space_downstream"] = None
+                # measure length
+                s["length"] = end - start
 
-            # get posterior prob
-            sequence = genome_binary[chrom][start: end]
-            s["post_prob"] = model.retrieveProbabilities(sequence)
+                # measure distance to neighbours
+                if i != 0:
+                    s["space_upstream"] = abs(start - regions[chrom][i - 1][1])  # current start minus previous end
+                else:
+                    s["space_upstream"] = None
+                if i != len(regions[chrom]) - 1:
+                    s["space_downstream"] = abs(regions[chrom][i + 1][0] - end)  # current end minus next start
+                else:
+                    s["space_downstream"] = None
 
-            # get read count and density
-            s["read_count"] = cov[name].sum()
-            s["read_density"] = cov[name].sum()  # this should be the whole array
+                # get posterior prob
+                sequence = genome_binary[chrom][start: end]
+                s["post_prob"] = model.retrieveProbabilities(sequence)
 
-            # n. of positive peaks in nucleosome model
-            s["n_pospeaks"] = hmmOutput[chrom][start: end].count("+")
+                # get read count and density
+                s["read_count"] = cov[regionName][name].sum()
+                s["read_density"] = cov[regionName][name].sum()  # this should be the whole array
 
-            # n. of negative peaks in nucleosome model
-            s["n_negpeaks"] = hmmOutput[chrom][start: end].count("-")
+                # n. of positive peaks in nucleosome model
+                hmm = eval("hmmOutput") if regionName == "DARNS" else eval("hmmOutputP")
+                s["n_pospeaks"] = hmm[chrom][start: end].count("+")
 
-            # append
-            DARNS_features = DARNS_features.append(s, ignore_index=True)
+                # n. of negative peaks in nucleosome model
+                s["n_negpeaks"] = hmm[chrom][start: end].count("-")
+
+                # append
+                DARNS_features = DARNS_features.append(s, ignore_index=True)
 
     # serialize
     pickle.dump(
@@ -420,6 +434,7 @@ def main(args):
         open(os.path.join(args.results_dir, sampleName + "_DARNS.features.pickle"), "wb"),
         protocol=pickle.HIGHEST_PROTOCOL
     )
+    DARNS_features = pickle.load(open(os.path.join(args.results_dir, sampleName + "_DARNS.features.pickle"), "r"))
 
     # Train classifier on features
     # get random tenth of data to train on
@@ -427,16 +442,60 @@ def main(args):
     train_features = DARNS_features.loc[randomRows, features]
 
     # get class labels for data
-    labels = ["real" for _ in range(len(DARNS[chrom]) / 10)]
+    train_labels = train_features["type"]
+    # train_labels = [0 if l == "DARNS" else 1 for l in train_labels]  # convert to numeric
 
-    lr = LinearRegression()
-    lr.fit(np.array(train_features), labels, n_jobs=-1)
+    # lr = LinearRegression()
+    # lr.fit(np.array(train_features), train_labels, n_jobs=-1)
+    # pred = lr.predict(DARNS_features.loc[: features])
 
-    # Predict for all data
-    pred = lr.predict(DARNS_features.loc[: features])
+    # Use nearest neighbours classifier
+    from sklearn import neighbors
+    n_neighbors = 4
 
+    clf = neighbors.KNeighborsClassifier(n_neighbors, weights="uniform")  # try with "distance"
+    clf.fit(train_features, train_labels)
 
+    # Predict N times for all data
+    N = 10
 
+    pred = pd.DataFrame()
+    pred[name] = DARNS_features["name"]
+
+    for i in range(N):  # try increasing i
+        pred[i] = clf.predict(DARNS_features)
+
+    # Get confusion matrix
+    # counts of True positives, False positives, False negatives, True negatives
+    pred["TP", "TN"] = None
+    for i in pred.index:
+        self = pred.ix[i, "type"]
+        oposite = "DARNSP" if self is "DARNS" else "DARNS"
+        pred["TP"] = [pred.ix[i].tolist().count(self) for i in pred.index]
+        pred["TN"] = [pred.ix[i].tolist().count(oposite) for i in pred.index]
+
+    pred["FN"] = N - pred["TP"]
+    pred["FP"] = N - pred["TN"]
+
+    # calculate rates
+    pred["TPR"] = pred["TP"] / (pred["TP"] + pred["FN"])  # sensitivity
+    pred["FPR"] = pred["FP"] / (pred["FP"] + pred["TN"])  # fall-out (false positive rate)
+    pred["TNR"] = pred["TN"] / (pred["FP"] + pred["TN"])  # specificity
+    pred["NPV"] = pred["TN"] / (pred["TN"] + pred["FN"])  # negative predictive value
+    pred["FDR"] = pred["FP"] / (pred["TP"] + pred["FP"])  # false dicovery rate
+    P = pred["TP"] + pred["FP"]
+    pred["ACC"] = (pred["TP"] + pred["TN"]) / (P + N)     # accuracy
+
+    pickle.dump(
+        pred,
+        open(os.path.join(args.results_dir, sampleName + "_DARNS.FDRs.pickle"), "wb"),
+        protocol=pickle.HIGHEST_PROTOCOL
+    )
+
+    # Keep DARNS with FDR < 0.5
+    pred[pred["FDR"] < 0.5]["name"]
+
+    # Alternatively, train only with real DARNS overlapping H3K4me3 peaks
 
 
 
