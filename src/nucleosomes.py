@@ -414,9 +414,11 @@ def main(args):
                 sequence = genome_binary[chrom][start: end]
                 s["post_prob"] = model.retrieveProbabilities(sequence)
 
-                # get read count and density
+                # get read count
                 s["read_count"] = cov[regionName][name].sum()
-                s["read_density"] = cov[regionName][name].sum()  # this should be the whole array
+                # get density
+                # I defined it as (sum / length). It is not clear this is the same as in Winter2013
+                s["read_density"] = cov[regionName][name].sum() / (end - start)
 
                 # n. of positive peaks in nucleosome model
                 hmm = eval("hmmOutput") if regionName == "DARNS" else eval("hmmOutputP")
@@ -428,6 +430,7 @@ def main(args):
                 # append
                 DARNS_features = DARNS_features.append(s, ignore_index=True)
 
+    DARNS_features = DARNS_features.dropna()
     # serialize
     pickle.dump(
         DARNS_features,
@@ -436,13 +439,54 @@ def main(args):
     )
     DARNS_features = pickle.load(open(os.path.join(args.results_dir, sampleName + "_DARNS.features.pickle"), "r"))
 
+    # Test significant differences between Real and Permuted DARNS
+    from scipy.stats import ks_2samp
+    from scipy.stats import chisquare
+    for feature in features:
+        real = DARNS_features.loc[DARNS_features["type"] == "DARNS", feature].tolist()
+        permuted = DARNS_features.loc[DARNS_features["type"] == "DARNSP", feature].tolist()
+
+        # see normality
+        # qqplot
+        import scipy.stats as stats
+        stats.probplot(real, dist="norm", plot=plt)
+        stats.probplot(permuted, dist="norm", plot=plt)
+        plt.show()
+
+        # test difference
+        if feature in ["length", "space_upstream", "space_downstream",
+                       "read_count", "n_pospeaks", "n_negpeaks"]:
+            chisquare(real, permuted)
+        elif feature in ["read_density"]:
+            ks_2samp(real, permuted)
+
+    # Plot features for Real and Permuted DARNS
+    # corrplot between all variables
+    sns.set(style="darkgrid")
+
+    f, ax = plt.subplots(figsize=(9, 9))
+    cmap = sns.diverging_palette(220, 10, as_cmap=True)
+    sns.corrplot(DARNS_features[features], annot=False, sig_stars=False,
+                 diag_names=False, cmap=cmap, ax=ax)
+    f.tight_layout()
+
+    # pair plot
+    g = sns.PairGrid(DARNS_features[features], diag_sharey=False)
+    g.map_lower(sns.kdeplot, cmap="Blues_d")
+    g.map_upper(plt.scatter)
+    g.map_diag(sns.kdeplot, lw=3)
+
+    # pairwise distributions
+    for f1, f2 in itertools.combinations(features, 2):
+        g = sns.jointplot(DARNS_features[f1], DARNS_features[f2], kind="kde", size=7, space=0)
+
     # Train classifier on features
     # get random tenth of data to train on
-    randomRows = [random.randrange(0, len(DARNS[chrom])) for _ in range(len(DARNS[chrom]) / 10)]
+    randomRows = [random.randrange(0, len(DARNS_features)) for _ in range(len(DARNS_features) / 10)]
     train_features = DARNS_features.loc[randomRows, features]
 
     # get class labels for data
-    train_labels = train_features["type"]
+    train_labels = DARNS_features.loc[randomRows, "type"].tolist()
     # train_labels = [0 if l == "DARNS" else 1 for l in train_labels]  # convert to numeric
 
     # lr = LinearRegression()
@@ -460,19 +504,20 @@ def main(args):
     N = 10
 
     pred = pd.DataFrame()
-    pred[name] = DARNS_features["name"]
+    pred["name"] = DARNS_features["name"].tolist()
+    pred["type"] = DARNS_features["type"].tolist()
 
     for i in range(N):  # try increasing i
-        pred[i] = clf.predict(DARNS_features)
+        pred[i] = clf.predict(DARNS_features.loc[:, features])
 
     # Get confusion matrix
     # counts of True positives, False positives, False negatives, True negatives
     pred["TP", "TN"] = None
     for i in pred.index:
         self = pred.ix[i, "type"]
-        oposite = "DARNSP" if self is "DARNS" else "DARNS"
+        opposite = "DARNSP" if self is "DARNS" else "DARNS"
         pred["TP"] = [pred.ix[i].tolist().count(self) for i in pred.index]
-        pred["TN"] = [pred.ix[i].tolist().count(oposite) for i in pred.index]
+        pred["TN"] = [pred.ix[i].tolist().count(opposite) for i in pred.index]
 
     pred["FN"] = N - pred["TP"]
     pred["FP"] = N - pred["TN"]
