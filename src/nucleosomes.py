@@ -449,16 +449,17 @@ def main(args):
         # see normality
         # qqplot
         import scipy.stats as stats
-        stats.probplot(real, dist="norm", plot=plt)
-        stats.probplot(permuted, dist="norm", plot=plt)
-        plt.show()
+        # stats.probplot(real, dist="norm", plot=plt)
+        # stats.probplot(permuted, dist="norm", plot=plt)
 
         # test difference
         if feature in ["length", "space_upstream", "space_downstream",
                        "read_count", "n_pospeaks", "n_negpeaks"]:
-            chisquare(real, permuted)
+            # print chisquare(real, permuted)
+            print ks_2samp(real, permuted)
         elif feature in ["read_density"]:
-            ks_2samp(real, permuted)
+            print ks_2samp(real, permuted)
+    # plt.show()
 
     # Plot features for Real and Permuted DARNS
     # corrplot between all variables
@@ -501,7 +502,7 @@ def main(args):
     clf.fit(train_features, train_labels)
 
     # Predict N times for all data
-    N = 10
+    N = 100
 
     pred = pd.DataFrame()
     pred["name"] = DARNS_features["name"].tolist()
@@ -512,15 +513,10 @@ def main(args):
 
     # Get confusion matrix
     # counts of True positives, False positives, False negatives, True negatives
-    pred["TP", "TN"] = None
-    for i in pred.index:
-        self = pred.ix[i, "type"]
-        opposite = "DARNSP" if self is "DARNS" else "DARNS"
-        pred["TP"] = [pred.ix[i].tolist().count(self) for i in pred.index]
-        pred["TN"] = [pred.ix[i].tolist().count(opposite) for i in pred.index]
-
-    pred["FN"] = N - pred["TP"]
-    pred["FP"] = N - pred["TN"]
+    pred["TP"] = pred.apply(lambda x: list(x[np.array(range(N)) + 2]).count("DARNS") if x["type"] == "DARNS" else 0, axis=1)
+    pred["TN"] = pred.apply(lambda x: list(x[np.array(range(N)) + 2]).count("DARNSP") if x["type"] == "DARNSP" else 0, axis=1)
+    pred["FN"] = pred.apply(lambda x: list(x[np.array(range(N)) + 2]).count("DARNSP") if x["type"] == "DARNS" else 0, axis=1)
+    pred["FP"] = pred.apply(lambda x: list(x[np.array(range(N)) + 2]).count("DARNS") if x["type"] == "DARNSP" else 0, axis=1)
 
     # calculate rates
     pred["TPR"] = pred["TP"] / (pred["TP"] + pred["FN"])  # sensitivity
@@ -538,7 +534,8 @@ def main(args):
     )
 
     # Keep DARNS with FDR < 0.5
-    pred[pred["FDR"] < 0.5]["name"]
+    len(pred[pred["FDR"] < 0.5])
+    realOnes = pred[(pred["FDR"] < 0.5) & (pred["type"] == "DARNS")]
 
     # Alternatively, train only with real DARNS overlapping H3K4me3 peaks
 
