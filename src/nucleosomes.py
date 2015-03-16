@@ -307,40 +307,64 @@ def main(args):
     # model = pickle.load(open(os.path.join(args.results_dir, sampleName + "_hmModel_trained_%i.pickle" % i), "r"))
 
     # Predict and get DARNS
+    hmmOutput = dict()
     DARNS = dict()
-    ite = range(0, len(genome_binary.values()[0]), 5000000)
-    prev = 0
-    last = -1
-    for cur in ite[1:]:
-        print(cur)
-        if not cur == last:
-            hmmOutput = {chrom: model.predict(sequence[prev:cur]) for chrom, sequence in genome_binary.items()}
-        else:
-            hmmOutput = {chrom: model.predict(sequence[prev:last]) for chrom, sequence in genome_binary.items()}
-        # add darns to dict
-        for chrom, sequence in hmmOutput.items():
-            DARNS[chrom] = getDARNS(sequence)
-        prev = cur
+
+    # do it chromosome-wise
+    for chrom in genome_binary.keys():
+        ite = range(0, len(genome_binary[chrom]), 5000000)
+        prev = 0
+        last = ite[-1]
+        # do it for 5M chunks at a time
+        for cur in ite[1:]:
+            if not cur == last:
+                if chrom not in hmmOutput.keys():
+                    hmmOutput[chrom] = model.predict(genome_binary[chrom][prev:cur])
+                else:
+                    hmmOutput[chrom] += model.predict(genome_binary[chrom][prev:cur])
+            else:
+                if chrom not in hmmOutput.keys():
+                    hmmOutput[chrom] = model.predict(genome_binary[chrom][prev:len(genome_binary[chrom])])
+                else:
+                    hmmOutput[chrom] += model.predict(genome_binary[chrom][prev:len(genome_binary[chrom])])
+            prev = cur
+
+    # add darns to dict
+    for chrom, sequence in hmmOutput.items():
+        DARNS[chrom] = getDARNS(sequence)
+
     pickle.dump((hmmOutput, DARNS), open(os.path.join(args.results_dir, sampleName + "_HMMResult.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
     hmmOutput, DARNS = pickle.load(open(os.path.join(args.results_dir, sampleName + "_HMMResult.pickle"), "r"))
 
-    # predict from permuted data
+    # Predict and get DARNS
+    hmmOutputP = dict()
     DARNSP = dict()
-    ite = range(0, len(genome_binaryP.values()[0]), 5000000)
-    prev = 0
-    last = -1
-    for cur in ite[1:]:
-        print(cur)
-        if not cur == last:
-            hmmOutputP = {chrom: model.predict(sequence[prev:cur]) for chrom, sequence in genome_binaryP.items()}
-        else:
-            hmmOutputP = {chrom: model.predict(sequence[prev:last]) for chrom, sequence in genome_binaryP.items()}
-        # add darns to dict
-        for chrom, sequence in hmmOutputP.items():
-            DARNSP[chrom] = getDARNS(sequence)
-        prev = cur
-    pickle.dump((hmmOutputP, DARNSP), open(os.path.join(args.results_dir, sampleName + "_HMMResultPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    hmmOutputP, DARNSP = pickle.load(open(os.path.join(args.results_dir, sampleName + "_HMMResultPermuted.pickle"), "r"))
+
+    # do it chromosome-wise
+    for chrom in genome_binaryP.keys():
+        ite = range(0, len(genome_binaryP[chrom]), 5000000)
+        prev = 0
+        last = ite[-1]
+        # do it for 5M chunks at a time
+        for cur in ite[1:]:
+            if not cur == last:
+                if chrom not in hmmOutputP.keys():
+                    hmmOutputP[chrom] = model.predict(genome_binaryP[chrom][prev:cur])
+                else:
+                    hmmOutputP[chrom] += model.predict(genome_binaryP[chrom][prev:cur])
+            else:
+                if chrom not in hmmOutputP.keys():
+                    hmmOutputP[chrom] = model.predict(genome_binaryP[chrom][prev:len(genome_binaryP[chrom])])
+                else:
+                    hmmOutputP[chrom] += model.predict(genome_binaryP[chrom][prev:len(genome_binaryP[chrom])])
+            prev = cur
+
+    # add darns to dict
+    for chrom, sequence in hmmOutputP.items():
+        DARNSP[chrom] = getDARNS(sequence)
+
+    pickle.dump((hmmOutputP, DARNSP), open(os.path.join(args.results_dir, sampleName + "_HMMResult.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    hmmOutputP, DARNSP = pickle.load(open(os.path.join(args.results_dir, sampleName + "_HMMResult.pickle"), "r"))
 
     # Measure attributes:
     # value of maximum positive strand correlation peak
@@ -448,19 +472,48 @@ def main(args):
         real = DARNS_features.loc[DARNS_features["type"] == "DARNS", feature].tolist()
         permuted = DARNS_features.loc[DARNS_features["type"] == "DARNSP", feature].tolist()
 
-        # see normality
-        # qqplot
-        import scipy.stats as stats
-        # stats.probplot(real, dist="norm", plot=plt)
-        # stats.probplot(permuted, dist="norm", plot=plt)
-
         # test difference
         if feature in ["length", "space_upstream", "space_downstream",
                        "read_count", "n_pospeaks", "n_negpeaks"]:
             # print chisquare(real, permuted)
-            print ks_2samp(real, permuted)
+            D, p = ks_2samp(real, permuted)
         elif feature in ["read_density"]:
-            print ks_2samp(real, permuted)
+            D, p = ks_2samp(real, permuted)
+        # see normality
+        # qqplot
+        import scipy.stats as stats
+
+        f, (ax1, ax2) = plt.subplots(2, sharex=True, sharey=True)
+        f.suptitle('%s - p:%f' % (feature, p))
+
+        stats.probplot(real, dist="norm", plot=ax1)
+        stats.probplot(permuted, dist="norm", plot=ax2)
+        
+        ax1.set_title('%s - Real data' % feature)
+        ax2.set_title('%s - Permuted data' % feature)
+
+        # f.tight_layout()
+        plt.savefig(os.path.join(args.plots_dir, sampleName + "_DARNS.qqplot-%s.pdf" % feature))
+        plt.close()
+
+        # plot variable distribution
+        sns.set(style="white", palette="muted")
+        b, g, r, p = sns.color_palette("muted", 4)
+        f, axes = plt.subplots(4, 2, figsize=(7, 7), sharex=True)
+
+        sns.distplot(real, kde=False, color=b, ax=axes[0, 0])
+        sns.distplot(real, hist=False, rug=True, color=r, ax=axes[0, 1])
+        sns.distplot(real, hist=False, color=g, kde_kws={"shade": True}, ax=axes[1, 0])
+        sns.distplot(real, color=p, ax=axes[1, 1])
+
+        sns.distplot(permuted, kde=False, color=b, ax=axes[2, 0])
+        sns.distplot(permuted, hist=False, rug=True, color=r, ax=axes[2, 1])
+        sns.distplot(permuted, hist=False, color=g, kde_kws={"shade": True}, ax=axes[3, 0])
+        sns.distplot(permuted, color=p, ax=axes[3, 1])
+
+        plt.savefig(os.path.join(args.plots_dir, sampleName + "_DARNS.distplot-%s.pdf" % feature))
+        plt.close()
+
     # plt.show()
 
     # Plot features for Real and Permuted DARNS
@@ -472,16 +525,26 @@ def main(args):
     sns.corrplot(DARNS_features[features], annot=False, sig_stars=False,
                  diag_names=False, cmap=cmap, ax=ax)
     f.tight_layout()
+    plt.savefig(os.path.join(args.plots_dir, sampleName + "_DARNS.corrplot.pdf"))
+    plt.close()
 
     # pair plot
-    g = sns.PairGrid(DARNS_features[features], diag_sharey=False)
-    g.map_lower(sns.kdeplot, cmap="Blues_d")
-    g.map_upper(plt.scatter)
-    g.map_diag(sns.kdeplot, lw=3)
+    f = sns.PairGrid(DARNS_features[features], diag_sharey=False)
+    f.map_lower(sns.kdeplot, cmap="Blues_d")
+    f.map_upper(plt.scatter)
+    f.map_diag(sns.kdeplot, lw=3)
+    plt.savefig(os.path.join(args.plots_dir, sampleName + "_DARNS.pairplot.pdf"))
+    plt.close()
 
     # pairwise distributions
+    size = sum(1 for _ in itertools.combinations(features, 2))
+    f, axs = plt.subplots(size, sharex=True, sharey=True)
+    i = 0
     for f1, f2 in itertools.combinations(features, 2):
-        g = sns.jointplot(DARNS_features[f1], DARNS_features[f2], kind="kde", size=7, space=0)
+        axs[i] = sns.jointplot(DARNS_features[f1], DARNS_features[f2], kind="kde", size=7, space=0)
+        i += 1
+    plt.savefig(os.path.join(args.plots_dir, sampleName + "_DARNS.pairplot.pdf"))
+    plt.close()
 
     # Train classifier on features
     # get random tenth of data to train on
@@ -496,6 +559,12 @@ def main(args):
     # lr.fit(np.array(train_features), train_labels, n_jobs=-1)
     # pred = lr.predict(DARNS_features.loc[: features])
 
+    # With statsmodels
+    # import statsmodels.api as sm
+    # logit = sm.Logit(train_features, train_labels)
+    # result = logit.fit()
+    #
+
     # Use nearest neighbours classifier
     from sklearn import neighbors
     n_neighbors = 4
@@ -503,14 +572,20 @@ def main(args):
     clf = neighbors.KNeighborsClassifier(n_neighbors, weights="uniform")  # try with "distance"
     clf.fit(train_features, train_labels)
 
-    # Predict N times for all data
-    N = 100
-
+    # Predict for all data
     pred = pd.DataFrame()
     pred["name"] = DARNS_features["name"].tolist()
     pred["type"] = DARNS_features["type"].tolist()
+    split = list(DARNS_features["name"].apply(lambda x: x.split("_")))
+    pred["chr"] = [i[0] for i in split]
+    pred["start"] = [i[1] for i in split]
+    pred["end"] = [i[2] for i in split]
+    pred["center"] = [i[3] for i in split]
 
-    for i in range(N):  # try increasing i
+    # Predict N times for all data
+    N = 100
+
+    for i in range(N):  # try increasing N
         pred[i] = clf.predict(DARNS_features.loc[:, features])
 
     # Get confusion matrix
@@ -535,9 +610,42 @@ def main(args):
         protocol=pickle.HIGHEST_PROTOCOL
     )
 
+    pred = pickle.load(open(os.path.join(args.results_dir, sampleName + "_DARNS.FDRs.pickle"), "r"))
+
+    # Export DARN tracks
+    allDARNS = pred[pred["type"] == "DARNS"]
+
+    # invert FDR and scale 0-1000 for bed track
+    allDARNS.replace({"FDR": {np.inf: 1}}, inplace=True)
+    allDARNS.loc[:, "FDR"] = (1 - allDARNS["FDR"]) * 1000
+
+    allDARNS.loc[:, ["chr", "start", "end", "name", "FDR"]].to_csv(
+        os.path.join(args.results_dir, sampleName + "_DARNS.all.bed"),
+        sep="\t", index=False, header=False
+    )
+
     # Keep DARNS with FDR < 0.5
     len(pred[pred["FDR"] < 0.5])
     realOnes = pred[(pred["FDR"] < 0.5) & (pred["type"] == "DARNS")]
+
+    # invert FDR and scale 0-1000 for bed track
+    realOnes.replace({"FDR": {np.inf: 1}}, inplace=True)
+    realOnes.loc[:, "FDR"] = (1 - realOnes["FDR"]) * 1000
+
+    realOnes.loc[:, ["chr", "start", "end", "name", "FDR"]].to_csv(
+        os.path.join(args.results_dir, sampleName + "_DARNS.FDR_filtered.bed"),
+        sep="\t", index=False, header=False
+    )
+
+    fakeOnes = pred[pred["type"] == "DARNSP"]
+    # invert FDR and scale 0-1000 for bed track
+    fakeOnes.replace({"FDR": {np.inf: 1}}, inplace=True)
+    fakeOnes.loc[:, "FDR"] = (1 - fakeOnes["FDR"]) * 1000
+
+    fakeOnes.loc[:, ["chr", "start", "end", "name", "FDR"]].to_csv(
+        os.path.join(args.results_dir, sampleName + "_DARNSP.all.bed"),
+        sep="\t", index=False, header=False
+    )
 
     # Plot again variables for DARNS with FDR < 0.5
 
