@@ -14,12 +14,11 @@ In brief, this does:
     * Calculate correlations between pattern and ChIPmentation read coverage/permuted reads along the genome.
     * Extract local maxima from correlation into a binary signal.
     * Feed to a HMM modeling a nucleosome, output predicted nucleosome-associated regions.
-This will do:
     * Measure several features of predicted regions.
     * Plot and calculate p-values for each feature between real data and permuted.
-    * Train multivariate linear regression (logistic) classifier with features from real and permuted data.
-    * Classify the rest of data 10 times independently and calculate FDR for each nucleosome-associated region.
-    * Export only nucleosome-associated regions with FDR<0.5.
+    * Train classifier with features from real and permuted data.
+    * Classify the rest of data N times independently and calculate FDR for each nucleosome-associated region.
+    * Export nucleosome-associated regions with FDR<0.5.
 
     * ... plus several plots along the way.
 
@@ -317,6 +316,7 @@ def main(args):
         last = ite[-1]
         # do it for 5M chunks at a time
         for cur in ite[1:]:
+            print(cur)
             if not cur == last:
                 if chrom not in hmmOutput.keys():
                     hmmOutput[chrom] = model.predict(genome_binary[chrom][prev:cur])
@@ -363,8 +363,8 @@ def main(args):
     for chrom, sequence in hmmOutputP.items():
         DARNSP[chrom] = getDARNS(sequence)
 
-    pickle.dump((hmmOutputP, DARNSP), open(os.path.join(args.results_dir, sampleName + "_HMMResult.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-    hmmOutputP, DARNSP = pickle.load(open(os.path.join(args.results_dir, sampleName + "_HMMResult.pickle"), "r"))
+    pickle.dump((hmmOutputP, DARNSP), open(os.path.join(args.results_dir, sampleName + "_HMMResultPermuted.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    hmmOutputP, DARNSP = pickle.load(open(os.path.join(args.results_dir, sampleName + "_HMMResultPermuted.pickle"), "r"))
 
     # Measure attributes:
     # value of maximum positive strand correlation peak
