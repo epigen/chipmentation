@@ -360,6 +360,8 @@ def main(args):
     # spacing to nearest upstream DARNS (bp)
     # spacing to nearest downstream DARNS (bp)
 
+    # maybe also read count and density from MNase
+
     # Measure read count and density in DARNS
     slurm = DivideAndSlurm()
 
@@ -537,7 +539,15 @@ def main(args):
     len(pred[pred["FDR"] < 0.5])
     realOnes = pred[(pred["FDR"] < 0.5) & (pred["type"] == "DARNS")]
 
+    # Plot again variables for DARNS with FDR < 0.5
+
     # Alternatively, train only with real DARNS overlapping H3K4me3 peaks
+
+    # Plot:
+    #    - From the middle of the DARN (mid-peak)
+    #    - From the 5' and 3' end of nucleosome Dyads
+    #    - DARNS frequency around TSSs (models and CAGE) and TTSs
+    #    - DARNS frequency around CpGs islands
 
 
 
