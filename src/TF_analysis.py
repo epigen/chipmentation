@@ -343,26 +343,24 @@ MNase = "/home/arendeiro/encode_mnase_k562wgEncodeSydhNsomeK562Sig.merged.bam"
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
 
 # subset samples
-sampleSubset = samples[samples['sampleName'].str.contains(
-    "K562_10M_CM_CTCF_nan_nan_0_0_hg19|" +
-    "K562_10M_CM_GATA1_nan_nan_1_0_hg19|" +
-    "K562_10M_CM_PU1_nan_nan_0_0_hg19|" +
-    "K562_10M_CM_REST_nan_nan_1_0_hg19"
-)].reset_index(drop=True)
+sampleSubset = samples[(samples["ip"].str.contains("CTCF|GATA1|PU1|REST")) & (samples["biologicalReplicate"] == 0)].reset_index(drop=True)
+sampleSubset = sampleSubset.sort(["ip", "technique"])
 
 # subset samples into signals
-signals = samples[samples['sampleName'].str.contains(
-    "K562_10M_CHIP_H3K27AC_nan_nan_1_0_hg19|" +
-    "K562_10M_CHIP_H3K4ME1_nan_nan_1_0_hg19|" +
-    "K562_10M_CM_H3K27AC_nan_nan_1_0_hg19|" +
-    "K562_10M_CM_H3K4ME1_nan_nan_1_0_hg19|" +
-    "K562_500K_CHIP_H3K27ME3_nan_nan_0_0_hg19|" +
-    "K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19|" +
-    "K562_500K_CM_H3K27ME3_nan_nan_0_0_hg19|" +
-    "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19"
-)].reset_index(drop=True)
+signals = samples[
+    samples["sampleName"].str.contains(
+        "K562_10M_CHIP_H3K27AC_nan_nan_1_0_hg19|" +
+        "K562_10M_CM_H3K27AC_nan_nan_1_0_hg19|" +
+        "K562_10M_CHIP_H3K4ME1_nan_nan_1_0_hg19|" +
+        "K562_10M_CM_H3K4ME1_nan_nan_0_0_hg19|" +
+        "K562_500K_CHIP_H3K27ME3_nan_nan_0_0_hg19|" +
+        "K562_500K_CM_H3K27ME3_nan_nan_0_0_hg19|" +
+        "K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19|" +
+        "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19"
+    )
+].reset_index(drop=True)
+signals = signals.sort(["ip", "technique"])
 
-genome = "hg19"
 windowRange = (-1000, 1000)
 fragmentsize = 1
 duplicates = False
@@ -382,7 +380,7 @@ for i in range(len(sampleSubset)):
     # Load peak file from bed files centered on motif, make window around
     try:
         peaks = pybedtools.BedTool(motifCentered)  # .slop(genome=genome, b=windowWidth / 2)
-    except IOError("File not found"), e:
+    except ValueError("File not found"), e:
         raise e
 
     # Exclude peaks in gaps or repeats
