@@ -337,13 +337,17 @@ projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
 resultsDir = projectRoot + "results"
 plotsDir = resultsDir + "/plots"
 DNase = "/home/arendeiro/data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam"
-MNase = "/home/arendeiro/encode_mnase_k562wgEncodeSydhNsomeK562Sig.merged.bam"
+MNase = "/home/arendeiro/encode_mnase_k562/wgEncodeSydhNsomeK562Sig.merged.bam"
 
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
 
 # subset samples
-sampleSubset = samples[(samples["ip"].str.contains("CTCF|GATA1|PU1|REST")) & (samples["biologicalReplicate"] == 0)].reset_index(drop=True)
+sampleSubset = samples[
+    (samples["technique"] == "CM") &
+    (samples["ip"].str.contains("CTCF|GATA1|PU1|REST")) &
+    (samples["biologicalReplicate"] == 0)
+].reset_index(drop=True)
 sampleSubset = sampleSubset.sort(["ip", "technique"])
 
 # subset samples into signals
@@ -356,7 +360,8 @@ signals = samples[
         "K562_500K_CHIP_H3K27ME3_nan_nan_0_0_hg19|" +
         "K562_500K_CM_H3K27ME3_nan_nan_0_0_hg19|" +
         "K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19|" +
-        "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19"
+        "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19|" +
+        "K562_50K_ATAC_nan_nan_nan_0_0_hg19"
     )
 ].reset_index(drop=True)
 signals = signals.sort(["ip", "technique"])
@@ -399,8 +404,10 @@ for i in range(len(sampleSubset)):
         print(sampleName, signalName)
         bamFile = sampleSubset['filePath'][i]
 
-        task = Coverage(peaks, 2, os.path.join(bamFile),
-                        orientation=True, fragment_size=1, strand_wise=True, queue="shortq", cpusPerTask=8
+        task = Coverage(peaks, 4, os.path.join(bamFile),
+                        orientation=True, fragment_size=1,
+                        strand_wise=True, queue="shortq", cpusPerTask=8,
+                        permissive=True
                         )
         task.id = exportName
         slurm.add_task(task)
@@ -413,8 +420,10 @@ for i in range(len(sampleSubset)):
         print(sampleName, signalName)
         bamFile = sampleSubset['controlSampleFilePath'][i]
 
-        task = Coverage(peaks, 2, os.path.join(bamFile),
-                        orientation=True, fragment_size=1, strand_wise=True, queue="shortq", cpusPerTask=8
+        task = Coverage(peaks, 4, os.path.join(bamFile),
+                        orientation=True, fragment_size=1,
+                        strand_wise=True, queue="shortq", cpusPerTask=8,
+                        permissive=True
                         )
         task.id = exportName
         slurm.add_task(task)
@@ -422,14 +431,16 @@ for i in range(len(sampleSubset)):
 
     # Get DNAse coverage
     for signal in ["DNase", "MNase"]:
-        signalName = "K562" + signal
+        signalName = "K562_" + signal
         exportName = "-".join([sampleName, signalName])
         if not os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
             print(sampleName, signalName)
             bamFile = eval(signal)
 
-            task = Coverage(peaks, 2, os.path.join(bamFile),
-                            orientation=True, fragment_size=1, strand_wise=True, queue="shortq", cpusPerTask=8
+            task = Coverage(peaks, 4, os.path.join(bamFile),
+                            orientation=True, fragment_size=1,
+                            strand_wise=True, queue="shortq", cpusPerTask=8,
+                            permissive=True
                             )
             task.id = exportName
             slurm.add_task(task)
@@ -445,8 +456,10 @@ for i in range(len(sampleSubset)):
             bamFile = signals['filePath'][j]
 
             # Make task
-            task = Coverage(peaks, 2, os.path.join(bamFile),
-                            orientation=True, fragment_size=1, strand_wise=True, queue="shortq", cpusPerTask=8
+            task = Coverage(peaks, 4, os.path.join(bamFile),
+                            orientation=True, fragment_size=1,
+                            strand_wise=True, queue="shortq", cpusPerTask=8,
+                            permissive=True
                             )
             task.id = exportName
 
@@ -459,7 +472,7 @@ while not all([t.is_ready() for t in slurm.tasks]):
 # Collect task outputs
 for task in slurm.tasks:
     print task.id
-    if not os.path.isfile(os.path.join(resultsDir, task.id + ".pdy")):
+    if not os.path.isfile(os.path.join(resultsDir, task.id + ".pdy")) and task.is_ready():
         cov = task.collect()
 
         # Make multiindex dataframe
@@ -473,6 +486,10 @@ for task in slurm.tasks:
         savePandas(os.path.join(resultsDir, task.id + ".pdy"), df)
         del cov
         del df
+        gc.collect()
+    else:
+        slurm.tasks.pop(slurm.tasks.index(task))
+        del task
         gc.collect()
 
 # Average signals
@@ -491,19 +508,20 @@ for i in range(len(sampleSubset)):
     print(exportName)
 
     if exportName not in names:
-        df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
+        if os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+            df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
 
-        # Get self average profiles and append to dataframe
-        df = pd.DataFrame({
-            "sample": sampleName,
-            "signal": signalName,
-            "average": df.apply(np.mean, axis=0),                            # both strands
-            "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-            "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-            "x": df.columns
-        })
-        aveSignals = pd.concat([aveSignals, df])
-        pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            # Get self average profiles and append to dataframe
+            df = pd.DataFrame({
+                "sample": sampleName,
+                "signal": signalName,
+                "average": df.apply(np.mean, axis=0),                            # both strands
+                "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
+                "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
+                "x": df.columns
+            })
+            aveSignals = pd.concat([aveSignals, df])
+            pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     # Control
     signalName = sampleSubset['controlSampleName'][i]
@@ -512,17 +530,18 @@ for i in range(len(sampleSubset)):
 
     if exportName not in names:
         # Get control average profiles and append to dataframe
-        df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
-        df = pd.DataFrame({
-            "sample": sampleName,
-            "signal": signalName,
-            "average": df.apply(np.mean, axis=0),                            # both strands
-            "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-            "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-            "x": df.columns
-        })
-        aveSignals = pd.concat([aveSignals, df])
-        pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        if os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+            df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
+            df = pd.DataFrame({
+                "sample": sampleName,
+                "signal": signalName,
+                "average": df.apply(np.mean, axis=0),                            # both strands
+                "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
+                "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
+                "x": df.columns
+            })
+            aveSignals = pd.concat([aveSignals, df])
+            pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     # DNase and MNase
     for signalName in ["K562_DNase", "K562_MNase"]:
@@ -531,17 +550,18 @@ for i in range(len(sampleSubset)):
 
         if exportName not in names:
             # Get control average profiles and append to dataframe
-            df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
-            df = pd.DataFrame({
-                "sample": sampleName,
-                "signal": signalName,
-                "average": df.apply(np.mean, axis=0),                            # both strands
-                "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-                "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-                "x": df.columns
-            })
-            aveSignals = pd.concat([aveSignals, df])
-            pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            if os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+                df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
+                df = pd.DataFrame({
+                    "sample": sampleName,
+                    "signal": signalName,
+                    "average": df.apply(np.mean, axis=0),                            # both strands
+                    "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
+                    "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
+                    "x": df.columns
+                })
+                aveSignals = pd.concat([aveSignals, df])
+                pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     for j in range(len(signals)):
         signalName = signals['sampleName'][j]
@@ -549,18 +569,19 @@ for i in range(len(sampleSubset)):
         print(exportName)
 
         if exportName not in names:
-            df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
-            # Get average profiles and append to dict
-            df = pd.DataFrame({
-                "sample": sampleName,
-                "signal": signalName,
-                "average": df.apply(np.mean, axis=0),                            # both strands
-                "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-                "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-                "x": df.columns
-            })
-            aveSignals = pd.concat([aveSignals, df])
-            pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            if os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+                df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
+                # Get average profiles and append to dict
+                df = pd.DataFrame({
+                    "sample": sampleName,
+                    "signal": signalName,
+                    "average": df.apply(np.mean, axis=0),                            # both strands
+                    "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
+                    "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
+                    "x": df.columns
+                })
+                aveSignals = pd.concat([aveSignals, df])
+                pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
 aveSignals = pickle.load(open(os.path.join(resultsDir, "aveSignals.pickle"), "r"))
 aveSignals.drop(["positive", "negative"], inplace=True, axis=1)
@@ -573,14 +594,35 @@ df = aveSignals.copy()
 for i in range(len(sampleSubset)):
     sampleName = sampleSubset['sampleName'][i]
     controlName = sampleSubset['controlSampleName'][i]
+
+    for signalName in [sampleName, controlName]:
+        for strand in ["average"]:
+            treat = aveSignals[(aveSignals["sample"] == sampleName) & (aveSignals["signal"] == signalName)][strand]
+            ctrl = aveSignals[(aveSignals["sample"] == sampleName) & (aveSignals["signal"] == controlName)][strand]
+
+            # standardize: 0-1
+            treat = ((treat - treat.min())) / ((treat.max() - treat.min()))
+            ctrl = ((ctrl - ctrl.min())) / ((ctrl.max() - ctrl.min()))
+
+            # normalize by input
+            norm = (np.array(treat) - np.array(ctrl))
+
+            df.loc[(df["sample"] == sampleName) & (df["signal"] == signalName), strand] = norm
+
     for j in range(len(signals)):
         signalName = signals['sampleName'][j]
 
         for strand in ["average"]:
             treat = aveSignals[(aveSignals["sample"] == sampleName) & (aveSignals["signal"] == signalName)][strand]
             ctrl = aveSignals[(aveSignals["sample"] == sampleName) & (aveSignals["signal"] == controlName)][strand]
-            ratio = sum(treat) / sum(ctrl)
-            norm = (np.array(treat + 1) / np.array(ctrl + 1)) * ratio
+
+            # standardize: 0-1
+            treat = ((treat - treat.min())) / ((treat.max() - treat.min()))
+            ctrl = ((ctrl - ctrl.min())) / ((ctrl.max() - ctrl.min()))
+
+            # normalize by input
+            norm = (np.array(treat) - np.array(ctrl))
+
             df.loc[(df["sample"] == sampleName) & (df["signal"] == signalName), strand] = norm
 
 # append normalized df to df
@@ -596,12 +638,12 @@ plotFunc = robj.r("""
     library(ggplot2)
 
     function(df, width, plotsDir, text){
-        p = ggplot(df, aes(x, value, colour = type)) +
+        p = ggplot(df, aes(x, value)) +
             geom_line() +
             #stat_smooth(se = F, method = "lm", formula = y ~ poly(x, 24)) +
             #stat_smooth(method = "gam", formula = y ~ s(x, k = 80), se = FALSE) +
             #stat_smooth(method = "loess", formula = y ~ x, size = 1, se = FALSE) +
-            facet_wrap(sample~signal, scales="free") +
+            facet_wrap(signal~type, scales="free") +
             xlab("Distance to peak") +
             ylab("Average tags per bp") +
             theme_bw() +
@@ -613,20 +655,18 @@ plotFunc = robj.r("""
     }
 """)
 
-gr = importr('grDevices')
-# convert the pandas dataframe to an R dataframe
-robj.pandas2ri.activate()
-aveSignals_R = robj.conversion.py2ri(df)
+for sample in df.sample.unique():
+    df2 = df[df["sample"] == sample]
+    gr = importr('grDevices')
+    # convert the pandas dataframe to an R dataframe
+    robj.pandas2ri.activate()
+    aveSignals_R = robj.conversion.py2ri(df2)
 
-# run the plot function on the dataframe
-plotFunc(aveSignals_R, 50, plotsDir, "norm")
-plotFunc(aveSignals_R, 100, plotsDir, "norm")
-plotFunc(aveSignals_R, 200, plotsDir, "norm")
-plotFunc(aveSignals_R, 500, plotsDir, "norm")
-
-
-
-
+    # run the plot function on the dataframe
+    plotFunc(aveSignals_R, 50, plotsDir, sample)
+    plotFunc(aveSignals_R, 100, plotsDir, sample)
+    plotFunc(aveSignals_R, 200, plotsDir, sample)
+    plotFunc(aveSignals_R, 500, plotsDir, sample)
 
 ##### OLD #####
 

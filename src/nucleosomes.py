@@ -345,7 +345,7 @@ def main(args):
         ite = range(0, len(genome_binaryP[chrom]), 5000000)
         prev = 0
         last = ite[-1]
-        # do it for 5M chunks at a time
+        # do it for 5Mb chunks at a time
         for cur in ite[1:]:
             if not cur == last:
                 if chrom not in hmmOutputP.keys():
@@ -414,10 +414,10 @@ def main(args):
 
     for regionName in ["DARNS", "DARNSP"]:
         regions = eval(regionName)
-        for chrm, _ in regions.items():
+        for chrom, _ in regions.items():
             for i in range(len(regions[chrom])):
-                start, end, center = regions[chrm][i]
-                name = "_".join([chrm, str(start), str(end), str(center)])
+                start, end, center = regions[chrom][i]
+                name = "_".join([chrom, str(start), str(end), str(center)])
 
                 s = pd.Series(index=["type"] + ["name"] + features)
                 s["type"] = regionName
@@ -437,8 +437,8 @@ def main(args):
                     s["space_downstream"] = None
 
                 # get posterior prob
-                sequence = genome_binary[chrom][start: end]
-                s["post_prob"] = model.retrieveProbabilities(sequence)
+                # sequence = genome_binary[chrom][start: end]
+                # s["post_prob"] = model.retrieveProbabilities(sequence)
 
                 # get read count
                 s["read_count"] = cov[regionName][name].sum()
