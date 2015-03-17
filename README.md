@@ -23,7 +23,7 @@ Further, Samples where all of the above are the same except for `technicalReplic
 
 For downstream analysis I've been using mostly the later case: `technicalReplicate=0`, `biologicalReplicate=0`.
 
-This creates a [***sheet with new samples*** containing these merged ones](https://github.com/ComputationalEpigenetics/chipmentation/blob/master/chipmentation.sample_annotation.controlPaired.csv), and paired control samples, which I use for downstream.
+This creates a [***sheet with new samples*** containing these merged ones](https://github.com/ComputationalEpigenetics/chipmentation/blob/master/chipmentation.replicates.annotation_sheet.csv), and paired control samples, which I use for downstream.
 
 ### Project structure
 As defined in [`chipseq-pipelines`](https://github.com/afrendeiro/chipseq-pipelines):
