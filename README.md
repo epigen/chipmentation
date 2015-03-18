@@ -87,4 +87,4 @@ I will document the other folders in due time.
 - Rephrase that ChIPmentation does allow the usage of less cells, but that is dependant on the abundance of the factor and antibody efficiency
 - Mention that we're able to recover much smaller fragments due to no adapter dimers (show bioanalyzer profiles)
 - Mention we remove the transposase by washing the ChIP with SDS (as previously demonstrated)
-- Show library size distribution created with different amounts of transposase
+- Show library size distribution created with different amounts of transposase (see [relevant document](https://github.com/ComputationalEpigenetics/chipmentation/tree/master/results/fragment_size))
