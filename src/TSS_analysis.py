@@ -205,6 +205,60 @@ def normalize(x):
     return (x - min(x)) / (max(x) - min(x))
 
 
+def smooth(x, window_len=8, window='hanning'):
+    """smooth the data using a window with requested size.
+
+    This method is based on the convolution of a scaled window with the signal.
+    The signal is prepared by introducing reflected copies of the signal
+    (with the window size) in both ends so that transient parts are minimized
+    in the begining and end part of the output signal.
+
+    input:
+        x: the input signal
+        window_len: the dimension of the smoothing window; should be an odd integer
+        window: the type of window from 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'
+            flat window will produce a moving average smoothing.
+
+    output:
+        the smoothed signal
+
+    example:
+
+    t=linspace(-2,2,0.1)
+    x=sin(t)+randn(len(t))*0.1
+    y=smooth(x)
+
+    see also:
+
+    numpy.hanning, numpy.hamming, numpy.bartlett, numpy.blackman, numpy.convolve
+    scipy.signal.lfilter
+
+    TODO: the window parameter could be the window itself if an array instead of a string
+    NOTE: length(output) != length(input), to correct this: return y[(window_len/2-1):-(window_len/2)] instead of just y.
+    """
+    if x.ndim != 1:
+        raise ValueError("smooth only accepts 1 dimension arrays.")
+
+    if x.size < window_len:
+        raise ValueError("Input vector needs to be bigger than window size.")
+
+    if window_len < 3:
+        return x
+
+    if window not in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
+        raise ValueError("Window is one of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
+
+    s = np.r_[x[window_len - 1:0:-1], x, x[-1:-window_len:-1]]
+    # print(len(s))
+    if window == 'flat':  # moving average
+        w = np.ones(window_len, 'd')
+    else:
+        w = eval('np.' + window + '(window_len)')
+
+    y = np.convolve(w / w.sum(), s, mode='valid')
+    return y
+
+
 # Load TSSs from bed file, transform by window width
 tsss = pybedtools.BedTool(bedFilePath).slop(genome=genome, b=windowWidth / 2)
 tsss = bedToolsInterval2GenomicInterval(tsss)
@@ -220,39 +274,44 @@ aveSignals = OrderedDict()
 for i in range(len(sampleSubset)):
     name = sampleSubset['sampleName'][i]
 
-    # Load bam
-    bamfile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
+    if name not in aveSignals.keys():
 
-    # Get dataframe of signal coverage in bed regions, append to dict
-    cov = coverage(bamfile, tsss, fragmentsize, strand_specific=True)
+        # Load bam
+        bamfile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
 
-    # Make multiindex dataframe
-    levels = [cov.keys(), ["+", "-"]]
-    labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
-    index = pd.MultiIndex(labels=labels, levels=levels, names=["tss", "strand"])
-    df = pd.DataFrame(np.vstack(cov.values()), index=index, columns=range(windowRange[0], windowRange[1] + 1))
+        # Get dataframe of signal coverage in bed regions, append to dict
+        cov = coverage(bamfile, tsss, fragmentsize, strand_specific=True)
 
-    # For strand_specific=False
-    # cov = coverage(bamfile, tsss, fragmentsize)
-    # df = pd.DataFrame(cov).T
-    # df.columns = range(windowRange[0], windowRange[1])
+        # Make multiindex dataframe
+        levels = [cov.keys(), ["+", "-"]]
+        labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
+        index = pd.MultiIndex(labels=labels, levels=levels, names=["tss", "strand"])
+        df = pd.DataFrame(np.vstack(cov.values()), index=index, columns=range(windowRange[0], windowRange[1] + 1))
 
-    # append to dict
-    rawSignals[name] = df
+        # For strand_specific=False
+        # cov = coverage(bamfile, tsss, fragmentsize)
+        # df = pd.DataFrame(cov).T
+        # df.columns = range(windowRange[0], windowRange[1])
 
-    # Get average profiles and append to dict
-    ave = {
-        "name": name,
-        "average": df.apply(np.mean, axis=0),                              # both strands
-        "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),    # positive strand
-        "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0)     # negative strand
-    }
-    aveSignals[name] = pd.DataFrame(ave)
+        # append to dict
+        rawSignals[name] = df
+        pickle.dump(rawSignals, open(os.path.join(resultsDir, "TSS_rawSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
+        # Get average profiles and append to dict
+        ave = {
+            "name": name,
+            "average": df.apply(np.mean, axis=0),                              # both strands
+            "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),    # positive strand
+            "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0)     # negative strand
+        }
+        aveSignals[name] = pd.DataFrame(ave)
+        pickle.dump(aveSignals, open(os.path.join(resultsDir, "TSS_aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
+aveSignals = pickle.load(open(os.path.join(resultsDir, "TSS_aveSignals.pickle"), "r"))
 # Plot average profiles for all signals with ggplot
 aveSignals = pd.concat(aveSignals, axis=0)
 aveSignals["x"] = [i[1] for i in aveSignals.index]
+aveSignals = aveSignals.sort(["name"]).reset_index(drop=True)
 aveSignals = pd.melt(aveSignals, id_vars=["x", "name"])
 
 plotFunc = robj.r("""
@@ -262,17 +321,17 @@ plotFunc = robj.r("""
 
     function(df, plotsDir){{
         p = ggplot(df, aes(x, value, colour = variable)) +
-            stat_smooth(method = "gam", formula = y ~ s(x, k = 20), se = FALSE) +
-            facet_wrap(~signal) +
-            xlab("Distance to peak") +
+            geom_line() +
+            #stat_smooth(method = "gam", formula = y ~ s(x, k = 20), se = FALSE) +
+            facet_wrap(~name, scales="free") +
+            xlab("Distance to tss") +
             ylab("Average tags per bp") +
             theme_bw() +
             theme(legend.title=element_blank()) +
             #scale_colour_manual(values=cbPalette[c("grey", ,3,7)])
             scale_colour_manual(values=c("grey", "dark blue","dark red"))
 
-        ggsave(filename = paste0(plotsDir, "/tssSignals_{0}bp.pdf"), plot = p, height = 4, width = 4)
-        ggsave(filename = paste0(plotsDir, "/tssSignals_{0}bp.wide.pdf"), plot = p, height = 4, width = 6)
+        ggsave(filename = paste0(plotsDir, "/tssSignals_{0}bp.pdf"), plot = p, height = 8, width = 16)
     }}
     """.format(windowWidth)
 )
@@ -285,11 +344,65 @@ aveSignals_R = robj.conversion.py2ri(aveSignals)
 # run the plot function on the dataframe
 plotFunc(aveSignals_R, plotsDir)
 
-# save object
-pickle.dump(rawSignals,
-            open(os.path.join(plotsDir, "..", "tssSignals_{0}bp.pickl").format(str(windowWidth)), "wb"),
-            protocol=pickle.HIGHEST_PROTOCOL
-            )
+# Plot normalized
+aveSignals = pickle.load(open(os.path.join(resultsDir, "TSS_aveSignals.pickle"), "r"))
+aveSignals = pd.concat(aveSignals, axis=0)
+aveSignals["x"] = [i[1] for i in aveSignals.index]
+aveSignals = aveSignals.sort(["name"]).reset_index(drop=True)
+
+# Normalize
+aveSignalsNorm = aveSignals.copy()
+for i in range(len(sampleSubset)):
+    sampleName = sampleSubset['sampleName'][i]
+    controlName = sampleSubset['controlSampleName'][i]
+
+    if controlName != "":
+        for strand in ['average', 'negative', 'positive']:
+            treat = aveSignals[aveSignals["name"] == sampleName][strand]
+            ctrl = aveSignals[aveSignals["name"] == controlName][strand]
+
+            # standardize: 0-1
+            treat = ((treat - treat.min())) / ((treat.max() - treat.min()))
+            ctrl = ((ctrl - ctrl.min())) / ((ctrl.max() - ctrl.min()))
+
+            # normalize by input
+            norm = np.array(treat) - np.array(ctrl)
+
+            aveSignalsNorm.loc[aveSignalsNorm["name"] == sampleName, strand] = norm
+
+
+aveSignalsNorm = pd.melt(aveSignalsNorm, id_vars=["x", "name"])
+
+plotFunc = robj.r("""
+    library(ggplot2)
+
+    #cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+    function(df, plotsDir){{
+        p = ggplot(df, aes(x, value, colour = variable)) +
+            geom_line() +
+            #stat_smooth(method = "gam", formula = y ~ s(x, k = 20), se = FALSE) +
+            facet_wrap(~name, scales="free") +
+            xlab("Distance to tss") +
+            ylab("Average tags per bp") +
+            theme_bw() +
+            theme(legend.title=element_blank()) +
+            #scale_colour_manual(values=cbPalette[c("grey", ,3,7)])
+            scale_colour_manual(values=c("grey", "dark blue","dark red"))
+
+        ggsave(filename = paste0(plotsDir, "/tssSignalsNorm_{0}bp.pdf"), plot = p, height = 8, width = 16)
+    }}
+    """.format(windowWidth)
+)
+
+gr = importr('grDevices')
+# convert the pandas dataframe to an R dataframe
+robj.pandas2ri.activate()
+aveSignals_R = robj.conversion.py2ri(aveSignalsNorm)
+
+# run the plot function on the dataframe
+plotFunc(aveSignals_R, plotsDir)
+
 
 # Loop through raw signals, normalize, k-means cluster, save pickle, plot heatmap, export cdt
 for i in range(len(sampleSubset)):
@@ -329,27 +442,44 @@ for i in range(len(sampleSubset)):
         protocol=pickle.HIGHEST_PROTOCOL
     )
 
-    # Sort all signals by dataframe by cluster order
-    for j in range(len(sampleSubset)):
-        name2 = sampleSubset['sampleName'][j]
-        print("Exporting heatmaps for %s" % name2)
-        df = rawSignals[name2]
-        df = df.xs('+', level="strand") + df.xs('-', level="strand")
+    print("Exporting heatmaps for %s" % name)
+    
+    # now sort by clust order
+    dfNorm = pd.merge(dfNorm, clustOrder, on=None, left_index=True, right_index=True)  # get common rows (should be all)
+    dfNorm.replace(["inf", "NaN"], 0, inplace=True)
+    dfNorm.sort_index(by="cluster", axis=0, inplace=True)
+    dfNorm.drop("cluster", axis=1, inplace=True)
 
-        # scale row signal to 0:1 (standardization)
-        dfNorm = df.apply(lambda x: (x - min(x)) / (max(x) - min(x)), axis=1)
-        dfNorm.replace("inf", 0, inplace=True)
+    # Plot heatmap
+    # data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
+    # plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".plotly.pdf"))
+    # plotHeatmap(dfNorm, os.path.join(plotsDir, exportName + "." + name2 + "_signal.matplotlib.pdf"))
 
-        # now sort by clust order
-        dfNorm = pd.merge(dfNorm, clustOrder, on=None, left_index=True, right_index=True)  # get common rows (should be all)
-        dfNorm.replace(["inf", "NaN"], 0, inplace=True)
-        dfNorm.sort_index(by="cluster", axis=0, inplace=True)
-        dfNorm.drop("cluster", axis=1, inplace=True)
+    # Export as cdt
+    exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "_signal.cdt"))
 
-        # Plot heatmap
-        # data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
-        # plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".plotly.pdf"))
-        plotHeatmap(dfNorm, os.path.join(plotsDir, exportName + "." + name2 + "_signal.matplotlib.pdf"))
 
-        # Export as cdt
-        exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "." + name2 + "_signal.cdt"))
+    # # Sort all signals by dataframe by cluster order
+    # for j in range(len(sampleSubset)):
+    #     name2 = sampleSubset['sampleName'][j]
+    #     print("Exporting heatmaps for %s" % name2)
+    #     df = rawSignals[name2]
+    #     df = df.xs('+', level="strand") + df.xs('-', level="strand")
+
+    #     # scale row signal to 0:1 (standardization)
+    #     dfNorm = df.apply(lambda x: (x - min(x)) / (max(x) - min(x)), axis=1)
+    #     dfNorm.replace("inf", 0, inplace=True)
+
+    #     # now sort by clust order
+    #     dfNorm = pd.merge(dfNorm, clustOrder, on=None, left_index=True, right_index=True)  # get common rows (should be all)
+    #     dfNorm.replace(["inf", "NaN"], 0, inplace=True)
+    #     dfNorm.sort_index(by="cluster", axis=0, inplace=True)
+    #     dfNorm.drop("cluster", axis=1, inplace=True)
+
+    #     # Plot heatmap
+    #     # data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
+    #     # plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".plotly.pdf"))
+    #     # plotHeatmap(dfNorm, os.path.join(plotsDir, exportName + "." + name2 + "_signal.matplotlib.pdf"))
+
+    #     # Export as cdt
+    #     exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "." + name2 + "_signal.cdt"))
