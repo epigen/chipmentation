@@ -82,6 +82,45 @@ addTrackToHub() {
 }
 export -f addTrackToHub
 
+
+samToBam2() {
+    NAME=$1
+    samtools view -S -b \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.sam \
+    -o /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.bam
+
+    samtools sort /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.bam \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.sorted
+    
+    samtools index /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.sorted.bam
+}
+export -f samToBam2
+
+
+samToBam() {
+    NAME=$1
+
+    for N in ${NAME}.1 ${NAME}.2 ${NAME}.3 ${NAME}.4
+    do
+        samToBam2 $N
+    done
+}
+export -f samToBam
+
+
+countReadsInPeaks() {
+    NAME=$1
+
+    bedtools multicov -bams /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.1.bam \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.2.bam \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.3.bam \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.4.bam \
+    -bed /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/peaks/${NAME}/${NAME}_peaks.narrowPeak > \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.readCount
+}
+export -f countReadsInPeaks
+
+
 declare -a SAMPLES
 
 SAMPLES=(K562_10M_ATAC_H3K4ME1_nan_PE_1_1_hg19 K562_10M_ATAC_PU1_nan_PE_1_1_hg19 
@@ -110,3 +149,60 @@ chmod 655 /fhgfs/groups/lab_bock/public_html/arendeiro/chipmentation/pe/
 
 # Go to:
 # http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://www.biomedical-sequencing.at/bocklab/arendeiro/chipmentation/pe/trackHub.txt
+
+
+#### Get FRiP per fragment
+
+parallel samToBam ::: ${SAMPLES[*]}
+
+SAMPLES=(K562_10M_ATAC_H3K4ME1_nan_PE_1_1_hg19 K562_10M_ATAC_PU1_nan_PE_1_1_hg19 
+    K562_10M_CM_H3K4ME1_nan_PE_1_1_hg19 K562_10M_CM_PU1_nan_PE_1_1_hg19 
+    K562_500K_ATAC_H3K4ME3_nan_01ULTN5_PE_1_1_hg19 K562_500K_CM_H3K4ME3_nan_02ULTN5_PE_1_1_hg19 
+    K562_500K_CM_H3K4ME3_nan_05ULTN5_PE_1_1_hg19 K562_500K_CM_H3K4ME3_nan_1ULTN5_PE_1_1_hg19 
+    K562_500K_CM_H3K4ME3_nan_5ULTN5_PE_1_1_hg19)
+
+parallel countReadsInPeaks ::: ${SAMPLES[*]}
+
+
+# Make table with FRiP per fragment length
+echo name fraction value > /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/FRiP_per_fragment_length.tsv
+
+for NAME in ${SAMPLES[*]}
+do
+    SUMS=($(awk -v OFS='\t' '{sum1+=$11; sum2+=$12; sum3+=$13; sum4+=$14} END {print sum1,sum2,sum3,sum4}' \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.readCount))
+    #echo $SUMS
+
+    for N in 1 2 3 4
+    do
+        TOTAL=`samtools idxstats /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.${N}.bam | \
+        awk '{sum+=$3} END {print sum}'`
+
+        CUR=$((N - 1))
+        SUM=${SUMS[$CUR]}
+        echo $NAME $N $(awk "BEGIN {printf \"%.2f\",${SUM}/${TOTAL}}") >> \
+        /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/FRiP_per_fragment_length.tsv
+    done
+done
+
+### R code to plot
+# library(reshape)
+# df = read.table("/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/FRiP_per_fragment_length.tsv", header=TRUE)
+
+# df = melt(df)
+
+# library(ggplot2)
+
+# ggplot( data = df, aes( Date, Visits )) + geom_line() 
+
+
+
+# p = ggplot(df, aes(fraction, value)) +
+#     geom_line() +
+#     facet_wrap(~name, scales="free") +
+#     xlab("Fraction of reads") +
+#     ylab("FRiP") +
+#     theme_bw() +
+#     theme(legend.title=element_blank())
+
+# ggsave(filename = paste0("FRiP_per_fragment_length.pdf"), plot = p, height = 12, width = 15)

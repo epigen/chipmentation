@@ -286,37 +286,6 @@ def getMNaseProfile(chrom, start, end):
         return [0] * (end - start)
 
 
-# # Get MNase data
-# # Loop through all samples, submit tasks to compute coverage in peak regions centered on motifs
-# for i in range(len(sampleSubset)):
-#     sampleName = sampleSubset['sampleName'][i]
-#     motifCentered = re.sub("\..*", ".", sampleSubset['peakFile'][i]) + "motifCentered.bed"
-
-#     # Load peak file from bed files centered on motif, make window around
-#     try:
-#         peaks = pybedtools.BedTool(motifCentered)  # .slop(genome=genome, b=windowWidth / 2)
-#     except IOError("File not found"), e:
-#         raise e
-
-#     # Exclude peaks in gaps or repeats
-#     peaks.intersect(b=gapsRepeats, v=True, wa=True)
-#     peaks = bedToolsInterval2GenomicInterval(peaks)
-
-#     # Filter peaks near chrm borders
-#     for peak, interval in peaks.iteritems():
-#         if interval.length < windowWidth:
-#             peaks.pop(peak)
-
-#     cov = {peak: getMNaseProfile(iv.chrom, iv.start, iv.end) for peak, iv in peaks.items()}
-
-#     df = pd.DataFrame({
-#         "sample": sampleName,
-#         "signal": "K562_MNase",
-#         "average": df.apply(np.mean, axis=0),                            # both strands
-#         "x": df.columns
-#     })
-
-
 def exportToJavaTreeView(df, filename):
     """
     Export cdt file of cluster to view in JavaTreeView.
@@ -361,10 +330,14 @@ signals = samples[
         "K562_500K_CM_H3K27ME3_nan_nan_0_0_hg19|" +
         "K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19|" +
         "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19|" +
-        "K562_50K_ATAC_nan_nan_nan_0_0_hg19"
+        "K562_50K_ATAC_nan_nan_nan_0_0_hg19|" +
+        "K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
     )
 ].reset_index(drop=True)
 signals = signals.sort(["ip", "technique"])
+
+signals = signals.append(pd.Series(data=["DNase", DNase], index=["sampleName", "filePath"]), ignore_index=True)
+signals = signals.append(pd.Series(data=["MNase", MNase], index=["sampleName", "filePath"]), ignore_index=True)
 
 windowRange = (-1000, 1000)
 fragmentsize = 1
@@ -413,6 +386,25 @@ for i in range(len(sampleSubset)):
         slurm.add_task(task)
         slurm.submit(task)
 
+    # PU1 chip-tagmentation
+    if sampleName == "K562_10M_CM_PU1_nan_nan_0_0_hg19":
+        signalName = "K562_10M_ATAC_PU1_nan_PE_1_1_hg19"
+        exportName = "-".join([sampleName, signalName])
+        print(exportName)
+
+        if not os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+            print(sampleName, signalName)
+            bamFile = sampleSubset['filePath'][i]
+
+            task = Coverage(peaks, 4, os.path.join(bamFile),
+                            orientation=True, fragment_size=1,
+                            strand_wise=True, queue="shortq", cpusPerTask=8,
+                            permissive=True
+                            )
+            task.id = exportName
+            slurm.add_task(task)
+            slurm.submit(task)
+
     # Get control coverage
     signalName = sampleSubset['controlSampleName'][i]
     exportName = "-".join([sampleName, signalName])
@@ -428,23 +420,6 @@ for i in range(len(sampleSubset)):
         task.id = exportName
         slurm.add_task(task)
         slurm.submit(task)
-
-    # Get DNAse coverage
-    for signal in ["DNase", "MNase"]:
-        signalName = "K562_" + signal
-        exportName = "-".join([sampleName, signalName])
-        if not os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
-            print(sampleName, signalName)
-            bamFile = eval(signal)
-
-            task = Coverage(peaks, 4, os.path.join(bamFile),
-                            orientation=True, fragment_size=1,
-                            strand_wise=True, queue="shortq", cpusPerTask=8,
-                            permissive=True
-                            )
-            task.id = exportName
-            slurm.add_task(task)
-            slurm.submit(task)
 
     # Get coverage over other signals
     for j in range(len(signals)):
@@ -523,6 +498,27 @@ for i in range(len(sampleSubset)):
             aveSignals = pd.concat([aveSignals, df])
             pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
+    # PU1 chip-tagmentation
+    if sampleName == "K562_10M_CM_PU1_nan_PE_1_1_hg19":
+        signalName = "K562_10M_ATAC_PU1_nan_PE_1_1_hg19"
+        exportName = "-".join([sampleName, signalName])
+        print(exportName)
+
+        if os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+            df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
+
+            # Get self average profiles and append to dataframe
+            df = pd.DataFrame({
+                "sample": sampleName,
+                "signal": signalName,
+                "average": df.apply(np.mean, axis=0),                            # both strands
+                "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
+                "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
+                "x": df.columns
+            })
+            aveSignals = pd.concat([aveSignals, df])
+            pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
     # Control
     signalName = sampleSubset['controlSampleName'][i]
     exportName = "-".join([sampleName, signalName])
@@ -542,26 +538,6 @@ for i in range(len(sampleSubset)):
             })
             aveSignals = pd.concat([aveSignals, df])
             pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-
-    # DNase and MNase
-    for signalName in ["K562_DNase", "K562_MNase"]:
-        exportName = "-".join([sampleName, signalName])
-        print(exportName)
-
-        if exportName not in names:
-            # Get control average profiles and append to dataframe
-            if os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
-                df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
-                df = pd.DataFrame({
-                    "sample": sampleName,
-                    "signal": signalName,
-                    "average": df.apply(np.mean, axis=0),                            # both strands
-                    "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-                    "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-                    "x": df.columns
-                })
-                aveSignals = pd.concat([aveSignals, df])
-                pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     for j in range(len(signals)):
         signalName = signals['sampleName'][j]

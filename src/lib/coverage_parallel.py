@@ -46,6 +46,8 @@ def coverageInWindow(feature, bam, fragmentsize, orientation, duplicates, strand
         alnsInWindow = alns
 
     for aln in alnsInWindow:
+        if not aln.aligned:
+            continue
         # check if duplicate
         if not duplicates and aln.pcr_or_optical_duplicate:
             continue

@@ -25,15 +25,37 @@ from rpy2.robjects.packages import importr
 from sklearn.cluster import k_means
 import cPickle as pickle
 
-# import plotly.plotly as plotly
-# from plotly.graph_objs import Data, Heatmap, Layout, Figure
-
 # Define variables
 projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
-plotsDir = projectRoot + "results/plots"
-samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.biol_replicates.annotation_sheet.csv"))
-# subset
-samples = samples[samples['sampleName'].str.contains("PBMC")].reset_index()
+resultsDir = projectRoot + "results"
+plotsDir = resultsDir + "/plots"
+DNase = "/home/arendeiro/data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam"
+MNase = "/home/arendeiro/encode_mnase_k562/wgEncodeSydhNsomeK562Sig.merged.bam"
+
+# Get samples
+samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
+
+# subset samples
+sampleSubset = samples[
+    (samples["technique"].str.contains("CM|CHIP")) &
+    (samples["ip"].str.contains("H3K4ME1|H3K4ME3|H3K27ME3")) &
+    (samples["numberCells"].str.contains("500K|10M")) &
+    (samples["biologicalReplicate"] == 0)
+].reset_index(drop=True)
+
+sampleSubset = sampleSubset.append(samples[
+    (samples["sampleName"].str.contains("K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19|" + 
+    "K562_10M_CM_H3K36ME3_nan_nan_1_1_hg19|K562_10M_CHIP_H3K4ME1_nan_nan_1_0_hg19|" +
+    "K562_10K_CM_IGG_nan_nan_0_0_hg19|K562_10M_CHIP_IGG_nan_nan_0_0_hg19|" + 
+    "K562_10M_CM_IGG_nan_nan_0_0_hg19|K562_500K_CM_IGG_nan_nan_0_0_hg19|" +
+    "K562_50K_ATAC_nan_nan_nan_0_0_hg19|K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
+))
+].reset_index(drop=True))
+
+sampleSubset = sampleSubset.append(pd.Series(data=["DNase", DNase], index=["sampleName", "filePath"]), ignore_index=True)
+sampleSubset = sampleSubset.append(pd.Series(data=["MNase", MNase], index=["sampleName", "filePath"]), ignore_index=True)
+
+sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
 bedFilePath = "/home/arendeiro/reference/Homo_sapiens/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
 genome = "hg19"
@@ -195,11 +217,11 @@ for name, interval in tsss.iteritems():
 # save dicts with coverage and average profiles
 rawSignals = OrderedDict()
 aveSignals = OrderedDict()
-for i in range(len(samples)):
-    name = samples['sampleName'][i]
+for i in range(len(sampleSubset)):
+    name = sampleSubset['sampleName'][i]
 
     # Load bam
-    bamfile = HTSeq.BAM_Reader(samples['filePath'][i])
+    bamfile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
 
     # Get dataframe of signal coverage in bed regions, append to dict
     cov = coverage(bamfile, tsss, fragmentsize, strand_specific=True)
@@ -249,8 +271,8 @@ plotFunc = robj.r("""
             #scale_colour_manual(values=cbPalette[c("grey", ,3,7)])
             scale_colour_manual(values=c("grey", "dark blue","dark red"))
 
-        ggsave(filename = paste0(plotsDir, "/PBMCs_tssSignals_{0}bp.pdf"), plot = p, height = 4, width = 4)
-        ggsave(filename = paste0(plotsDir, "/PBMCs_tssSignals_{0}bp.wide.pdf"), plot = p, height = 4, width = 6)
+        ggsave(filename = paste0(plotsDir, "/tssSignals_{0}bp.pdf"), plot = p, height = 4, width = 4)
+        ggsave(filename = paste0(plotsDir, "/tssSignals_{0}bp.wide.pdf"), plot = p, height = 4, width = 6)
     }}
     """.format(windowWidth)
 )
@@ -270,8 +292,8 @@ pickle.dump(rawSignals,
             )
 
 # Loop through raw signals, normalize, k-means cluster, save pickle, plot heatmap, export cdt
-for i in range(len(samples)):
-    name = samples['sampleName'][i]
+for i in range(len(sampleSubset)):
+    name = sampleSubset['sampleName'][i]
     print("Clustering based on %s" % name)
     exportName = "{0}.tssSignal_{1}bp.kmeans_{2}k".format(name, str(windowWidth), n_clusters)
 
@@ -308,8 +330,8 @@ for i in range(len(samples)):
     )
 
     # Sort all signals by dataframe by cluster order
-    for j in range(len(samples)):
-        name2 = samples['sampleName'][j]
+    for j in range(len(sampleSubset)):
+        name2 = sampleSubset['sampleName'][j]
         print("Exporting heatmaps for %s" % name2)
         df = rawSignals[name2]
         df = df.xs('+', level="strand") + df.xs('-', level="strand")
