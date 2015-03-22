@@ -14,27 +14,39 @@ splitBam() {
             close( "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.3.sam" )
             print >> "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.4.sam"
             close( "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.4.sam" )
+            print >> "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.5.sam"
+            close( "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.5.sam" )
         }
-        else if( abs < 98 ) {
+        else if( abs < 63 ) {
             print >> "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.1.sam"
             close( "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.1.sam" )
         }
-        else if( 99 < abs  && abs < 112 ) {
+        else if( 64 < abs  && abs < 81 ) {
             print >> "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.2.sam"
             close( "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.2.sam" )
         }
-        else if( 113 < abs  && abs < 140 ) {
+        else if( 82 < abs  && abs < 103 ) {
             print >> "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.3.sam"
             close( "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.3.sam" )
         }
-        else {
+        else if( 104 < abs  && abs < 137 ) {
             print >> "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.4.sam"
             close( "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.4.sam" )
+        }
+        else {
+            print >> "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.5.sam"
+            close( "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/'$NAME'.5.sam" )
         }
     }'
 }
 export -f splitBam
 
+# for NAME in ${SAMPLES[*]}
+# do
+#     head -n 27 /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.4.sam > header
+#     cat header /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.5.sam > tmp
+#     mv tmp /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.5.sam
+# done
 
 replaceHeader() {
     NAME=$1
@@ -42,6 +54,7 @@ replaceHeader() {
     sed -i .bak -e '1s/SO:coordinate/SO:unsorted/' /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.2.sam
     sed -i .bak -e '1s/SO:coordinate/SO:unsorted/' /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.3.sam
     sed -i .bak -e '1s/SO:coordinate/SO:unsorted/' /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.4.sam
+    sed -i .bak -e '1s/SO:coordinate/SO:unsorted/' /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.5.sam
 }
 export -f replaceHeader
 
@@ -67,7 +80,7 @@ export -f samToBigWig
 samToUCSC() {
     NAME=$1
 
-    for N in ${NAME}.1 ${NAME}.2 ${NAME}.3 ${NAME}.4
+    for N in ${NAME}.1 ${NAME}.2 ${NAME}.3 ${NAME}.4 ${NAME}.5
     do
          samToBigWig $N
     done
@@ -100,7 +113,7 @@ export -f samToBam2
 samToBam() {
     NAME=$1
 
-    for N in ${NAME}.1 ${NAME}.2 ${NAME}.3 ${NAME}.4
+    for N in ${NAME}.1 ${NAME}.2 ${NAME}.3 ${NAME}.4 ${NAME}.5
     do
         samToBam2 $N
     done
@@ -111,10 +124,11 @@ export -f samToBam
 countReadsInPeaks() {
     NAME=$1
 
-    bedtools multicov -bams /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.1.bam \
-    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.2.bam \
-    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.3.bam \
-    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.4.bam \
+    bedtools multicov -bams /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.1.sorted.bam \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.2.sorted.bam \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.3.sorted.bam \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.4.sorted.bam \
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.5.sorted.bam \
     -bed /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/peaks/${NAME}/${NAME}_peaks.narrowPeak > \
     /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.readCount
 }
@@ -137,7 +151,7 @@ parallel samToUCSC ::: ${SAMPLES[*]}
 
 for SAMPLE in ${SAMPLES[@]}
 do
-    for N in ${SAMPLE}.1 ${SAMPLE}.2 ${SAMPLE}.3 ${SAMPLE}.4
+    for N in ${SAMPLE}.1 ${SAMPLE}.2 ${SAMPLE}.3 ${SAMPLE}.4 ${SAMPLE}.5
     do
          addTrackToHub $N
     done
@@ -169,18 +183,16 @@ echo name fraction value > /fhgfs/groups/lab_bock/shared/projects/chipmentation/
 
 for NAME in ${SAMPLES[*]}
 do
-    SUMS=($(awk -v OFS='\t' '{sum1+=$11; sum2+=$12; sum3+=$13; sum4+=$14} END {print sum1,sum2,sum3,sum4}' \
+    SUMS=($(awk -v OFS='\t' '{sum1+=$11; sum2+=$12; sum3+=$13; sum4+=$14; sum5+=$15} END {print sum1,sum2,sum3,sum4,sum5}' \
     /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.readCount))
     #echo $SUMS
-
-    for N in 1 2 3 4
+    for N in 1 2 3 4 5
     do
-        TOTAL=`samtools idxstats /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.${N}.bam | \
+        TOTAL=`samtools idxstats /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.${N}.sorted.bam | \
         awk '{sum+=$3} END {print sum}'`
-
         CUR=$((N - 1))
         SUM=${SUMS[$CUR]}
-        echo $NAME $N $(awk "BEGIN {printf \"%.2f\",${SUM}/${TOTAL}}") >> \
+        echo $NAME $N $(awk "BEGIN {printf \"%.4f\",${SUM}/${TOTAL}}") >> \
         /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/FRiP_per_fragment_length.tsv
     done
 done
@@ -189,13 +201,7 @@ done
 # library(reshape)
 # df = read.table("/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/FRiP_per_fragment_length.tsv", header=TRUE)
 
-# df = melt(df)
-
 # library(ggplot2)
-
-# ggplot( data = df, aes( Date, Visits )) + geom_line() 
-
-
 
 # p = ggplot(df, aes(fraction, value)) +
 #     geom_line() +
@@ -205,4 +211,9 @@ done
 #     theme_bw() +
 #     theme(legend.title=element_blank())
 
-# ggsave(filename = paste0("FRiP_per_fragment_length.pdf"), plot = p, height = 12, width = 15)
+# ggsave(
+#     paste0(
+#     "/fhgfs/groups/lab_bock/shared/projects/chipmentation/results/pe/plots",
+#     "FRiP_per_fragment_length.pdf"),
+#     plot = p, height = 12, width = 15
+# )
