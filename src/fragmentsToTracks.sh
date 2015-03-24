@@ -206,7 +206,7 @@ done
 # p = ggplot(df, aes(fraction, value)) +
 #     geom_line() +
 #     facet_wrap(~name, scales="free") +
-#     xlab("Fraction of reads") +
+#     xlab("Fragment length bin") +
 #     ylab("FRiP") +
 #     theme_bw() +
 #     theme(legend.title=element_blank())

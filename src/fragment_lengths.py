@@ -1,9 +1,13 @@
 import os
 import pickle
 import matplotlib
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.stats import ttest_ind
+
+
+plotsDir = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/results/pe/plots"
 
 cmd = """
 getFragments() {
@@ -36,6 +40,7 @@ samples = [
     "K562_500K_CM_H3K4ME3_nan_5ULTN5_PE_1_1_hg19", "K562_500K_CM_IGG_nan_1ULTN5_PE_1_1_hg19"
 ]
 
+# Plot all samples individually
 for i in range(len(samples)):
     name = samples[i]
     dist = pickle.load(open(name + ".pickle", "r"))
@@ -45,10 +50,84 @@ for i in range(len(samples)):
 
     plt.legend(loc='upper right', shadow=False)
     plt.xlim(0, 300)
-    plt.savefig(name + "_fragmentDistribution.pdf")
+
+    plt.savefig(os.path.join(plotsDir, name + "_fragmentDistribution.pdf"))
     plt.close()
 
     # Get percentiles
     import numpy as np
     l = [size for size in dist.keys() for _ in range(dist[size])]
     print(np.percentile(l, [20, 40, 60, 80]))
+
+
+# Plot all samples on one plot
+for i in range(len(samples)):
+    name = samples[i]
+    dist = pickle.load(open(name + ".pickle", "r"))
+    dist.pop(0)
+
+    plt.plot(dist.keys(), dist.values(), '-', label=name)
+
+    plt.legend(loc='upper right', shadow=False)
+    plt.xlim(0, 300)
+plt.savefig(os.path.join(plotsDir, "all" + "_fragmentDistribution.pdf"))
+plt.close()
+
+
+# Plot Only H3K4me3
+subset = [sample for sample in samples if "H3K4ME3" in sample]
+
+for i in range(len(subset)):
+    name = subset[i]
+    dist = pickle.load(open(name + ".pickle", "r"))
+    dist.pop(0)
+
+    plt.plot(dist.keys(), dist.values(), '-', label=name)
+
+    plt.legend(loc='upper right', shadow=False)
+    plt.xlim(0, 300)
+plt.savefig(os.path.join(plotsDir, "H3K4ME3" + "_fragmentDistribution.pdf"))
+plt.close()
+
+
+# Plot Only H3K4me1
+subset = [sample for sample in samples if "H3K4ME1" in sample]
+
+dists = list()
+for i in range(len(subset)):
+    name = subset[i]
+    dist = pickle.load(open(name + ".pickle", "r"))
+    dist.pop(0)
+
+    dists.append([size for size in dist.keys() for _ in range(dist[size])])
+
+    plt.plot(dist.keys(), dist.values(), '-', label=name)
+
+    plt.legend(loc='upper right', shadow=False)
+    plt.xlim(0, 300)
+
+t, p = ttest_ind(dists[0], dists[1])
+plt.text(200, 300000, "p-value: %f" % p, fontsize=12)
+plt.savefig(os.path.join(plotsDir, "H3K4ME1" + "_fragmentDistribution.pdf"))
+plt.close()
+
+
+# Plot Only PU1
+subset = [sample for sample in samples if "PU1" in sample]
+
+dists = list()
+for i in range(len(subset)):
+    name = subset[i]
+    dist = pickle.load(open(name + ".pickle", "r"))
+    dist.pop(0)
+
+    dists.append([size for size in dist.keys() for _ in range(dist[size])])
+    plt.plot(dist.keys(), dist.values(), '-', label=name)
+
+    plt.legend(loc='upper right', shadow=False)
+    plt.xlim(0, 300)
+
+t, p = ttest_ind(dists[0], dists[1])
+plt.text(200, 300000, "p-value: %f" % p, fontsize=12)
+plt.savefig(os.path.join(plotsDir, "PU1" + "_fragmentDistribution.pdf"))
+plt.close()
