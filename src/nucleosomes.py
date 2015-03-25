@@ -406,55 +406,36 @@ def main(args):
     for task in slurm.tasks:
         cov[task.id] = task.collect()
 
-    # Add all features
+    # serialize coverage
+    pickle.dump(
+        cov,
+        open(os.path.join(args.results_dir, sampleName + "_DARNS.coverage.pickle"), "wb"),
+        protocol=pickle.HIGHEST_PROTOCOL
+    )
+
+    # Measure DARNS features in parallel
+    # using tasks across nodes
     features = ["length", "space_upstream", "space_downstream",
-                "read_count", "read_density", "n_pospeaks", "n_negpeaks"]
+                "read_count", "read_density", "n_pospeaks", "n_negpeaks"]  # anyway already hard-coded in task
+
+    slurm = DivideAndSlurm()
+
+    for region in ['DARNS', "DARNSP"]:
+        for chrom in eval(region).keys():
+            task = MeasureDarnsFeatures(
+                range(len(eval(region))),  # indexes of darns
+                100,  # n of jobs to split across
+                chrom,
+                region
+            )
+            slurm.add_task(task)
+            slurm.submit(task)
 
     DARNS_features = pd.DataFrame()
-
-    for regionName in ["DARNS", "DARNSP"]:
-        regions = eval(regionName)
-        for chrom, _ in regions.items():
-            for i in range(len(regions[chrom])):
-                start, end, center = regions[chrom][i]
-                name = "_".join([chrom, str(start), str(end), str(center)])
-
-                s = pd.Series(index=["type"] + ["name"] + features)
-                s["type"] = regionName
-                s["name"] = name
-
-                # measure length
-                s["length"] = end - start
-
-                # measure distance to neighbours
-                if i != 0:
-                    s["space_upstream"] = abs(start - regions[chrom][i - 1][1])  # current start minus previous end
-                else:
-                    s["space_upstream"] = None
-                if i != len(regions[chrom]) - 1:
-                    s["space_downstream"] = abs(regions[chrom][i + 1][0] - end)  # current end minus next start
-                else:
-                    s["space_downstream"] = None
-
-                # get posterior prob
-                # sequence = genome_binary[chrom][start: end]
-                # s["post_prob"] = model.retrieveProbabilities(sequence)
-
-                # get read count
-                s["read_count"] = cov[regionName][name].sum()
-                # get density
-                # I defined it as (sum / length). It is not clear this is the same as in Winter2013
-                s["read_density"] = cov[regionName][name].sum() / (end - start)
-
-                # n. of positive peaks in nucleosome model
-                hmm = eval("hmmOutput") if regionName == "DARNS" else eval("hmmOutputP")
-                s["n_pospeaks"] = hmm[chrom][start: end].count("+")
-
-                # n. of negative peaks in nucleosome model
-                s["n_negpeaks"] = hmm[chrom][start: end].count("-")
-
-                # append
-                DARNS_features = DARNS_features.append(s, ignore_index=True)
+    for task in slurm.tasks:
+        df = task.collect()
+        # append
+        DARNS_features = DARNS_features.append(df, ignore_index=True)
 
     DARNS_features = DARNS_features.dropna()
     # serialize
@@ -1405,6 +1386,103 @@ class WinterHMM(object):
         background_state = 0
         prob_background = self.probs[:, background_state]  # prob of all states but background
         return prob_background
+
+
+class MeasureDarnsFeatures(Task):
+    """
+    Task to measure features of predicted DARNS.
+    Takes as arguments an iterable with indexes of darns in a specific chromosome and type of DARNS (real or permuted)
+    and returns dataframe with their measurements.
+    """
+    def __init__(self, data, fractions, *args):
+        super(MeasureDarnsFeatures, self).__init__(data, fractions, *args)
+        # Initialize rest
+        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1, 1000))], sep="_")
+        self.name = "MeasureDarnsFeatures_{0}".format(now)
+
+        # Parse
+        # required arguments
+        if len(self.args) != 2:
+            raise TypeError("Invalid number of arguments passed to creat MeasureDarnsFeatures object.")
+        self.regionType = self.args[0]
+        self.chrom = self.args[1]
+
+    def _prepare(self):
+        """
+        Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
+        """
+        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep="."))  # add abspath
+
+        # Split data in fractions
+        ids, groups, files = self._split_data()
+
+        # Make jobs with groups of data
+        self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
+
+        # for each group of data
+        for i in xrange(len(ids)):
+            jobFile = files[i] + "_MeasureDarnsFeatures.sh"
+            inputPickle = files[i] + ".input.pickle"
+            outputPickle = files[i] + ".output.pickle"
+
+            # assemble job file
+            # header
+            job = self._slurmHeader(ids[i])
+
+            # command - add abspath!
+            task = """
+
+                # Activate virtual environment
+                source /home/arendeiro/venv/bin/activate
+
+                python measure_darns_features_parallel.py {0} {1} {2} {3}
+
+                # Deactivate virtual environment
+                deactivate
+                """.format(inputPickle, outputPickle, self.regionType, self.chrom)
+
+            job += textwrap.dedent(task)
+
+            # footer
+            job += self._slurmFooter()
+
+            # add to save attributes
+            self.jobs.append(job)
+            self.jobFiles.append(jobFile)
+            self.inputPickles.append(inputPickle)
+            self.outputPickles.append(outputPickle)
+
+            # write job file to disk
+            with open(jobFile, 'w') as handle:
+                handle.write(textwrap.dedent(job))
+
+        # Delete data if jobs are ready to submit and data is serialized
+        if hasattr(self, "jobs") and hasattr(self, "jobFiles"):
+            del self.data
+
+    def collect(self):
+        """
+        If self.is_ready(), return joined reduced data.
+        """
+        if not hasattr(self, "output"):  # if output is already stored, just return it
+            if self.is_ready():
+                # load all pickles into list
+                if self.permissive:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+                else:
+                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
+                # if all are counters, and their elements are counters, sum them
+                if all([isinstance(outputs[i], type(pd.Series())) for i in range(len(outputs))]):
+                    output = pd.DataFrame([isinstance(outputs[i], type(pd.Series())) for i in range(len(outputs))])  # join in dataframe
+
+                    if isinstance(output, type(pd.DataFrame())):
+                        self.output = output    # store output in object
+                        self._rm_temps()  # delete tmp files
+                        return self.output
+            else:
+                raise TypeError("Task is not ready yet.")
+        else:
+            return self.output
 
 
 def makeGenomeWindows(windowWidth, genome, step=None):
