@@ -64,7 +64,7 @@ Probably the most relevant folder is `/chipmentation/data/mapped`. There are 2 b
 
 I will document the other folders in due time.
 
-# TODO list (response to reviewers)
+# Response to reviewers
 ### Experimental procedures
 - Transposase titration on H3K4me3 ChIPmentation (up to saturation)
 - ChIPmentation on TFs with less cells (*e.g.* 100k, 200k, 500k, 1-2mio)
@@ -88,3 +88,41 @@ I will document the other folders in due time.
 - Mention that we're able to recover much smaller fragments due to no adapter dimers (show bioanalyzer profiles)
 - Mention we remove the transposase by washing the ChIP with SDS (as previously demonstrated)
 - Show library size distribution created with different amounts of transposase (see [relevant document](https://github.com/ComputationalEpigenetics/chipmentation/tree/master/results/fragment_size))
+
+# Internal todo
+- make vplots
+- TSS plots of all controls (in, igg, chip-tag, atac-seq), replot normalized by controls
+- TF plots with all controls (in, igg, chip-tag, atac-seq), replot normalized by controls
+- Fragment size
+    - plot fragment size distribution all in one 
+        - H3K4 + igg
+        - PU1 + igg
+        - normalize by total size
+    - separate into fractions
+        - repeat all plots + FRiP
+        - mapping quality per read fraction
+    - calculate enrichment of reads per fragment size in various regions (like buenrostro)
+    - split reads into nucleosome-free (<\100bp) and various nucleosomes bins, check enrichment at TSSs for each bin
+- New correlations (all samples)
+    - add line to middle
+- ROC curve and AUC for # of Encode ChIP-seq peaks recovered from own CM and ChIP dependent on number of reads sampled
+- Nucleossome prediction
+    - run NucleoATAC
+        - get V plots
+    + Visualize
+    - Plot CM, DNase, MNase in DARNS:
+        - From the middle of the DARN (mid-peak)
+        - From the 5' and 3' end of nucleosome Dyads
+            - predict dyads: http://www-hsc.usc.edu/~valouev/NuMap/README.txt
+        - DARNS frequency around TSSs (models and CAGE) and TTSs
+        - DARNS frequency around CpGs islands
+    - Do it on permuted (and IGG?)
+    - Calculate scores:
+        - Compare at the pattern correlation level with permuted with F-score
+    - Plot read oscillation:
+        - Whole-genome
+        - Gene deserts vs CpG islands
+Compare DNase 
+Get data from other library perp methods, compare mapped, duplicates, n. peaks, ...
+New browser plots with Sushi
+
