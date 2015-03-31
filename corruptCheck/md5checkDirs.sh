@@ -1,3 +1,5 @@
+#!/bin/bash
+
 DIRS=(
     /fhgfs/groups/lab_bsf/samples/BSF_0145_C5PL4ACXX/BSF_0145_C5PL4ACXX_1_samples/
     /fhgfs/groups/lab_bsf/samples/BSF_0081_C3N4DACXX/BSF_0081_C3N4DACXX_2_samples/
@@ -25,6 +27,7 @@ DIRS=(
     /fhgfs/groups/lab_bsf/samples/BSF_0051_D2GW1ACXX/BSF_0051_D2GW1ACXX_4_samples/
 )
 
+# get corrupted bams from bsf folder
 for DIR in ${DIRS[*]}
 do
     for FILE in `ls $DIR | grep .bam$`
@@ -35,3 +38,13 @@ do
     md5sum -c ~/md5.txt >> ~/md5.log
     rm ~/md5.txt 
 done
+grep FAILED md5.log
+
+
+# get corrupted bams from own folder
+while read LINE
+do
+    sbatch ~/checkIntegrity.sh $LINE
+done < ~/allBams.txt
+
+ll | grep K562.*\.log | grep 82
