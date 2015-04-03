@@ -45,11 +45,12 @@ sampleSubset = samples[
 
 sampleSubset = sampleSubset.append(samples[
     (samples["sampleName"].str.contains("K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19|" + 
-    "K562_10M_CM_H3K36ME3_nan_nan_1_1_hg19|K562_10M_CHIP_H3K4ME1_nan_nan_1_0_hg19|" +
-    "K562_10K_CM_IGG_nan_nan_0_0_hg19|K562_10M_CHIP_IGG_nan_nan_0_0_hg19|" + 
-    "K562_10M_CM_IGG_nan_nan_0_0_hg19|K562_500K_CM_IGG_nan_nan_0_0_hg19|" +
-    "K562_50K_ATAC_nan_nan_nan_0_0_hg19|K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
-))
+                                        "K562_10M_CM_H3K36ME3_nan_nan_1_1_hg19|K562_10M_CHIP_H3K4ME1_nan_nan_1_0_hg19|" +
+                                        "K562_10K_CM_IGG_nan_nan_0_0_hg19|K562_10M_CHIP_IGG_nan_nan_0_0_hg19|" + 
+                                        "K562_10M_CM_IGG_nan_nan_0_0_hg19|K562_500K_CM_IGG_nan_nan_0_0_hg19|" +
+                                        "K562_50K_ATAC_nan_nan_nan_0_0_hg19|K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
+                                        )
+    )
 ].reset_index(drop=True))
 
 sampleSubset = sampleSubset.append(pd.Series(data=["DNase", DNase], index=["sampleName", "filePath"]), ignore_index=True)
