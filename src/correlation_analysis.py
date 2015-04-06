@@ -16,6 +16,8 @@ import itertools
 import rpy2.robjects as robj  # for ggplot in R
 import rpy2.robjects.pandas2ri  # for R dataframe conversion
 
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -143,22 +145,28 @@ def plotKDE(s1, s2, path):
 projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
 coverageDir = projectRoot + "data/coverage"
 resultsDir = projectRoot + "results"
-plotsDir = resultsDir + "/plots"
+plotsDir = resultsDir + "/plots/correlations"
 
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
 
+# set technicalreplicate=0 to samples with only one technical replicate per biological replicate
+for n, i in samples.groupby(["cellLine", "numberCells", "technique", "ip",
+                             "patient", "treatment", "biologicalReplicate", "genome"]).groups.items():
+    if len(i) == 1:
+        samples.loc[i[0], "technicalReplicate"] = 0
 
 # All
 # subset samples
 sampleSubset = samples.reset_index(drop=True)
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
-normCounts = getCounts(sampleSubset)
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.all.pdf"))
+# normCounts = getCounts(sampleSubset)
+# plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.all.pdf"))
 
 
-# All final
+# All biological replicates
+print("All biologicalReplicates")
 # subset samples
 sampleSubset = samples[
     (samples["technique"].str.contains("CM|CHIP")) &
@@ -170,41 +178,77 @@ sampleSubset = samples[
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
 normCounts = getCounts(sampleSubset)
+plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.set-reps.pdf"))
+
+# All final
+print("All final")
+# subset samples
+sampleSubset = samples[
+    (samples["technique"].str.contains("CM|CHIP")) &
+    (samples["ip"].str.contains("H3K4ME3|H3K4ME1|H3K27ME3|H3K36ME3|H3K27AC|CTCF|PU1|GATA1|REST")) &
+    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
+    (samples["technicalReplicate"] == 0) &
+    (samples["biologicalReplicate"] == 0)
+].reset_index(drop=True)
+sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
+
+normCounts = getCounts(sampleSubset)
 plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.set.pdf"))
 
 # Histones
+print("histonesAll")
 # subset samples
 sampleSubset = samples[
     (samples["technique"].str.contains("CM|CHIP")) &
     (samples["ip"].str.contains("H3K4ME3|H3K4ME1|H3K27ME3|H3K36ME3|H3K27AC")) &
-    (samples["numberCells"].str.contains("10M|500K|10K"))  # &
-    # (samples["biologicalReplicate"] == 0)
+    (samples["numberCells"].str.contains("10M|500K|10K")) &
+    (samples["technicalReplicate"] == 0) &
+    (samples["biologicalReplicate"] != 0)
+].reset_index(drop=True)
+sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
+
+normCounts = getCounts(sampleSubset)
+plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.histones-reps.pdf"))
+
+# Histones
+print("histones biologicalReplicate=0")
+# subset samples
+sampleSubset = samples[
+    (samples["technique"].str.contains("CM|CHIP")) &
+    (samples["ip"].str.contains("H3K4ME3|H3K4ME1|H3K27ME3|H3K36ME3|H3K27AC")) &
+    (samples["numberCells"].str.contains("10M|500K|10K")) &
+    (samples["technicalReplicate"] == 0) &
+    (samples["biologicalReplicate"] == 0)
 ].reset_index(drop=True)
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
 normCounts = getCounts(sampleSubset)
 plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.histones.pdf"))
 
-# Histones
-# subset samples
-sampleSubset = samples[
-    (samples["technique"].str.contains("CM|CHIP")) &
-    (samples["ip"].str.contains("H3K4ME3|H3K4ME1|H3K27ME3|H3K36ME3|H3K27AC")) &
-    (samples["numberCells"].str.contains("10M|500K|10K")) &
-    (samples["biologicalReplicate"] != 0) &
-    (samples["technicalReplicate"] == 0)
-].reset_index(drop=True)
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
-normCounts = getCounts(sampleSubset)
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.histones-biol.pdf"))
-
 # TFs
+print("TFs")
 # subset samples
 sampleSubset = samples[
     (samples["technique"].str.contains("CM|CHIP")) &
     (samples["ip"].str.contains("CTCF|PU1|GATA1|REST")) &
-    (samples["numberCells"].str.contains("10M|500K|100K|10K"))
+    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
+    (samples["technicalReplicate"] == 0) &
+    (samples["biologicalReplicate"] != 0)
+].reset_index(drop=True)
+sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
+
+normCounts = getCounts(sampleSubset)
+plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.TFs-reps.pdf"))
+
+# TFs
+print("TFs")
+# subset samples
+sampleSubset = samples[
+    (samples["technique"].str.contains("CM|CHIP")) &
+    (samples["ip"].str.contains("CTCF|PU1|GATA1|REST")) &
+    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
+    (samples["technicalReplicate"] == 0) &
+    (samples["biologicalReplicate"] == 0)
 ].reset_index(drop=True)
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
@@ -213,80 +257,107 @@ plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.TFs.pdf"))
 
 # Figure 1:
 #   correlations between biological == 0 for each factor
-#   in combinations of #cells and technique
+#   in combinations of different techniques, number of cells and replicates
 
-for IP in samples['ip'].unique():
-    subset = samples[samples["ip"] == IP]
-
-    cells = subset['numberCells'].unique()
-    tec = subset['technique'].unique()
-
-    for t in subset['technique'].unique():
-        for (v1, v2) in itertools.combinations(cells, 2):
-            c1 = samples[
-                (samples["ip"] == IP) &
-                (samples["numberCells"] == v1) &
-                (samples["technique"] == t) &
+print("techniques")
+# Different techniques
+for ip in samples['ip'].unique():
+    for c in samples['numberCells'].unique():
+        cells = samples['technique'].unique()
+        for (t1, t2) in itertools.combinations(cells, 2):
+            s1 = samples[
+                (samples["ip"] == ip) &
+                (samples["numberCells"] == c) &
+                (samples["technique"] == t1) &
+                (samples["technicalReplicate"] == 0) &
                 (samples["biologicalReplicate"] == 0)
             ]
-            c2 = samples[
-                (samples["ip"] == IP) &
-                (samples["numberCells"] == v2) &
-                (samples["technique"] == t) &
+            s2 = samples[
+                (samples["ip"] == ip) &
+                (samples["numberCells"] == c) &
+                (samples["technique"] == t2) &
+                (samples["technicalReplicate"] == 0) &
                 (samples["biologicalReplicate"] == 0)
             ]
-            if c1.empty or c2.empty:
+            if s1.empty or s2.empty:
                 continue
 
-            normCounts = getCounts(c1.append(c2).reset_index())
-            normCounts.columns = c1.sampleName.tolist() + c2.sampleName.tolist()
+            normCounts = getCounts(s1.append(s2).reset_index())
+            normCounts.columns = s1.sampleName.tolist() + s2.sampleName.tolist()
 
             plotScatterCorrelation(
                 normCounts,
                 os.path.join(
                     plotsDir,
-                    "correlation.{0}.{1}.{2}_vs_{3}.pdf".format(IP, t, v1, v2)
+                    "correlation.{0}.{1}.{2}_vs_{3}.pdf".format(ip, c, t1, t2)
                 )
             )
-            # plotKDE(
-            #     normCounts.icol(0),
-            #     normCounts.icol(1),
-            #     os.path.join(
-            #         plotsDir,
-            #         "correlation.{0}.{1}.{2}_vs_{3}.pdf".format(IP, t, v1, v2)
-            #     )
-            # )
 
-for IP in samples['ip'].unique():
-    subset = samples[samples["ip"] == IP]
-
-    cells = subset['numberCells'].unique()
-    tec = subset['technique'].unique()
-
-    for c in subset['numberCells'].unique():
-        for (v1, v2) in itertools.combinations(tec, 2):
-            t1 = samples[
-                (samples["ip"] == IP) &
-                (samples["numberCells"] == c) &
-                (samples["technique"] == v1) &
+print("cells")
+# Different number of cells
+for ip in samples['ip'].unique():
+    for t in samples['technique'].unique():
+        cells = samples['numberCells'].unique()
+        for (c1, c2) in itertools.combinations(cells, 2):
+            s1 = samples[
+                (samples["ip"] == ip) &
+                (samples["numberCells"] == c1) &
+                (samples["technique"] == t) &
+                (samples["technicalReplicate"] == 0) &
                 (samples["biologicalReplicate"] == 0)
             ]
-            t2 = samples[
-                (samples["ip"] == IP) &
-                (samples["numberCells"] == c) &
-                (samples["technique"] == v2) &
+            s2 = samples[
+                (samples["ip"] == ip) &
+                (samples["numberCells"] == c2) &
+                (samples["technique"] == t) &
+                (samples["technicalReplicate"] == 0) &
                 (samples["biologicalReplicate"] == 0)
             ]
-            if t1.empty or t2.empty:
+            if s1.empty or s2.empty:
                 continue
 
-            normCounts = getCounts(t1.append(t2).reset_index())
-            normCounts.columns = t1.sampleName.tolist() + t2.sampleName.tolist()
+            normCounts = getCounts(s1.append(s2).reset_index())
+            normCounts.columns = s1.sampleName.tolist() + s2.sampleName.tolist()
 
             plotScatterCorrelation(
                 normCounts,
                 os.path.join(
                     plotsDir,
-                    "correlation.{0}.{1}.{2}_vs_{3}.pdf".format(IP, c, v1, v2)
+                    "correlation.{0}.{1}.{2}_vs_{3}.pdf".format(ip, t, c1, c2)
+                )
+            )
+
+print("replicates")
+# Replicate 1 vs 2
+for ip in samples['ip'].unique():
+    for c in samples['numberCells'].unique():
+        for t in samples['technique'].unique():
+            r1 = 1
+            r2 = 2
+            s1 = samples[
+                (samples["ip"] == ip) &
+                (samples["numberCells"] == c) &
+                (samples["technique"] == t) &
+                (samples["technicalReplicate"] == 0) &
+                (samples["biologicalReplicate"] == r1)
+            ]
+            s2 = samples[
+                (samples["ip"] == ip) &
+                (samples["numberCells"] == c) &
+                (samples["technique"] == t) &
+                (samples["technicalReplicate"] == 0) &
+                (samples["biologicalReplicate"] == r2)
+            ]
+            if s1.empty or s2.empty:
+                continue
+
+            normCounts = getCounts(s1.append(s2).reset_index())
+            normCounts.columns = s1.sampleName.tolist() + s2.sampleName.tolist()
+
+            plotScatterCorrelation(
+                normCounts,
+                os.path.join(
+                    plotsDir,
+                    "correlation.{0}.{1}.{2}.{3}_vs_{4}.pdf".format(ip, c, t, r1, r2)
                 )
             )
