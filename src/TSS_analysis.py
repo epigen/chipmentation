@@ -25,49 +25,6 @@ from rpy2.robjects.packages import importr
 from sklearn.cluster import k_means
 import cPickle as pickle
 
-# Define variables
-projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
-resultsDir = projectRoot + "results"
-plotsDir = resultsDir + "/plots"
-DNase = "/home/arendeiro/data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam"
-MNase = "/home/arendeiro/encode_mnase_k562/wgEncodeSydhNsomeK562Sig.merged.bam"
-
-# Get samples
-samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
-
-# subset samples
-sampleSubset = samples[
-    (samples["technique"].str.contains("CM|CHIP")) &
-    (samples["ip"].str.contains("H3K4ME1|H3K4ME3|H3K27ME3")) &
-    (samples["numberCells"].str.contains("500K|10M")) &
-    (samples["biologicalReplicate"] == 0)
-].reset_index(drop=True)
-
-sampleSubset = sampleSubset.append(samples[
-    (samples["sampleName"].str.contains("K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19|" + 
-                                        "K562_10M_CM_H3K36ME3_nan_nan_1_1_hg19|K562_10M_CHIP_H3K4ME1_nan_nan_1_0_hg19|" +
-                                        "K562_10K_CM_IGG_nan_nan_0_0_hg19|K562_10M_CHIP_IGG_nan_nan_0_0_hg19|" + 
-                                        "K562_10M_CM_IGG_nan_nan_0_0_hg19|K562_500K_CM_IGG_nan_nan_0_0_hg19|" +
-                                        "K562_50K_ATAC_nan_nan_nan_0_0_hg19|K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
-                                        )
-    )
-].reset_index(drop=True))
-
-sampleSubset = sampleSubset.append(pd.Series(data=["DNase", DNase], index=["sampleName", "filePath"]), ignore_index=True)
-sampleSubset = sampleSubset.append(pd.Series(data=["MNase", MNase], index=["sampleName", "filePath"]), ignore_index=True)
-
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
-bedFilePath = "/home/arendeiro/reference/Homo_sapiens/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
-genome = "hg19"
-windowRange = (-60, 60)
-fragmentsize = 1
-duplicates = True
-n_clusters = 5
-
-# plotly.sign_in("afrendeiro", "iixmygxac1")
-windowWidth = abs(windowRange[0]) + abs(windowRange[1])
-
 
 def loadBed(filename):
     """
@@ -259,6 +216,52 @@ def smooth(x, window_len=8, window='hanning'):
     y = np.convolve(w / w.sum(), s, mode='valid')
     return y
 
+
+# Define variables
+projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
+resultsDir = projectRoot + "results"
+plotsDir = resultsDir + "/plots"
+DNase = "/home/arendeiro/data/human/encode/wgEncodeUwDnaseK562Aln.merged.bam"
+MNase = "/home/arendeiro/data/human/encode/wgEncodeSydhNsomeK562AlnRep1.bam"
+
+# Get samples
+samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
+
+# subset samples
+sampleSubset = samples[
+    (samples["technique"].str.contains("CM|CHIP")) &
+    (samples["ip"].str.contains("H3K4ME1|H3K4ME3|H3K27ME3")) &
+    (samples["numberCells"].str.contains("500K|10M")) &
+    (samples["biologicalReplicate"] == 0) &
+    (samples["technicalReplicate"] == 0)
+].reset_index(drop=True)
+
+# append extra samples
+sampleSubset = sampleSubset.append(samples[
+    (samples["sampleName"].str.contains(
+        "K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19|" +
+        "K562_10M_CM_H3K36ME3_nan_nan_1_1_hg19|K562_10M_CHIP_H3K4ME1_nan_nan_1_0_hg19|" +
+        "K562_10K_CM_IGG_nan_nan_0_0_hg19|K562_10M_CHIP_IGG_nan_nan_0_0_hg19|" +
+        "K562_10M_CM_IGG_nan_nan_1_0_hg19|K562_500K_CM_IGG_nan_nan_1_0_hg19|" +
+        "K562_50K_ATAC_nan_nan_nan_0_0_hg19|PBMC_nan_ATAC_INPUT_nan_100PG_1_1_hg19"  # |K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
+    )
+    )
+].reset_index(drop=True))
+
+sampleSubset = sampleSubset.append(pd.Series(data=["DNase", DNase], index=["sampleName", "filePath"]), ignore_index=True)
+sampleSubset = sampleSubset.append(pd.Series(data=["MNase", MNase], index=["sampleName", "filePath"]), ignore_index=True)
+
+sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
+
+bedFilePath = "/home/arendeiro/reference/Homo_sapiens/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
+genome = "hg19"
+windowRange = (-60, 60)
+fragmentsize = 1
+duplicates = True
+n_clusters = 5
+
+# plotly.sign_in("afrendeiro", "iixmygxac1")
+windowWidth = abs(windowRange[0]) + abs(windowRange[1])
 
 # Load TSSs from bed file, transform by window width
 tsss = pybedtools.BedTool(bedFilePath).slop(genome=genome, b=windowWidth / 2)
