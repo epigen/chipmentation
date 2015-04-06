@@ -447,7 +447,7 @@ for i in range(len(sampleSubset)):
     )
 
     print("Exporting heatmaps for %s" % name)
-    
+
     # now sort by clust order
     dfNorm = pd.merge(dfNorm, clustOrder, on=None, left_index=True, right_index=True)  # get common rows (should be all)
     dfNorm.replace(["inf", "NaN"], 0, inplace=True)
@@ -461,7 +461,6 @@ for i in range(len(sampleSubset)):
 
     # Export as cdt
     exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "_signal.cdt"))
-
 
     # # Sort all signals by dataframe by cluster order
     # for j in range(len(sampleSubset)):

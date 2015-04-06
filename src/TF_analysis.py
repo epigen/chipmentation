@@ -26,11 +26,6 @@ import textwrap
 import matplotlib.pyplot as plt
 import seaborn as sns  # changes plt style (+ full plotting library)
 
-import rpy2.robjects as robj  # for ggplot in R
-import rpy2.robjects.pandas2ri  # for R dataframe conversion
-from rpy2.robjects.packages import importr
-
-from sklearn.cluster import k_means
 import cPickle as pickle
 
 
@@ -194,10 +189,7 @@ class Coverage(Task):
 
             # command - add abspath!
             task = """\
-                # Activate virtual environment
-                source /home/arendeiro/venv/bin/activate
-
-                python /home/arendeiro/coverage_parallel.py {0} {1} {2} """.format(inputPickle, outputPickle, self.bam_file)
+                python2.7 /home/arendeiro/coverage_parallel.py {0} {1} {2} """.format(inputPickle, outputPickle, self.bam_file)
 
             if self.strand_wise:
                 task += "--strand-wise "
@@ -207,13 +199,8 @@ class Coverage(Task):
                 task += "--orientation "
             if self.permute:
                 task += "--permute "
-            task += "--fragment-size {0}".format(self.fragment_size)
-
-            task += """
-
-                # Deactivate virtual environment
-                deactivate
-                    """
+            task += """--fragment-size {0}
+            """.format(self.fragment_size)
 
             job += textwrap.dedent(task)
 
@@ -273,6 +260,47 @@ def bedToolsInterval2GenomicInterval(bedtool):
     return intervals
 
 
+def colourPerFactor(name):
+    name = str(name.upper())
+    print(name)
+    if "H3K4ME3" in name:
+        return "#009e73"
+    elif "H3K4ME1" in name:
+        return "#e69f00"
+    elif "H3K27AC" in name:
+        return "#D55E29"
+    elif "H3K27ME3" in name:
+        return "#0072b2"
+    elif "H3K36ME3" in name:
+        return "#9e2400"
+    elif "CTCF" in name:
+        return "#534202"
+    elif "PU1" in name:
+        return "#6E022C"
+    elif "GATA1" in name:
+        return "#9b0505"
+    elif "GATA2" in name:
+        return "#510303"
+    elif "REST" in name:
+        return "#25026d"
+    elif "CJUN" in name:
+        return "#2a0351"
+    elif "FLI1" in name:
+        return "#515103"
+    elif "IGG" in name:
+        return "#d3d3d3"
+    elif "INPUT" in name:
+        return "#d3d3d3"
+    elif "DNASE" in name:
+        return "#005212"
+    elif "MNASE" in name:
+        return "#00523b"
+    elif "ATAC" in name:
+        return "#001f07"
+    else:
+        raise ValueError
+
+
 def getMNaseProfile(chrom, start, end):
     command = "bigWigToWig -chrom={0} -start={1} -end={2} ".format(chrom, start, end)
     command += "/home/arendeiro/encode_mnase_k562/wgEncodeSydhNsomeK562Sig.bigWig tmp.wig; "
@@ -304,12 +332,20 @@ def exportToJavaTreeView(df, filename):
 # Define paths
 projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
 resultsDir = projectRoot + "results"
-plotsDir = resultsDir + "/plots"
-DNase = "/home/arendeiro/data/human/chipmentation/mapped/merged/DNase_UWashington_K562_mergedReplicates.bam"
-MNase = "/home/arendeiro/encode_mnase_k562/wgEncodeSydhNsomeK562Sig.merged.bam"
+plotsDir = resultsDir + "/plots/"
+DNase = "/home/arendeiro/data/human/encode/wgEncodeUwDnaseK562Aln.merged.bam"
+MNase = "/home/arendeiro/data/human/encode/wgEncodeSydhNsomeK562AlnRep1.bam"
 
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
+
+# Replace input sample
+samples.replace(value="K562_10M_CM_IGG_nan_nan_1_0_hg19", to_replace="K562_10M_CM_IGG_nan_nan_0_0_hg19", inplace=True)
+samples.replace(
+    value="/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/K562_10M_CM_IGG_nan_nan_1_0_hg19.trimmed.bowtie2.shifted.dups.bam",
+    to_replace="/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/K562_10M_CM_IGG_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam",
+    inplace=True
+)
 
 # subset samples
 sampleSubset = samples[
@@ -330,8 +366,8 @@ signals = samples[
         "K562_500K_CM_H3K27ME3_nan_nan_0_0_hg19|" +
         "K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19|" +
         "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19|" +
-        "K562_50K_ATAC_nan_nan_nan_0_0_hg19|" +
-        "K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
+        "K562_50K_ATAC_nan_nan_nan_0_0_hg19"  # +
+        # "K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
     )
 ].reset_index(drop=True)
 signals = signals.sort(["ip", "technique"])
@@ -373,7 +409,7 @@ for i in range(len(sampleSubset)):
     # Get self coverage
     signalName = sampleName
     exportName = "-".join([sampleName, signalName])
-    if not os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+    if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
         print(sampleName, signalName)
         bamFile = sampleSubset['filePath'][i]
 
@@ -392,7 +428,7 @@ for i in range(len(sampleSubset)):
         exportName = "-".join([sampleName, signalName])
         print(exportName)
 
-        if not os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
             print(sampleName, signalName)
             bamFile = sampleSubset['filePath'][i]
 
@@ -408,7 +444,7 @@ for i in range(len(sampleSubset)):
     # Get control coverage
     signalName = sampleSubset['controlSampleName'][i]
     exportName = "-".join([sampleName, signalName])
-    if not os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+    if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
         print(sampleName, signalName)
         bamFile = sampleSubset['controlSampleFilePath'][i]
 
@@ -427,7 +463,7 @@ for i in range(len(sampleSubset)):
         print(sampleName, signalName)
 
         exportName = "-".join([sampleName, signalName])
-        if not os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
+        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
             bamFile = signals['filePath'][j]
 
             # Make task
@@ -458,7 +494,7 @@ for task in slurm.tasks:
         df.columns = range(windowRange[0], windowRange[1])
 
         # Save raw data
-        savePandas(os.path.join(resultsDir, task.id + ".pdy"), df)
+        savePandas(os.path.join(plotsDir, "pickles", task.id + ".pdy"), df)
         del cov
         del df
         gc.collect()
@@ -468,8 +504,8 @@ for task in slurm.tasks:
         gc.collect()
 
 # Average signals
-if os.path.exists(os.path.join(resultsDir, "aveSignals.pickle")):
-    aveSignals = pickle.load(open(os.path.join(resultsDir, "aveSignals.pickle"), "r"))
+if os.path.exists(os.path.join(plotsDir, "pickles", "aveSignals.pickle")):
+    aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "r"))
 else:
     aveSignals = pd.DataFrame(columns=["sample", "signal"])
 names = aveSignals[["sample", "signal"]].apply("-".join, axis=1).unique()
@@ -483,8 +519,8 @@ for i in range(len(sampleSubset)):
     print(exportName)
 
     if exportName not in names:
-        if os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
-            df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
+        if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
 
             # Get self average profiles and append to dataframe
             df = pd.DataFrame({
@@ -496,7 +532,7 @@ for i in range(len(sampleSubset)):
                 "x": df.columns
             })
             aveSignals = pd.concat([aveSignals, df])
-            pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     # PU1 chip-tagmentation
     if sampleName == "K562_10M_CM_PU1_nan_PE_1_1_hg19":
@@ -504,8 +540,8 @@ for i in range(len(sampleSubset)):
         exportName = "-".join([sampleName, signalName])
         print(exportName)
 
-        if os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
-            df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
+        if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
 
             # Get self average profiles and append to dataframe
             df = pd.DataFrame({
@@ -517,7 +553,7 @@ for i in range(len(sampleSubset)):
                 "x": df.columns
             })
             aveSignals = pd.concat([aveSignals, df])
-            pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     # Control
     signalName = sampleSubset['controlSampleName'][i]
@@ -526,8 +562,8 @@ for i in range(len(sampleSubset)):
 
     if exportName not in names:
         # Get control average profiles and append to dataframe
-        if os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
-            df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
+        if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
             df = pd.DataFrame({
                 "sample": sampleName,
                 "signal": signalName,
@@ -537,7 +573,7 @@ for i in range(len(sampleSubset)):
                 "x": df.columns
             })
             aveSignals = pd.concat([aveSignals, df])
-            pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     for j in range(len(signals)):
         signalName = signals['sampleName'][j]
@@ -545,8 +581,8 @@ for i in range(len(sampleSubset)):
         print(exportName)
 
         if exportName not in names:
-            if os.path.isfile(os.path.join(resultsDir, exportName + ".pdy")):
-                df = loadPandas(os.path.join(resultsDir, exportName + ".pdy")).copy()
+            if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+                df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
                 # Get average profiles and append to dict
                 df = pd.DataFrame({
                     "sample": sampleName,
@@ -557,243 +593,187 @@ for i in range(len(sampleSubset)):
                     "x": df.columns
                 })
                 aveSignals = pd.concat([aveSignals, df])
-                pickle.dump(aveSignals, open(os.path.join(resultsDir, "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-aveSignals = pickle.load(open(os.path.join(resultsDir, "aveSignals.pickle"), "r"))
-aveSignals.drop(["positive", "negative"], inplace=True, axis=1)
+aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "r"))
 aveSignals.drop_duplicates(inplace=True)
 aveSignals["type"] = "raw"
 aveSignals.reset_index(drop=True, inplace=True)
 
 # Normalize
 df = aveSignals.copy()
-for i in range(len(sampleSubset)):
-    sampleName = sampleSubset['sampleName'][i]
-    controlName = sampleSubset['controlSampleName'][i]
+df2 = pd.DataFrame()
 
-    for signalName in [sampleName, controlName]:
-        for strand in ["average"]:
-            treat = aveSignals[(aveSignals["sample"] == sampleName) & (aveSignals["signal"] == signalName)][strand]
-            ctrl = aveSignals[(aveSignals["sample"] == sampleName) & (aveSignals["signal"] == controlName)][strand]
+for sample in df['sample'].unique():
+    for signal in df[df['sample'] == sample]['signal'].unique():
+        for strand in ["average", "positive", "negative"]:
+            treat = df[
+                (df["sample"] == sample) &
+                (df["signal"] == signal)
+            ][strand]
+
+            controlName = sampleSubset.loc[sampleSubset["sampleName"] == sample, "controlSampleName"]
+            controlName = controlName.tolist()[0]
+            ctrl = df[
+                (df["sample"] == sample) &
+                (df["signal"] == controlName)
+            ][strand]
 
             # standardize: 0-1
-            treat = ((treat - treat.min())) / ((treat.max() - treat.min()))
-            ctrl = ((ctrl - ctrl.min())) / ((ctrl.max() - ctrl.min()))
+            treat = smooth((treat - treat.min()) / (treat.max() - treat.min()))
+            ctrl = smooth((ctrl - ctrl.min()) / (ctrl.max() - ctrl.min()))
 
             # normalize by input
-            norm = (np.array(treat) - np.array(ctrl))
+            norm = np.array(treat) - np.array(ctrl)
 
-            df.loc[(df["sample"] == sampleName) & (df["signal"] == signalName), strand] = norm
+            tmp = pd.DataFrame()
+            tmp[strand] = norm
+            tmp['sample'] = sample
+            tmp['signal'] = signal
+            tmp['x'] = np.array(range(len(tmp))) - (len(tmp) / 2)
+            tmp['type'] = "norm"
+
+            df2 = df2.append(tmp, ignore_index=True)
+
+# append normalized df to df
+aveSignals = pd.concat([aveSignals, df2])
+aveSignals.reset_index(drop=True, inplace=True)
+
+# Grid plots
+# raw
+for sample in aveSignals['sample'].unique():
+    sub = aveSignals[
+        (aveSignals['sample'] == sample) &
+        (aveSignals['type'] == "raw") &
+        (aveSignals['x'] >= -400) &
+        (aveSignals['x'] <= 400)
+    ]
+
+    # plot
+    grid = sns.FacetGrid(sub, col="signal", hue="signal", sharey=False, col_wrap=4)
+    grid.map(plt.plot, "x", "positive")
+    # grid.set(xlim=(-100, 100))
+    grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+    plt.savefig(os.path.join(plotsDir, sample + ".footprints.raw.pdf"), bbox_inches='tight')
+
+# norm
+for sample in aveSignals['sample'].unique():
+    sub = aveSignals[
+        (aveSignals['sample'] == sample) &
+        (aveSignals['type'] == "norm") &
+        (aveSignals['x'] >= -400) &
+        (aveSignals['x'] <= 400)
+    ]
+
+    # plot
+    grid = sns.FacetGrid(sub, col="signal", hue="signal", sharey=False, col_wrap=4)
+    grid.map(plt.plot, "x", "positive")
+    # grid.set(xlim=(-100, 100))
+    grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+    plt.savefig(os.path.join(plotsDir, sample + ".footprints.norm.pdf"), bbox_inches='tight')
+
+
+# Overlaid plots
+for sample in aveSignals['sample'].unique():
+    fig, axs = plt.subplots(2, 2, sharex='col', sharey='row')
+    for signal in aveSignals[aveSignals['sample'] == sample]['signal'].unique():
+        sub = aveSignals[
+            (aveSignals['sample'] == sample) &
+            (aveSignals['signal'] == signal) &
+            (aveSignals['type'] == "raw") &
+            (aveSignals['x'] >= -400) &
+            (aveSignals['x'] <= 400)
+        ]
+        # plot raw
+        plt.plot(sub["x"], np.log10(sub["average"]), label=signal, color=colourPerFactor(signal))
+    plt.title(sample)
+    plt.xlabel("distance to motif")
+    plt.ylabel("distance to motif")
+    plt.legend(loc='best', prop={'size': 4})
+    plt.savefig(os.path.join(plotsDir, sample + ".footprints.raw.pdf"), bbox_inches='tight',)
+    plt.close()
+
+    plt.figure()
+    for signal in aveSignals[aveSignals['sample'] == sample]['signal'].unique():
+        # plot norm
+        sub = aveSignals[
+            (aveSignals['sample'] == sample) &
+            (aveSignals['signal'] == signal) &
+            (aveSignals['type'] == "norm") &
+            (aveSignals['x'] >= -400) &
+            (aveSignals['x'] <= 400)
+        ]
+        # plot norm
+        plt.plot(sub["x"], np.log10(sub["average"]), label=signal, color=colourPerFactor(signal))
+    plt.title(sample)
+    plt.xlim(-400, 400)
+    plt.xlabel("distance to motif")
+    plt.ylabel("distance to motif")
+    plt.legend(loc='best', prop={'size': 4})
+    plt.savefig(os.path.join(plotsDir, sample + ".footprints.norm.pdf"), bbox_inches='tight',)
+
+# Heatmaps sorted by signal abundance
+
+# Average signals
+aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "r"))
+
+for i in range(len(sampleSubset)):
+    sampleName = sampleSubset['sampleName'][i]
+
+    # Self
+    signalName = sampleName
+    exportName = "-".join([sampleName, signalName])
+    print(exportName)
+
+    if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+        df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+
+        pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
+        neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
+        df = (pos + neg) / 2
+
+        exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))
+
+    # PU1 chip-tagmentation
+    if sampleName == "K562_10M_CM_PU1_nan_PE_1_1_hg19":
+        signalName = "K562_10M_ATAC_PU1_nan_PE_1_1_hg19"
+        exportName = "-".join([sampleName, signalName])
+        print(exportName)
+
+        if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+
+            pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
+            neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
+            df = (pos + neg) / 2
+
+            exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))
+
+    # Control
+    signalName = sampleSubset['controlSampleName'][i]
+    exportName = "-".join([sampleName, signalName])
+    print(exportName)
+
+    # Get control average profiles and append to dataframe
+    if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+        df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+
+        pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
+        neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
+        df = (pos + neg) / 2
+
+        exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))            
 
     for j in range(len(signals)):
         signalName = signals['sampleName'][j]
+        exportName = "-".join([sampleName, signalName])
+        print(exportName)
 
-        for strand in ["average"]:
-            treat = aveSignals[(aveSignals["sample"] == sampleName) & (aveSignals["signal"] == signalName)][strand]
-            ctrl = aveSignals[(aveSignals["sample"] == sampleName) & (aveSignals["signal"] == controlName)][strand]
+        if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
 
-            # standardize: 0-1
-            treat = ((treat - treat.min())) / ((treat.max() - treat.min()))
-            ctrl = ((ctrl - ctrl.min())) / ((ctrl.max() - ctrl.min()))
+            pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
+            neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
+            df = (pos + neg) / 2
 
-            # normalize by input
-            norm = (np.array(treat) - np.array(ctrl))
-
-            df.loc[(df["sample"] == sampleName) & (df["signal"] == signalName), strand] = norm
-
-# append normalized df to df
-df["type"] = "norm"
-aveSignals = pd.concat([aveSignals, df])
-
-# Plot average profiles with ggplot
-# melt
-
-df = pd.melt(aveSignals, id_vars=["x", "sample", "signal", "type"])
-
-plotFunc = robj.r("""
-    library(ggplot2)
-
-    function(df, width, plotsDir, text){
-        p = ggplot(df, aes(x, value)) +
-            geom_line() +
-            #stat_smooth(se = F, method = "lm", formula = y ~ poly(x, 24)) +
-            #stat_smooth(method = "gam", formula = y ~ s(x, k = 80), se = FALSE) +
-            #stat_smooth(method = "loess", formula = y ~ x, size = 1, se = FALSE) +
-            facet_wrap(signal~type, scales="free") +
-            xlab("Distance to peak") +
-            ylab("Average tags per bp") +
-            theme_bw() +
-            theme(legend.title=element_blank()) +
-            #scale_colour_manual(values=c("black", "dark blue","dark red")) +
-            xlim(c(-width, width))
-
-        ggsave(filename = paste0(plotsDir, "/TFs_signal.", text, ".", width * 2, ".pdf"), plot = p, height = 20, width = 60, limitsize=FALSE)
-    }
-""")
-
-for sample in df.sample.unique():
-    df2 = df[df["sample"] == sample]
-    gr = importr('grDevices')
-    # convert the pandas dataframe to an R dataframe
-    robj.pandas2ri.activate()
-    aveSignals_R = robj.conversion.py2ri(df2)
-
-    # run the plot function on the dataframe
-    plotFunc(aveSignals_R, 50, plotsDir, sample)
-    plotFunc(aveSignals_R, 100, plotsDir, sample)
-    plotFunc(aveSignals_R, 200, plotsDir, sample)
-    plotFunc(aveSignals_R, 500, plotsDir, sample)
-
-##### OLD #####
-
-# Clustering
-
-# Loop through raw signals, normalize, k-means cluster, save pickle, plot heatmap, export cdt
-for signal in signals:
-    exportName = "{0}.tssSignal_{1}bp.kmeans_{2}k".format(signal, str(windowWidth), n_clusters)
-
-    df = rawSignals[signal]
-
-    # join strand signal (plus - minus)
-    df = df.xs('+', level="strand") - df.xs('-', level="strand")
-
-    # scale row signal to 0:1 (normalization)
-    dfNorm = df.apply(lambda x: (x - min(x)) / (max(x) - min(x)), axis=1)
-
-    clust = k_means(dfNorm,
-                    n_clusters,
-                    n_init=25,
-                    max_iter=10000,
-                    n_jobs=2
-                    )  # returns centroid, label, inertia
-
-    # save object
-    pickle.dump(clust,
-                open(os.path.join(bamFilePath, exportName + ".pickl"), "wb"),
-                protocol=pickle.HIGHEST_PROTOCOL
-                )
-
-    # Sort dataframe by cluster order
-    dfNorm["cluster"] = clust[1]  # clust[1] <- label from k-means clustering
-    dfNorm.sort_index(by="cluster", axis=0, inplace=True)
-    dfNorm.drop("cluster", axis=1, inplace=True)
-
-    # Plot heatmap
-    data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
-    plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".pdf"))
-
-    # Export as cdt
-    exportToJavaTreeView(df, os.path.join(plotsDir, exportName + ".cdt"))
-
-
-
-
-
-
-
-
-
-
-
-"""
-Investigating the contribution of chromatin loops to TF ChIPmentation signal
-"""
-slurm = DivideAndSlurm()
-signal = "PU1_K562_10mio_CM"
-sample = "CTCF_K562_10mio_CM"
-sample = "ASP14_50k_ATAC-seq_nan_nan_untreated_ATAC10-7_0_0.trimmed.bowtie2.shifted.dups"
-sample = "CTCF_K562_10mio_ChIP"
-
-# load ChIPmentation peaks
-peaks = pybedtools.BedTool(os.path.join(peakFilePath, signal + ".motifStrand.bed"))
-
-# intersect with chromatin loops
-loops = pybedtools.BedTool("reference/Homo_sapiens/Hi-C/GSE63525_K562_HiCCUPS_looplist.concat.txt")
-
-peaks_in_loops = peaks.intersect(b=loops, wa=True)
-peaks_notin_loops = peaks.intersect(b=loops, v=True, wa=True)
-
-peaks_in_loops = bedToolsInterval2GenomicInterval(peaks_in_loops)
-peaks_notin_loops = bedToolsInterval2GenomicInterval(peaks_notin_loops)
-
-
-for name, interval in peaks_in_loops.iteritems():
-    if interval.length < windowWidth:
-        peaks_in_loops.pop(name)
-for name, interval in peaks_notin_loops.iteritems():
-    if interval.length < windowWidth:
-        peaks_notin_loops.pop(name)
-
-loopsTask = Coverage(peaks_in_loops, 2, os.path.join(bamFilePath, sample + ".bam"),
-                     orientation=True, fragment_size=1, strand_wise=True, queue="develop", cpusPerTask=4
-                     )
-notLoopsTask = Coverage(peaks_notin_loops, 2, os.path.join(bamFilePath, sample + ".bam"),
-                        orientation=True, fragment_size=1, strand_wise=True, queue="develop", cpusPerTask=4
-                        )
-slurm.add_task(loopsTask)
-slurm.add_task(notLoopsTask)
-
-slurm.submit(loopsTask)
-slurm.submit(notLoopsTask)
-
-loopsCov = loopsTask.collect()
-notLoopsCov = notLoopsTask.collect()
-
-levels = [loopsCov.keys(), ["+", "-"]]  # for strand_wise=True
-labels = [[y for x in range(len(loopsCov)) for y in [x, x]], [y for x in range(len(loopsCov.keys())) for y in (0, 1)]]
-index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
-loopsDf = pd.DataFrame(np.vstack(loopsCov.values()), index=index)
-loopsDf.columns = range(windowRange[0], windowRange[1])
-
-levels = [notLoopsCov.keys(), ["+", "-"]]
-labels = [[y for x in range(len(notLoopsCov)) for y in [x, x]], [y for x in range(len(notLoopsCov.keys())) for y in (0, 1)]]
-index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
-notLoopsDf = pd.DataFrame(np.vstack(notLoopsCov.values()), index=index)
-notLoopsDf.columns = range(windowRange[0], windowRange[1])
-
-# Save as csv
-loopsDf.to_csv(os.path.join(coverageFilePath, "{0}_inLoops.tssSignal_{1}bp.csv".format(sample, str(windowWidth))), index=False)
-notLoopsDf.to_csv(os.path.join(coverageFilePath, "{0}_notinLoops.tssSignal_{1}bp.csv".format(sample, str(windowWidth))), index=False)
-# loopsDf = pd.read_csv(os.path.join(coverageFilePath, "{0}_inLoops.tssSignal_{1}bp.csv".format(sample, str(windowWidth))))
-# notLoopsDf = pd.read_csv(os.path.join(coverageFilePath, "{0}_notinLoops.tssSignal_{1}bp.csv".format(sample, str(windowWidth))))
-
-# Pickle
-pickle.dump(loopsDf, open(os.path.join(coverageFilePath, "{0}_inLoops.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-pickle.dump(notLoopsDf, open(os.path.join(coverageFilePath, "{0}_notinLoops.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-# loopsDf = pickle.load(open(os.path.join(coverageFilePath, "{0}_inLoops.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "r"))
-# notLoopsDf = pickle.load(open(os.path.join(coverageFilePath, "{0}_notinLoops.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "r"))
-
-
-# Get average profiles and append to dict
-loopsAve = {"signal": sample,
-            "average": loopsDf.apply(np.mean, axis=0),                              # both strands
-            "positive": loopsDf.ix[range(0, len(loopsDf), 2)].apply(np.mean, axis=0),    # positive strand
-            "negative": loopsDf.ix[range(1, len(loopsDf), 2)].apply(np.mean, axis=0)     # negative strand
-            }
-notLoopsAve = {"signal": sample,
-               "average": notLoopsDf.apply(np.mean, axis=0),                              # both strands
-               "positive": notLoopsDf.ix[range(0, len(notLoopsDf), 2)].apply(np.mean, axis=0),    # positive strand
-               "negative": notLoopsDf.ix[range(1, len(notLoopsDf), 2)].apply(np.mean, axis=0)     # negative strand
-               }
-pickle.dump(loopsAve, open(os.path.join(coverageFilePath, "{0}_inLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-pickle.dump(notLoopsAve, open(os.path.join(coverageFilePath, "{0}_notinLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-# loopsAve = pickle.load(open(os.path.join(coverageFilePath, "{0}_inLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "r"))
-# notLoopsAve = pickle.load(open(os.path.join(coverageFilePath, "{0}_notinLoops_average.tssSignal_{1}bp.pickle".format(sample, str(windowWidth))), "r"))
-
-
-# Plot
-plt.subplot(121)
-plt.plot(loopsAve['average'].index, loopsAve['average'], 'black', linewidth=0.7)
-plt.subplot(122)
-plt.plot(notLoopsAve['average'].index, notLoopsAve['average'], 'black', linewidth=0.7)
-plt.savefig(os.path.join(plotsDir, "%s_peaks.loops.pdf" % sample), bbox_inches='tight')
-plt.close()
-
-plt.subplot(121)
-plt.plot(loopsAve['positive'].index, loopsAve['positive'], 'r', linewidth=0.7)
-plt.plot(loopsAve['negative'].index, loopsAve['negative'], 'b', linewidth=0.7)
-plt.subplot(122)
-plt.plot(notLoopsAve['positive'].index, notLoopsAve['positive'], 'r', linewidth=0.7)
-plt.plot(notLoopsAve['negative'].index, notLoopsAve['negative'], 'b', linewidth=0.7)
-plt.savefig(os.path.join(plotsDir, "%s_peaks.loops.strandWise.pdf" % sample), bbox_inches='tight')
-plt.close()
+            exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))
