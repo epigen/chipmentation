@@ -10,7 +10,7 @@ The current version uses my Python repository [`chipseq-pipelines`](https://gith
 All downstream analysis is performed with scripts in `src` using libraries such as HTSeq and pybedtools for efficiency and clarity.
 
 ### Data
-See annotation sheet here: [CSV](chipmentation.sample_annotation.csv)
+See annotation sheet here: [CSV](metadata/chipmentation.sample_annotation.csv)
 
 See tracks here: [UCSC](http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://www.biomedical-sequencing.at/bocklab/arendeiro/chipmentation/bigWig/trackHub_hg19.curated.txt)
 
@@ -23,7 +23,7 @@ Further, Samples where all of the above are the same except for `technicalReplic
 
 For downstream analysis I've been using mostly the later case: `technicalReplicate=0`, `biologicalReplicate=0`.
 
-This creates a [***sheet with new samples*** containing these merged ones](https://github.com/ComputationalEpigenetics/chipmentation/blob/master/chipmentation.replicates.annotation_sheet.csv), and paired control samples, which I use for downstream.
+This creates a [***sheet with new samples*** containing these merged ones](metadata/chipmentation.replicates.annotation_sheet.csv), and paired control samples, which I use for downstream.
 
 ### Project structure
 As defined in [`chipseq-pipelines`](https://github.com/afrendeiro/chipseq-pipelines):
@@ -73,7 +73,7 @@ I will document the other folders in due time.
 - Paired end sequencing of ChIPmentation (H3K4me3 and PU.1)
 
 ### Analysis
-- Address transposition event sequence biases at the TATA box with tagmented ChIP DNA (see [relevant document](https://github.com/ComputationalEpigenetics/chipmentation/blob/master/results/tn5_bias/README.md))
+- Address transposition event sequence biases at the TATA box with tagmented ChIP DNA (see [relevant document](results/tn5_bias/README.md))
 - Address transposition event sequence biases genome-wide (read frequency by k-mers genome-wide?)
 - Show ChIPmentation does produce subnucleosomal fragments using paired end data
 - Show ChIPmentation is more likely to generate only one (pair) of read from each IPed fragment at least for TFs
@@ -87,7 +87,7 @@ I will document the other folders in due time.
 - Rephrase that ChIPmentation does allow the usage of less cells, but that is dependant on the abundance of the factor and antibody efficiency
 - Mention that we're able to recover much smaller fragments due to no adapter dimers (show bioanalyzer profiles)
 - Mention we remove the transposase by washing the ChIP with SDS (as previously demonstrated)
-- Show library size distribution created with different amounts of transposase (see [relevant document](https://github.com/ComputationalEpigenetics/chipmentation/tree/master/results/fragment_size))
+- Show library size distribution created with different amounts of transposase (see [relevant document](results/fragment_size))
 
 # Internal todo
 - make vplots
@@ -125,4 +125,3 @@ I will document the other folders in due time.
 Compare DNase 
 Get data from other library perp methods, compare mapped, duplicates, n. peaks, ...
 New browser plots with Sushi
-
