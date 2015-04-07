@@ -396,24 +396,14 @@ grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
 grid.add_legend()
 plt.savefig(os.path.join(plotsDir, "all.tss.norm.pdf"), bbox_inches='tight')
 
-
 # raw
 for sample in aveSignals['name'].unique():
-    sample = "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19"
-    sub = aveSignals[
-        (aveSignals['name'] == sample) &
-        (aveSignals['x'] >= -58) &
-        (aveSignals['x'] <= 58)
-    ]
-
-    aveSignals = aveSignals[
-        (aveSignals['x'] >= -58) &
-        (aveSignals['x'] <= 58)
-    ]
-
-    # plot
-    grid = sns.FacetGrid(aveSignals, col="name", hue="type", sharey=False, col_wrap=4, xlim=(-58, 58))
-    grid.map(plt.plot, "x", "positive")
-    # grid.set(xlim=(-100, 100))
-    grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+    for signal in aveSignals[aveSignals['name'] == sample]["type"].unique():
+        sub = aveSignals[
+            (aveSignals['name'] == sample) &
+            (aveSignals['type'] == signal)
+        ]
+        plt.plot(sub['x'], sub['positive'], label=signal)
+    plt.legend(loc="best")
     plt.savefig(os.path.join(plotsDir, sample + ".tss.pdf"), bbox_inches='tight')
+    plt.close()
