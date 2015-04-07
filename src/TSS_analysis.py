@@ -15,14 +15,9 @@ import HTSeq
 import pybedtools
 import numpy as np
 import pandas as pd
-
-# from ggplot import ggplot, aes, stat_smooth, facet_wrap, xlab, ylab, theme_bw, theme
 import matplotlib.pyplot as plt
-import rpy2.robjects as robj  # for ggplot in R
-import rpy2.robjects.pandas2ri  # for R dataframe conversion
-from rpy2.robjects.packages import importr
+import seaborn as sns  # changes plt style (+ full plotting library)
 
-from sklearn.cluster import k_means
 import cPickle as pickle
 
 
@@ -93,6 +88,10 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
             # check if duplicate
             if not duplicates and aln.pcr_or_optical_duplicate:
                 continue
+            # check it's aligned
+            if not aln.aligned:
+                continue
+
             aln.iv.length = fragmentsize  # adjust to size
 
             # get position in relative to window
@@ -238,15 +237,15 @@ sampleSubset = samples[
 
 # append extra samples
 sampleSubset = sampleSubset.append(samples[
-    (samples["sampleName"].str.contains(
+    samples["sampleName"].str.contains(
         "K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19|" +
         "K562_10M_CM_H3K36ME3_nan_nan_1_1_hg19|K562_10M_CHIP_H3K4ME1_nan_nan_1_0_hg19|" +
         "K562_10K_CM_IGG_nan_nan_0_0_hg19|K562_10M_CHIP_IGG_nan_nan_0_0_hg19|" +
         "K562_10M_CM_IGG_nan_nan_1_0_hg19|K562_500K_CM_IGG_nan_nan_1_0_hg19|" +
-        "K562_50K_ATAC_nan_nan_nan_0_0_hg19|PBMC_nan_ATAC_INPUT_nan_100PG_1_1_hg19"  # |K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
+        "K562_50K_ATAC_nan_nan_nan_0_0_hg19|" +
+        "K562_500K_ATAC_H3K4ME3_nan_01ULTN5_PE_1_1_hg19|K562_500K_ATAC_INPUT_nan_01ULTN5_PE_1_1_hg19"
     )
-    )
-].reset_index(drop=True))
+]).reset_index(drop=True)
 
 sampleSubset = sampleSubset.append(pd.Series(data=["DNase", DNase], index=["sampleName", "filePath"]), ignore_index=True)
 sampleSubset = sampleSubset.append(pd.Series(data=["MNase", MNase], index=["sampleName", "filePath"]), ignore_index=True)
@@ -279,6 +278,7 @@ for i in range(len(sampleSubset)):
     name = sampleSubset['sampleName'][i]
 
     if name not in aveSignals.keys():
+        print(name)
 
         # Load bam
         bamfile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
@@ -311,178 +311,109 @@ for i in range(len(sampleSubset)):
         aveSignals[name] = pd.DataFrame(ave)
         pickle.dump(aveSignals, open(os.path.join(resultsDir, "TSS_aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-aveSignals = pickle.load(open(os.path.join(resultsDir, "TSS_aveSignals.pickle"), "r"))
-# Plot average profiles for all signals with ggplot
-aveSignals = pd.concat(aveSignals, axis=0)
-aveSignals["x"] = [i[1] for i in aveSignals.index]
-aveSignals = aveSignals.sort(["name"]).reset_index(drop=True)
-aveSignals = pd.melt(aveSignals, id_vars=["x", "name"])
+pickle.dump(rawSignals, open(os.path.join(resultsDir, "TSS_rawSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-plotFunc = robj.r("""
-    library(ggplot2)
-
-    #cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-
-    function(df, plotsDir){{
-        p = ggplot(df, aes(x, value, colour = variable)) +
-            geom_line() +
-            #stat_smooth(method = "gam", formula = y ~ s(x, k = 20), se = FALSE) +
-            facet_wrap(~name, scales="free") +
-            xlab("Distance to tss") +
-            ylab("Average tags per bp") +
-            theme_bw() +
-            theme(legend.title=element_blank()) +
-            #scale_colour_manual(values=cbPalette[c("grey", ,3,7)])
-            scale_colour_manual(values=c("grey", "dark blue","dark red"))
-
-        ggsave(filename = paste0(plotsDir, "/tssSignals_{0}bp.pdf"), plot = p, height = 8, width = 16)
-    }}
-    """.format(windowWidth)
-)
-
-gr = importr('grDevices')
-# convert the pandas dataframe to an R dataframe
-robj.pandas2ri.activate()
-aveSignals_R = robj.conversion.py2ri(aveSignals)
-
-# run the plot function on the dataframe
-plotFunc(aveSignals_R, plotsDir)
-
-# Plot normalized
+# convert dict to dataframe
 aveSignals = pickle.load(open(os.path.join(resultsDir, "TSS_aveSignals.pickle"), "r"))
 aveSignals = pd.concat(aveSignals, axis=0)
 aveSignals["x"] = [i[1] for i in aveSignals.index]
 aveSignals = aveSignals.sort(["name"]).reset_index(drop=True)
+aveSignals.drop_duplicates(inplace=True)
+aveSignals["type"] = "raw"
+aveSignals.reset_index(drop=True, inplace=True)
 
-# Normalize
-aveSignalsNorm = aveSignals.copy()
-for i in range(len(sampleSubset)):
-    sampleName = sampleSubset['sampleName'][i]
-    controlName = sampleSubset['controlSampleName'][i]
+aveSignals = aveSignals[
+    (aveSignals['x'] >= -58) &
+    (aveSignals['x'] <= 58)
+]
 
-    if controlName != "":
-        for strand in ['average', 'negative', 'positive']:
-            treat = aveSignals[aveSignals["name"] == sampleName][strand]
-            ctrl = aveSignals[aveSignals["name"] == controlName][strand]
+# Normalize by controls
+df = aveSignals.copy()
+df2 = pd.DataFrame()
+
+ctrls = [
+    "K562_10K_CM_IGG_nan_nan_0_0_hg19",
+    "K562_500K_CM_IGG_nan_nan_1_0_hg19",
+    "K562_50K_ATAC_nan_nan_nan_0_0_hg19",
+    "K562_500K_ATAC_H3K4ME3_nan_01ULTN5_PE_1_1_hg19",
+    "K562_500K_ATAC_INPUT_nan_01ULTN5_PE_1_1_hg19"
+]
+
+for sample in df.name.unique():
+    for strand in ["average", "positive", "negative"]:
+        # scale and smooth raw data
+        treat = df[(df["name"] == sample)][strand]
+
+        tmp = pd.DataFrame()
+        scaled = smooth((treat - treat.min()) / (treat.max() - treat.min()))
+
+        tmp[strand] = scaled
+        tmp['name'] = sample
+        tmp['x'] = np.array(range(len(tmp))) - (len(tmp) / 2)
+        tmp['type'] = "raw"
+
+        df2 = df2.append(tmp, ignore_index=True)
+
+        for control in ctrls:
+            treat = df[
+                (df["name"] == sample)
+            ][strand]
+
+            ctrl = df[
+                (df["name"] == control)
+            ][strand]
 
             # standardize: 0-1
-            treat = ((treat - treat.min())) / ((treat.max() - treat.min()))
-            ctrl = ((ctrl - ctrl.min())) / ((ctrl.max() - ctrl.min()))
+            treat = smooth((treat - treat.min()) / (treat.max() - treat.min()))
+            ctrl = smooth((ctrl - ctrl.min()) / (ctrl.max() - ctrl.min()))
 
             # normalize by input
             norm = np.array(treat) - np.array(ctrl)
 
-            aveSignalsNorm.loc[aveSignalsNorm["name"] == sampleName, strand] = norm
+            tmp = pd.DataFrame()
+            tmp[strand] = norm
+            tmp['name'] = sample
+            tmp['x'] = np.array(range(len(tmp))) - (len(tmp) / 2)
+            tmp['type'] = control
+
+            df2 = df2.append(tmp, ignore_index=True)
+aveSignals = df2
+
+# Plot average profiles
+# Grid plots
+# raw
+sub = aveSignals[aveSignals['type'] == "raw"]
+grid = sns.FacetGrid(sub, col="name", hue="name", sharey=False, col_wrap=4, xlim=(-58, 58), size=4, aspect=2)
+grid.map(plt.plot, "x", "positive")
+grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+grid.add_legend()
+plt.savefig(os.path.join(plotsDir, "all.tss.raw.pdf"), bbox_inches='tight')
+
+# norm - all in one
+grid = sns.FacetGrid(aveSignals, col="name", hue="type", sharey=False, col_wrap=4, xlim=(-58, 58), size=4, aspect=2)
+grid.map(plt.plot, "x", "positive")
+grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+grid.add_legend()
+plt.savefig(os.path.join(plotsDir, "all.tss.norm.pdf"), bbox_inches='tight')
 
 
-aveSignalsNorm = pd.melt(aveSignalsNorm, id_vars=["x", "name"])
+# raw
+for sample in aveSignals['name'].unique():
+    sample = "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19"
+    sub = aveSignals[
+        (aveSignals['name'] == sample) &
+        (aveSignals['x'] >= -58) &
+        (aveSignals['x'] <= 58)
+    ]
 
-plotFunc = robj.r("""
-    library(ggplot2)
+    aveSignals = aveSignals[
+        (aveSignals['x'] >= -58) &
+        (aveSignals['x'] <= 58)
+    ]
 
-    #cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-
-    function(df, plotsDir){{
-        p = ggplot(df, aes(x, value, colour = variable)) +
-            geom_line() +
-            #stat_smooth(method = "gam", formula = y ~ s(x, k = 20), se = FALSE) +
-            facet_wrap(~name, scales="free") +
-            xlab("Distance to tss") +
-            ylab("Average tags per bp") +
-            theme_bw() +
-            theme(legend.title=element_blank()) +
-            #scale_colour_manual(values=cbPalette[c("grey", ,3,7)])
-            scale_colour_manual(values=c("grey", "dark blue","dark red"))
-
-        ggsave(filename = paste0(plotsDir, "/tssSignalsNorm_{0}bp.pdf"), plot = p, height = 8, width = 16)
-    }}
-    """.format(windowWidth)
-)
-
-gr = importr('grDevices')
-# convert the pandas dataframe to an R dataframe
-robj.pandas2ri.activate()
-aveSignals_R = robj.conversion.py2ri(aveSignalsNorm)
-
-# run the plot function on the dataframe
-plotFunc(aveSignals_R, plotsDir)
-
-
-# Loop through raw signals, normalize, k-means cluster, save pickle, plot heatmap, export cdt
-for i in range(len(sampleSubset)):
-    name = sampleSubset['sampleName'][i]
-    print("Clustering based on %s" % name)
-    exportName = "{0}.tssSignal_{1}bp.kmeans_{2}k".format(name, str(windowWidth), n_clusters)
-
-    df = rawSignals[name]
-
-    # join strand name (plus + minus)
-    df = df.sum(axis=0, level="tss")
-
-    # scale row signal to 0:1 (standardization)
-    dfNorm = df.apply(normalize, axis=1)
-    dfNorm.replace(["inf", "NaN"], 0, inplace=True)
-
-    # cluster
-    clust = k_means(
-        dfNorm,
-        n_clusters,
-        n_init=25,
-        max_iter=10000,
-        n_jobs=-1
-    )  # returns centroid, label, inertia
-
-    # keep dataframe with assigned cluster and row index
-    clustOrder = pd.DataFrame(
-        clust[1],
-        columns=["cluster"],
-        index=dfNorm.index.values
-    )
-
-    # save object
-    pickle.dump(
-        clust,
-        open(os.path.join(plotsDir, "..", exportName + ".pickle"), "wb"),
-        protocol=pickle.HIGHEST_PROTOCOL
-    )
-
-    print("Exporting heatmaps for %s" % name)
-
-    # now sort by clust order
-    dfNorm = pd.merge(dfNorm, clustOrder, on=None, left_index=True, right_index=True)  # get common rows (should be all)
-    dfNorm.replace(["inf", "NaN"], 0, inplace=True)
-    dfNorm.sort_index(by="cluster", axis=0, inplace=True)
-    dfNorm.drop("cluster", axis=1, inplace=True)
-
-    # Plot heatmap
-    # data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
-    # plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".plotly.pdf"))
-    # plotHeatmap(dfNorm, os.path.join(plotsDir, exportName + "." + name2 + "_signal.matplotlib.pdf"))
-
-    # Export as cdt
-    exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "_signal.cdt"))
-
-    # # Sort all signals by dataframe by cluster order
-    # for j in range(len(sampleSubset)):
-    #     name2 = sampleSubset['sampleName'][j]
-    #     print("Exporting heatmaps for %s" % name2)
-    #     df = rawSignals[name2]
-    #     df = df.xs('+', level="strand") + df.xs('-', level="strand")
-
-    #     # scale row signal to 0:1 (standardization)
-    #     dfNorm = df.apply(lambda x: (x - min(x)) / (max(x) - min(x)), axis=1)
-    #     dfNorm.replace("inf", 0, inplace=True)
-
-    #     # now sort by clust order
-    #     dfNorm = pd.merge(dfNorm, clustOrder, on=None, left_index=True, right_index=True)  # get common rows (should be all)
-    #     dfNorm.replace(["inf", "NaN"], 0, inplace=True)
-    #     dfNorm.sort_index(by="cluster", axis=0, inplace=True)
-    #     dfNorm.drop("cluster", axis=1, inplace=True)
-
-    #     # Plot heatmap
-    #     # data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
-    #     # plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".plotly.pdf"))
-    #     # plotHeatmap(dfNorm, os.path.join(plotsDir, exportName + "." + name2 + "_signal.matplotlib.pdf"))
-
-    #     # Export as cdt
-    #     exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "." + name2 + "_signal.cdt"))
+    # plot
+    grid = sns.FacetGrid(aveSignals, col="name", hue="type", sharey=False, col_wrap=4, xlim=(-58, 58))
+    grid.map(plt.plot, "x", "positive")
+    # grid.set(xlim=(-100, 100))
+    grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+    plt.savefig(os.path.join(plotsDir, sample + ".tss.pdf"), bbox_inches='tight')

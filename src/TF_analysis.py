@@ -762,7 +762,7 @@ for i in range(len(sampleSubset)):
         neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
         df = (pos + neg) / 2
 
-        exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))            
+        exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))
 
     for j in range(len(signals)):
         signalName = signals['sampleName'][j]
