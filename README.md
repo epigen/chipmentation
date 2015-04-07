@@ -5,7 +5,7 @@ Schmidl 2015 'ChIPmentation' project
 -----
 In its first version (prior to submission) most preprocessing was writen in `bash` and downstream analysis was done with `R`. `src/main.sh` was the main script which called some of the code in `src/pipelines,scripts,lib` etc...
 
-The current version uses my Python repository [`chipseq-pipelines`](https://github.com/afrendeiro/chipseq-pipelines) to manage preprocessing of files much more efficiently using only the sample annotation sheet ([`chipmentation.sample_annotation.csv`](chipmentation.sample_annotation.csv)).
+The current version uses my Python repository [`chipseq-pipelines`](https://github.com/afrendeiro/chipseq-pipelines) to manage preprocessing of files much more efficiently using only the sample annotation sheet ([`chipmentation.sample_annotation.csv`](metadata/chipmentation.sample_annotation.csv)).
 
 All downstream analysis is performed with scripts in `src` using libraries such as HTSeq and pybedtools for efficiency and clarity.
 
@@ -52,7 +52,8 @@ htmlroot
 |__ chipmentation
     |__ bigwig
 ```
-JSON description [here](https://github.com/ComputationalEpigenetics/chipmentation/blob/master/projectPaths.json).
+
+JSON description [here](metadata/projectPaths.json).
 
 Probably the most relevant folder is `/chipmentation/data/mapped`. There are 2 bam files for each sample (+ .bai indices):
 - ChIP-seq samples:
