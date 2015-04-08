@@ -25,6 +25,7 @@ DIRS=(
     /fhgfs/groups/lab_bsf/samples/BSF_0102_C49ATACXX/BSF_0102_C49ATACXX_2_samples/
     /fhgfs/groups/lab_bsf/samples/BSF_0082_C3JPBACXX/BSF_0082_C3JPBACXX_2_samples/
     /fhgfs/groups/lab_bsf/samples/BSF_0051_D2GW1ACXX/BSF_0051_D2GW1ACXX_4_samples/
+    /fhgfs/groups/lab_bsf/samples/BSF_0149_C6H48ANXX/BSF_0149_C6H48ANXX_4_samples/
 )
 
 # get corrupted bams from bsf folder
