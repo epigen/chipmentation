@@ -12,7 +12,9 @@ All downstream analysis is performed with scripts in `src` using libraries such 
 ### Data
 See annotation sheet here: [CSV](metadata/chipmentation.sample_annotation.csv)
 
-See tracks here: [UCSC](http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://www.biomedical-sequencing.at/bocklab/arendeiro/chipmentation/bigWig/trackHub_hg19.curated.txt)
+See tracks here:
+- [UCSC](http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://www.biomedical-sequencing.at/bocklab/arendeiro/chipmentation/bigWig/trackHub_hg19.curated.txt)
+- [UCSC from GCS](http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://storage.googleapis.com/storage-cm/bigWig/trackHub_hg19.txt)
 
 ### Sample names
 Sample names are a concatenation of the annotation fields: `cellLine, numberCells, technique, ip, patient, treatment, biologicalReplicate, technicalReplicate, genome`. 
