@@ -807,6 +807,53 @@ class MeasureDarnsFeatures(Task):
             return self.output
 
 
+def measureDarnsFeatures(regions, hmm, chrom, regionType, features, coverage, darnsNumber):
+    """
+    """
+    if darnsNumber % 10000 == 0:
+        print darnsNumber
+
+    start, end, center = regions[chrom][darnsNumber]
+    name = "_".join([chrom, str(start), str(end), str(center)])
+
+    series = pd.Series(index=["type"] + ["name"] + features)
+    series["type"] = regionType
+    series["name"] = name
+
+    # measure length
+    series["length"] = end - start
+
+    # measure distance to neighbours
+    if darnsNumber != 0:
+        series["space_upstream"] = abs(start - regions[chrom][darnsNumber - 1][1])  # current start minus previous end
+    else:
+        series["space_upstream"] = None
+    if darnsNumber != len(regions[chrom]) - 1:
+        series["space_downstream"] = abs(regions[chrom][darnsNumber + 1][0] - end)  # current end minus next start
+    else:
+        series["space_downstream"] = None
+
+    # get posterior prob
+    # sequence = genome_binary[chrom][start: end]
+    # series["post_prob"] = model.retrieveProbabilities(sequence)
+
+    # get read count
+    series["read_count"] = coverage[regionType][name].sum()
+    # get density
+    # I defined it as (sum / length). It is not clear this is the same as in Winter2013
+    series["read_density"] = coverage[regionType][name].sum() / (end - start)
+
+    # n. of positive peaks in nucleosome model
+    hmm = eval("hmmOutput") if regionType == "DARNS" else eval("hmmOutputP")
+    series["n_pospeaks"] = hmm[chrom][start: end].count("+")
+
+    # n. of negative peaks in nucleosome model
+    series["n_negpeaks"] = hmm[chrom][start: end].count("-")
+
+    # append
+    return series
+
+
 def makeGenomeWindows(windowWidth, genome, step=None):
     """
     Generate windows genome-wide for a given genome with width=windowWidth and
@@ -1571,6 +1618,7 @@ hmmOutputP, DARNSP = pickle.load(open(os.path.join(results_dir, sampleName + "_H
 
 # Filter DARNS with size = 1
 DARNS = {chrom: [tup for tup in DARNS[chrom] if tup[1] - tup[0] > 1] for chrom in DARNS.keys()}
+DARNSP = {chrom: [tup for tup in DARNSP[chrom] if tup[1] - tup[0] > 1] for chrom in DARNSP.keys()}
 
 # Measure attributes:
 # value of maximum positive strand correlation peak
@@ -1598,8 +1646,9 @@ DARNS = {chrom: [tup for tup in DARNS[chrom] if tup[1] - tup[0] > 1] for chrom i
 cov = dict()
 for regions in ["DARNS", "DARNSP"]:
     intervals = DARNS2GenomicInterval(eval(regions))
+    bam = HTSeq.BAM_Reader("/media/afr/cemm-backup/chipmentation/data/mapped/K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam")
     cov[regions] = coverage(
-        "/media/afr/cemm-backup/chipmentation/data/mapped/K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam",
+        bam,
         intervals,
         1
     )
@@ -1638,26 +1687,73 @@ cov = pickle.load(open(os.path.join(results_dir, sampleName + "_DARNS.coverage.p
 features = ["length", "space_upstream", "space_downstream",
             "read_count", "read_density", "n_pospeaks", "n_negpeaks"]  # anyway already hard-coded in task
 
-slurm = DivideAndSlurm()
+mode = "parallel"
 
-for region in ['DARNS', "DARNSP"]:
-    for chrom in eval(region).keys():
-        task = MeasureDarnsFeatures(
-            range(len(eval(region))),  # indexes of darns
-            100,  # n of jobs to split across
-            chrom,
-            region
-        )
-        slurm.add_task(task)
-        slurm.submit(task)
+if mode == "serial":
+    # in serial
+    import functools
+    DARNS_features = pd.DataFrame()
 
-DARNS_features = pd.DataFrame()
-for task in slurm.tasks:
-    df = task.collect()
-    # append
-    DARNS_features = DARNS_features.append(df, ignore_index=True)
+    for region in ['DARNS', "DARNSP"]:
+        for chrom in eval(region).keys():
+            df = pd.DataFrame(  # this is the reduce step
+                map(
+                    functools.partial(  # use wrapper to pass more arguments
+                        measureDarnsFeatures,
+                        eval(region),
+                        region,
+                        chrom,
+                        region,
+                        features,
+                        cov
+                    ),
+                    range(len(eval(region)[chrom]))
+                )
+            )
+            DARNS_features = DARNS_features.append(df, ignore_index=True)
+elif mode == "parallel":
+    # in parallel
+    import multiprocessing
+    import parmap
+    DARNS_features = pd.DataFrame()
 
-DARNS_features = DARNS_features.dropna()
+    for region in ['DARNS', "DARNSP"]:
+        for chrom in eval(region).keys():
+            df = pd.DataFrame(  # this is the reduce step
+                parmap.map(
+                    measureDarnsFeatures,
+                    range(len(eval(region)[chrom])),  # iterable
+                    regions=eval(region),
+                    hmm=region,
+                    chrom=chrom,
+                    regionType=region,
+                    features=features,
+                    coverage=cov
+                )
+            )
+            DARNS_features = DARNS_features.append(df, ignore_index=True)
+elif mode == "slurm":
+    # in parallel across nodes
+    slurm = DivideAndSlurm()
+
+    for region in ['DARNS', "DARNSP"]:
+        for chrom in eval(region).keys():
+            task = MeasureDarnsFeatures(
+                range(len(eval(region))),  # indexes of darns
+                100,  # n of jobs to split across
+                chrom,
+                region
+            )
+            slurm.add_task(task)
+            slurm.submit(task)
+
+    DARNS_features = pd.DataFrame()
+    for task in slurm.tasks:
+        df = task.collect()
+        # append
+        DARNS_features = DARNS_features.append(df, ignore_index=True)
+
+DARNS_features = DARNS_features.dropna().reset_index(drop=True)
 # serialize
 pickle.dump(
     DARNS_features,
@@ -1674,12 +1770,8 @@ for feature in features:
     permuted = DARNS_features.loc[DARNS_features["type"] == "DARNSP", feature].tolist()
 
     # test difference
-    if feature in ["length", "space_upstream", "space_downstream",
-                   "read_count", "n_pospeaks", "n_negpeaks"]:
-        # print chisquare(real, permuted)
-        D, p = ks_2samp(real, permuted)
-    elif feature in ["read_density"]:
-        D, p = ks_2samp(real, permuted)
+    D, p = ks_2samp(real, permuted)
+    print(feature, D, p)
     # see normality
     # qqplot
     import scipy.stats as stats
@@ -1766,14 +1858,30 @@ train_labels = DARNS_features.loc[randomRows, "type"].tolist()
 # result = logit.fit()
 #
 
-# Use nearest neighbours classifier
-from sklearn import neighbors
-n_neighbors = 4
+classifier = "neighbours"  # tree
 
-clf = neighbors.KNeighborsClassifier(n_neighbors, weights="uniform")  # try with "distance"
+if classifier == "linear":
+    # Linear model classifier - logistic regressor
+    from sklearn.linear_model import LogisticRegression
+    clf = LogisticRegression()
+elif classifier == "neighbours":
+    # Use nearest neighbours classifier
+    from sklearn import neighbors
+    n_neighbors = 4
+    clf = neighbors.KNeighborsClassifier(n_neighbors, weights="uniform")  # try with "distance"
+elif classifier == "tree":
+    # Use decision tree
+    from sklearn.tree import DecisionTreeClassifier
+    clf = DecisionTreeClassifier()
+elif classifier == "forest":
+    from sklearn.ensemble import RandomForestClassifier
+    clf = RandomForestClassifier()
+
+# Train
 clf.fit(train_features, train_labels)
 
 # Predict for all data
+# put in data frame form
 pred = pd.DataFrame()
 pred["name"] = DARNS_features["name"].tolist()
 pred["type"] = DARNS_features["type"].tolist()
@@ -1789,6 +1897,43 @@ N = 100
 for i in range(N):  # try increasing N
     pred[i] = clf.predict(DARNS_features.loc[:, features])
 
+pickle.dump(
+    pred,
+    open(os.path.join(results_dir, sampleName + "_DARNS.predictions.pickle"), "wb"),
+    protocol=pickle.HIGHEST_PROTOCOL
+)
+
+# Metrics
+# from sklearn
+from sklearn.metrics import classification_report, roc_curve, roc_auc_score, precision_recall_curve
+y_true = pred["type"].tolist()
+y_score = pred.apply(lambda x: len(x[np.array(range(N)) + 2]).count("DARNS") / len(x[np.array(range(N)) + 2]), axis=1)
+classification_report(y_true, pred[0])  # only works for one prediction at a time
+fpr, tpr, thresholds = roc_curve(y_true, y_score, pos_label="DARNS")
+AUC = roc_auc_score(y_true, y_score)
+
+precision, recall, thresholds = precision_recall_curve(y_true, y_score, pos_label="DARNS")
+AUC = roc_auc_score(y_true, y_score)
+
+# plot ROC
+plt.plt(fpr, tpr)
+plt.text(0.05, 0.95, "AUC = %s" % AUC, fontsize=12)
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.savefig(os.path.join(results_dir, sampleName + "_DARNS.roc.pdf"))
+plt.close()
+
+# plot PRC
+plt.plt(recall, precision)
+plt.text(0.05, 0.95, "AUC = %s" % AUC, fontsize=12)
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.savefig(os.path.join(results_dir, sampleName + "_DARNS.prc.pdf"))
+plt.close()
+
+# Manual
 # Get confusion matrix
 # counts of True positives, False positives, False negatives, True negatives
 pred["TP"] = pred.apply(lambda x: list(x[np.array(range(N)) + 2]).count("DARNS") if x["type"] == "DARNS" else 0, axis=1)
