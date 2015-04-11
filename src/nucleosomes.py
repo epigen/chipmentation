@@ -1753,7 +1753,15 @@ elif mode == "slurm":
         # append
         DARNS_features = DARNS_features.append(df, ignore_index=True)
 
+# Remove NAs (only first and last darn)
 DARNS_features = DARNS_features.dropna().reset_index(drop=True)
+
+# Fill in data by imputation
+# from sklearn.preprocessing import Imputer
+# imp = Imputer(missing_values='NaN', strategy='mean', axis=0)
+# imp.fit(DARNS_features.dropna())  # need to subset and transform to np.array
+# DARNS_features = imp.transform(DARNS_features)
+
 # serialize
 pickle.dump(
     DARNS_features,
@@ -1840,23 +1848,17 @@ plt.savefig(os.path.join(results_dir, sampleName + "_DARNS.pairplot.pdf"))
 plt.close()
 
 # Train classifier on features
+# Standardize
+from sklearn import preprocessing
+for feature in features:
+    DARNS_features.loc[:, feature] = preprocessing.scale(DARNS_features[feature])
+
 # get random tenth of data to train on
 randomRows = [random.randrange(0, len(DARNS_features)) for _ in range(len(DARNS_features) / 10)]
 train_features = DARNS_features.loc[randomRows, features]
 
 # get class labels for data
 train_labels = DARNS_features.loc[randomRows, "type"].tolist()
-# train_labels = [0 if l == "DARNS" else 1 for l in train_labels]  # convert to numeric
-
-# lr = LinearRegression()
-# lr.fit(np.array(train_features), train_labels, n_jobs=-1)
-# pred = lr.predict(DARNS_features.loc[: features])
-
-# With statsmodels
-# import statsmodels.api as sm
-# logit = sm.Logit(train_features, train_labels)
-# result = logit.fit()
-#
 
 classifier = "neighbours"  # tree
 
