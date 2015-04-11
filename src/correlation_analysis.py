@@ -142,7 +142,7 @@ def plotKDE(s1, s2, path):
 
 
 # Define paths
-projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
+projectRoot = "/projects/chipmentation/"
 coverageDir = projectRoot + "data/coverage"
 resultsDir = projectRoot + "results"
 plotsDir = resultsDir + "/plots/correlations"
