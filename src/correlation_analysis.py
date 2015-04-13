@@ -32,6 +32,7 @@ def getCounts(sampleSubset):
         try:
             df = pd.read_csv(os.path.join(coverageDir, name + ".cov"), sep="\t", header=None)
         except:
+            print("Couldn't open file %s." % os.path.join(coverageDir, name + ".cov"))
             continue
 
         # get series with counts
@@ -152,7 +153,7 @@ samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.an
 
 # set technicalreplicate=0 to samples with only one technical replicate per biological replicate
 for n, i in samples.groupby(["cellLine", "numberCells", "technique", "ip",
-                             "patient", "treatment", "biologicalReplicate", "genome"]).groups.items():
+                             "treatment", "biologicalReplicate", "genome"]).groups.items():
     if len(i) == 1:
         samples.loc[i[0], "technicalReplicate"] = 0
 
@@ -178,6 +179,7 @@ sampleSubset = samples[
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
 normCounts = getCounts(sampleSubset)
+normCounts.to_pickle(os.path.join(plotsDir, "correlations.set-reps.pickle"))
 plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.set-reps.pdf"))
 
 # All final
@@ -193,6 +195,7 @@ sampleSubset = samples[
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
 normCounts = getCounts(sampleSubset)
+normCounts.to_pickle(os.path.join(plotsDir, "correlations.set.pickle"))
 plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.set.pdf"))
 
 # Histones
@@ -208,6 +211,7 @@ sampleSubset = samples[
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
 normCounts = getCounts(sampleSubset)
+normCounts.to_pickle(os.path.join(plotsDir, "correlations.histones-reps.pickle"))
 plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.histones-reps.pdf"))
 
 # Histones
@@ -223,6 +227,7 @@ sampleSubset = samples[
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
 normCounts = getCounts(sampleSubset)
+normCounts.to_pickle(os.path.join(plotsDir, "correlations.histones.pickle"))
 plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.histones.pdf"))
 
 # TFs
@@ -238,6 +243,7 @@ sampleSubset = samples[
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
 normCounts = getCounts(sampleSubset)
+normCounts.to_pickle(os.path.join(plotsDir, "correlations.TFs-reps.pickle"))
 plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.TFs-reps.pdf"))
 
 # TFs
@@ -253,6 +259,7 @@ sampleSubset = samples[
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
 normCounts = getCounts(sampleSubset)
+normCounts.to_pickle(os.path.join(plotsDir, "correlations.TFs.pickle"))
 plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.TFs.pdf"))
 
 # Figure 1:

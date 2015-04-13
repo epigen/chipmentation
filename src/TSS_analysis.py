@@ -15,6 +15,16 @@ import HTSeq
 import pybedtools
 import numpy as np
 import pandas as pd
+import matplotlib
+# Force matplotlib to not use any Xwindows backend.
+matplotlib.use('Agg')
+import matplotlib.font_manager as font_manager
+
+fontpath = '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf'
+
+prop = font_manager.FontProperties(fname=fontpath)
+matplotlib.rcParams['font.family'] = prop.get_name()
+
 import matplotlib.pyplot as plt
 import seaborn as sns  # changes plt style (+ full plotting library)
 
@@ -217,14 +227,20 @@ def smooth(x, window_len=8, window='hanning'):
 
 
 # Define variables
-projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
-resultsDir = projectRoot + "results"
-plotsDir = resultsDir + "/plots"
-DNase = "/home/arendeiro/data/human/encode/wgEncodeUwDnaseK562Aln.merged.bam"
-MNase = "/home/arendeiro/data/human/encode/wgEncodeSydhNsomeK562AlnRep1.bam"
+projectRoot = "/projects/chipmentation/"
+bamsDir = os.path.join(projectRoot, "data", "mapped/")
+resultsDir = os.path.join(projectRoot, "results")
+plotsDir = os.path.join(resultsDir, "plots")
+DNase = os.path.join(bamsDir, "wgEncodeUwDnaseK562Aln.merged.bam")
+MNase = os.path.join(bamsDir, "wgEncodeSydhNsomeK562Aln.merged.bam")
 
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
+
+# replace bam path with local
+import re
+fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/"
+samples.loc[:, "filePath"] = samples["filePath"].apply(lambda x: re.sub(fhPath, bamsDir, x))
 
 # subset samples
 sampleSubset = samples[
@@ -252,9 +268,9 @@ sampleSubset = sampleSubset.append(pd.Series(data=["MNase", MNase], index=["samp
 
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
-bedFilePath = "/home/arendeiro/reference/Homo_sapiens/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
+bedFilePath = "/projects/reference/hg19/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
 genome = "hg19"
-windowRange = (-60, 60)
+windowRange = (-80, 95)
 fragmentsize = 1
 duplicates = True
 n_clusters = 5
@@ -267,7 +283,7 @@ tsss = pybedtools.BedTool(bedFilePath).slop(genome=genome, b=windowWidth / 2)
 tsss = bedToolsInterval2GenomicInterval(tsss)
 # Filter tsss near chrm borders
 for name, interval in tsss.iteritems():
-    if interval.length < windowWidth + 1:
+    if interval.length < windowWidth:
         tsss.pop(name)
 
 # Loop through all signals, compute coverage in bed regions,
@@ -290,7 +306,7 @@ for i in range(len(sampleSubset)):
         levels = [cov.keys(), ["+", "-"]]
         labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
         index = pd.MultiIndex(labels=labels, levels=levels, names=["tss", "strand"])
-        df = pd.DataFrame(np.vstack(cov.values()), index=index, columns=range(windowRange[0], windowRange[1] + 1))
+        df = pd.DataFrame(np.vstack(cov.values()), index=index, columns=range(windowRange[0], windowRange[1]))
 
         # For strand_specific=False
         # cov = coverage(bamfile, tsss, fragmentsize)
@@ -299,7 +315,7 @@ for i in range(len(sampleSubset)):
 
         # append to dict
         rawSignals[name] = df
-        pickle.dump(rawSignals, open(os.path.join(resultsDir, "TSS_rawSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(rawSignals, open(os.path.join(resultsDir, "TSS_rawSignals.2.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
         # Get average profiles and append to dict
         ave = {
@@ -309,23 +325,16 @@ for i in range(len(sampleSubset)):
             "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0)     # negative strand
         }
         aveSignals[name] = pd.DataFrame(ave)
-        pickle.dump(aveSignals, open(os.path.join(resultsDir, "TSS_aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-
-pickle.dump(rawSignals, open(os.path.join(resultsDir, "TSS_rawSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(aveSignals, open(os.path.join(resultsDir, "TSS_aveSignals.2.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
 # convert dict to dataframe
-aveSignals = pickle.load(open(os.path.join(resultsDir, "TSS_aveSignals.pickle"), "r"))
+aveSignals = pickle.load(open(os.path.join(resultsDir, "TSS_aveSignals.2.pickle"), "r"))
 aveSignals = pd.concat(aveSignals, axis=0)
 aveSignals["x"] = [i[1] for i in aveSignals.index]
 aveSignals = aveSignals.sort(["name"]).reset_index(drop=True)
 aveSignals.drop_duplicates(inplace=True)
 aveSignals["type"] = "raw"
 aveSignals.reset_index(drop=True, inplace=True)
-
-aveSignals = aveSignals[
-    (aveSignals['x'] >= -58) &
-    (aveSignals['x'] <= 58)
-]
 
 # Normalize by controls
 df = aveSignals.copy()
@@ -383,18 +392,18 @@ aveSignals = df2
 # Grid plots
 # raw
 sub = aveSignals[aveSignals['type'] == "raw"]
-grid = sns.FacetGrid(sub, col="name", hue="name", sharey=False, col_wrap=4, xlim=(-58, 58), size=4, aspect=2)
+grid = sns.FacetGrid(sub, col="name", hue="name", sharey=False, col_wrap=4, size=4, aspect=2)
 grid.map(plt.plot, "x", "positive")
 grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
 grid.add_legend()
-plt.savefig(os.path.join(plotsDir, "all.tss.raw.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join(plotsDir, "all.tss2.raw.pdf"), bbox_inches='tight')
 
 # norm - all in one
-grid = sns.FacetGrid(aveSignals, col="name", hue="type", sharey=False, col_wrap=4, xlim=(-58, 58), size=4, aspect=2)
+grid = sns.FacetGrid(aveSignals, col="name", hue="type", sharey=False, col_wrap=4, size=4, aspect=2)
 grid.map(plt.plot, "x", "positive")
 grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
 grid.add_legend()
-plt.savefig(os.path.join(plotsDir, "all.tss.norm.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join(plotsDir, "all.tss2.norm.pdf"), bbox_inches='tight')
 
 # raw
 for sample in aveSignals['name'].unique():
@@ -404,6 +413,6 @@ for sample in aveSignals['name'].unique():
             (aveSignals['type'] == signal)
         ]
         plt.plot(sub['x'], sub['positive'], label=signal)
-    plt.legend(loc="best")
-    plt.savefig(os.path.join(plotsDir, sample + ".tss.pdf"), bbox_inches='tight')
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.savefig(os.path.join(plotsDir, sample + ".tss2.pdf"), bbox_inches='tight')
     plt.close()

@@ -15,13 +15,6 @@ import HTSeq
 import pybedtools
 import numpy as np
 import pandas as pd
-import gc
-
-from divideAndSlurm import DivideAndSlurm, Task
-import string
-import time
-import random
-import textwrap
 
 import matplotlib.pyplot as plt
 import seaborn as sns  # changes plt style (+ full plotting library)
@@ -128,121 +121,75 @@ def loadPandas(fname, mmap_mode='r'):
         return pd.Series(values, index=meta[0]).copy()
 
 
-class Coverage(Task):
+def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, strand_specific=False):
     """
-    Task to get read coverage under regions.
+    Gets read coverage in bed regions.
+    Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
+    bam - HTSeq.BAM_Reader object. Must be sorted and indexed with .bai file!
+    intervals - dict with HTSeq.GenomicInterval objects as values.
+    fragmentsize - integer.
+    stranded - boolean.
+    duplicates - boolean.
     """
-    def __init__(self, data, fractions, *args, **kwargs):
-        super(Coverage, self).__init__(data, fractions, *args, **kwargs)
-        # Initialize rest
-        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1, 1000))], sep="_")
-        self.name = "coverage_{0}".format(now)
-
-        # Parse
-        # required argument
-        if len(self.args) != 1:
-            raise TypeError("Bam file argument is missing")
-        self.bam_file = self.args[0]
-        # additional arguments
-        if "strand_wise" in kwargs.keys():
-            self.strand_wise = kwargs["strand_wise"]
+    # Loop through TSSs, get coverage, append to dict
+    chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrM', 'chrX']
+    cov = OrderedDict()
+    n = len(intervals)
+    i = 0
+    for name, feature in intervals.iteritems():
+        if i % 1000 == 0:
+            print(n - i)
+        # Initialize empty array for this feature
+        if not strand_specific:
+            profile = np.zeros(feature.length, dtype=np.float64)
         else:
-            self.strand_wise = True
-        if "duplicates" in kwargs.keys():
-            self.duplicates = kwargs["duplicates"]
-        else:
-            self.duplicates = True
-        if "orientation" in kwargs.keys():
-            self.orientation = kwargs["orientation"]
-        else:
-            self.orientation = False
-        if "permute" in kwargs.keys():
-            self.permute = kwargs["permute"]
-        else:
-            self.permute = False
-        if "fragment_size" in kwargs.keys():
-            self.fragment_size = kwargs["fragment_size"]
-        else:
-            self.fragment_size = 1
+            profile = np.zeros((2, feature.length), dtype=np.float64)
 
-    def _prepare(self):
-        """
-        Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
-        """
-        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep="."))  # add abspath
+        # Check if feature is in bam index
+        if feature.chrom not in chroms or feature.chrom == "chrM":
+            i += 1
+            continue
 
-        # Split data in fractions
-        ids, groups, files = self._split_data()
+        # Fetch alignments in feature window
+        for aln in bam[feature]:
+            # check if duplicate
+            if not duplicates and aln.pcr_or_optical_duplicate:
+                continue
+            # check it's aligned
+            if not aln.aligned:
+                continue
 
-        # Make jobs with groups of data
-        self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
+            aln.iv.length = fragmentsize  # adjust to size
 
-        # for each group of data
-        for i in xrange(len(ids)):
-            jobFile = files[i] + "_coverage.sh"
-            inputPickle = files[i] + ".input.pickle"
-            outputPickle = files[i] + ".output.pickle"
-
-            # assemble job file
-            # header
-            job = self._slurmHeader(ids[i])
-
-            # command - add abspath!
-            task = """\
-                python2.7 /home/arendeiro/coverage_parallel.py {0} {1} {2} """.format(inputPickle, outputPickle, self.bam_file)
-
-            if self.strand_wise:
-                task += "--strand-wise "
-            if self.duplicates:
-                task += "--duplicates "
-            if self.orientation:
-                task += "--orientation "
-            if self.permute:
-                task += "--permute "
-            task += """--fragment-size {0}
-            """.format(self.fragment_size)
-
-            job += textwrap.dedent(task)
-
-            # footer
-            job += self._slurmFooter()
-
-            # add to save attributes
-            self.jobs.append(job)
-            self.jobFiles.append(jobFile)
-            self.inputPickles.append(inputPickle)
-            self.outputPickles.append(outputPickle)
-
-            # write job file to disk
-            with open(jobFile, 'w') as handle:
-                handle.write(textwrap.dedent(job))
-
-        # Delete data if jobs are ready to submit and data is serialized
-        if hasattr(self, "jobs") and hasattr(self, "jobFiles"):
-            del self.data
-
-    def collect(self):
-        """
-        If self.is_ready(), return joined reduced data.
-        """
-        if not hasattr(self, "output"):  # if output is already stored, just return it
-            if self.is_ready():
-                # load all pickles into list
-                if self.permissive:
-                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
+            # get position in relative to window
+            if orientation:
+                if feature.strand == "+" or feature.strand == ".":
+                    start_in_window = aln.iv.start - feature.start - 1
+                    end_in_window = aln.iv.end - feature.start - 1
                 else:
-                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
-                # if all are counters, and their elements are counters, sum them
-                if all([type(outputs[i]) == dict for i in range(len(outputs))]):
-                    output = reduce(lambda x, y: dict(x, **y), outputs)
-                    if type(output) == dict:
-                        self.output = output  # store output in object
-                        self._rm_temps()  # delete tmp files
-                        return self.output
+                    start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
+                    end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
             else:
-                raise TypeError("Task is not ready yet.")
-        else:
-            return self.output
+                start_in_window = aln.iv.start - feature.start - 1
+                end_in_window = aln.iv.end - feature.start - 1
+
+            # check fragment is within window; this is because of fragmentsize adjustment
+            if start_in_window <= 0 or end_in_window > feature.length:
+                continue
+
+            # add +1 to all positions overlapped by read within window
+            if not strand_specific:
+                profile[start_in_window: end_in_window] += 1
+            else:
+                if aln.iv.strand == "+":
+                    profile[0][start_in_window: end_in_window] += 1
+                else:
+                    profile[1][start_in_window: end_in_window] += 1
+
+        # append feature profile to dict
+        cov[name] = profile
+        i += 1
+    return cov
 
 
 def bedToolsInterval2GenomicInterval(bedtool):
@@ -329,23 +276,31 @@ def exportToJavaTreeView(df, filename):
     df.to_csv(filename, sep="\t", index=False)
 
 
-# Define paths
-projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
-resultsDir = projectRoot + "results"
-plotsDir = resultsDir + "/plots/"
-DNase = "/home/arendeiro/data/human/encode/wgEncodeUwDnaseK562Aln.merged.bam"
-MNase = "/home/arendeiro/data/human/encode/wgEncodeSydhNsomeK562AlnRep1.bam"
+# Define variables
+projectRoot = "/projects/chipmentation/"
+bamsDir = os.path.join(projectRoot, "data", "mapped/")
+peaksDir = os.path.join(projectRoot, "data", "peaks/")
+resultsDir = os.path.join(projectRoot, "results")
+plotsDir = os.path.join(resultsDir, "plots")
+DNase = os.path.join(bamsDir, "wgEncodeUwDnaseK562Aln.merged.bam")
+MNase = os.path.join(bamsDir, "wgEncodeSydhNsomeK562Aln.merged.bam")
 
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
 
 # Replace input sample
-samples.replace(value="K562_10M_CM_IGG_nan_nan_1_0_hg19", to_replace="K562_10M_CM_IGG_nan_nan_0_0_hg19", inplace=True)
-samples.replace(
-    value="/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/K562_10M_CM_IGG_nan_nan_1_0_hg19.trimmed.bowtie2.shifted.dups.bam",
-    to_replace="/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/K562_10M_CM_IGG_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam",
-    inplace=True
-)
+# samples.loc[:, "controlSampleFilePath"] = samples["controlSampleFilePath"].apply(lambda x: re.sub("K562_10M_CM_IGG_nan_nan_0_0_hg19", "K562_10M_CM_IGG_nan_nan_1_0_hg19", str(x)))
+
+# replace bam path with local
+import re
+fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/"
+samples.loc[:, "filePath"] = samples["filePath"].apply(lambda x: re.sub(fhPath, bamsDir, str(x)))
+samples.loc[:, "controlSampleFilePath"] = samples["controlSampleFilePath"].apply(lambda x: re.sub(fhPath, bamsDir, str(x)))
+
+# replace peaks path with local
+import re
+fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/peaks/"
+samples.loc[:, "peakFile"] = samples["peakFile"].apply(lambda x: re.sub(fhPath, peaksDir, str(x)))
 
 # subset samples
 sampleSubset = samples[
@@ -366,8 +321,8 @@ signals = samples[
         "K562_500K_CM_H3K27ME3_nan_nan_0_0_hg19|" +
         "K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19|" +
         "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19|" +
-        "K562_50K_ATAC_nan_nan_nan_0_0_hg19"  # +
-        # "K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
+        "K562_50K_ATAC_nan_nan_nan_0_0_hg19|" +
+        "K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
     )
 ].reset_index(drop=True)
 signals = signals.sort(["ip", "technique"])
@@ -382,11 +337,9 @@ n_clusters = 5
 
 windowWidth = abs(windowRange[0]) + abs(windowRange[1])
 
-slurm = DivideAndSlurm()
+gapsRepeats = pybedtools.BedTool("/projects/reference/hg19/hg19_gapsRepeats.bed")
 
-gapsRepeats = pybedtools.BedTool("/home/arendeiro/reference/Homo_sapiens/hg19_gapsRepeats.bed")
-
-# Loop through all samples, submit tasks to compute coverage in peak regions centered on motifs
+# Loop through all samples, compute coverage in peak regions centered on motifs
 for i in range(len(sampleSubset)):
     sampleName = sampleSubset['sampleName'][i]
     motifCentered = re.sub("\..*", ".", sampleSubset['peakFile'][i]) + "motifCentered.bed"
@@ -394,8 +347,9 @@ for i in range(len(sampleSubset)):
     # Load peak file from bed files centered on motif, make window around
     try:
         peaks = pybedtools.BedTool(motifCentered)  # .slop(genome=genome, b=windowWidth / 2)
-    except ValueError("File not found"), e:
-        raise e
+    except:
+        print("Sample's peaks were not found: %s" % sampleName)
+        continue
 
     # Exclude peaks in gaps or repeats
     peaks.intersect(b=gapsRepeats, v=True, wa=True)
@@ -411,80 +365,10 @@ for i in range(len(sampleSubset)):
     exportName = "-".join([sampleName, signalName])
     if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
         print(sampleName, signalName)
-        bamFile = sampleSubset['filePath'][i]
+        # Load bam
+        bamFile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
 
-        task = Coverage(peaks, 4, os.path.join(bamFile),
-                        orientation=True, fragment_size=1,
-                        strand_wise=True, queue="shortq", cpusPerTask=8,
-                        permissive=True
-                        )
-        task.id = exportName
-        slurm.add_task(task)
-        slurm.submit(task)
-
-    # PU1 chip-tagmentation
-    if sampleName == "K562_10M_CM_PU1_nan_nan_0_0_hg19":
-        signalName = "K562_10M_ATAC_PU1_nan_PE_1_1_hg19"
-        exportName = "-".join([sampleName, signalName])
-        print(exportName)
-
-        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-            print(sampleName, signalName)
-            bamFile = sampleSubset['filePath'][i]
-
-            task = Coverage(peaks, 4, os.path.join(bamFile),
-                            orientation=True, fragment_size=1,
-                            strand_wise=True, queue="shortq", cpusPerTask=8,
-                            permissive=True
-                            )
-            task.id = exportName
-            slurm.add_task(task)
-            slurm.submit(task)
-
-    # Get control coverage
-    signalName = sampleSubset['controlSampleName'][i]
-    exportName = "-".join([sampleName, signalName])
-    if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-        print(sampleName, signalName)
-        bamFile = sampleSubset['controlSampleFilePath'][i]
-
-        task = Coverage(peaks, 4, os.path.join(bamFile),
-                        orientation=True, fragment_size=1,
-                        strand_wise=True, queue="shortq", cpusPerTask=8,
-                        permissive=True
-                        )
-        task.id = exportName
-        slurm.add_task(task)
-        slurm.submit(task)
-
-    # Get coverage over other signals
-    for j in range(len(signals)):
-        signalName = signals['sampleName'][j]
-        print(sampleName, signalName)
-
-        exportName = "-".join([sampleName, signalName])
-        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-            bamFile = signals['filePath'][j]
-
-            # Make task
-            task = Coverage(peaks, 4, os.path.join(bamFile),
-                            orientation=True, fragment_size=1,
-                            strand_wise=True, queue="shortq", cpusPerTask=8,
-                            permissive=True
-                            )
-            task.id = exportName
-
-            slurm.add_task(task)
-            slurm.submit(task)
-
-while not all([t.is_ready() for t in slurm.tasks]):
-    time.sleep(10)
-
-# Collect task outputs
-for task in slurm.tasks:
-    print task.id
-    if not os.path.isfile(os.path.join(resultsDir, task.id + ".pdy")) and task.is_ready():
-        cov = task.collect()
+        cov = coverage(bamFile, peaks, fragmentsize, strand_specific=True)
 
         # Make multiindex dataframe
         levels = [cov.keys(), ["+", "-"]]
@@ -494,14 +378,70 @@ for task in slurm.tasks:
         df.columns = range(windowRange[0], windowRange[1])
 
         # Save raw data
-        savePandas(os.path.join(plotsDir, "pickles", task.id + ".pdy"), df)
-        del cov
-        del df
-        gc.collect()
-    else:
-        slurm.tasks.pop(slurm.tasks.index(task))
-        del task
-        gc.collect()
+        savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+
+    # PU1 chip-tagmentation
+    if sampleName == "K562_10M_CM_PU1_nan_nan_0_0_hg19":
+        signalName = "K562_10M_ATAC_PU1_nan_PE_1_1_hg19"
+        exportName = "-".join([sampleName, signalName])
+        print(exportName)
+
+        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+            print(sampleName, signalName)
+            bamFile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
+
+            cov = coverage(bamFile, peaks, fragmentsize, strand_specific=True)
+
+            # Make multiindex dataframe
+            levels = [cov.keys(), ["+", "-"]]
+            labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
+            index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
+            df = pd.DataFrame(np.vstack(cov.values()), index=index)
+            df.columns = range(windowRange[0], windowRange[1])
+
+            # Save raw data
+            savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+
+    # Get control coverage
+    signalName = sampleSubset['controlSampleName'][i]
+    exportName = "-".join([sampleName, signalName])
+    if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+        print(sampleName, signalName)
+        bamFile = HTSeq.BAM_Reader(sampleSubset['controlSampleFilePath'][i])
+
+        cov = coverage(bamFile, peaks, fragmentsize, strand_specific=True)
+
+        # Make multiindex dataframe
+        levels = [cov.keys(), ["+", "-"]]
+        labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
+        index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
+        df = pd.DataFrame(np.vstack(cov.values()), index=index)
+        df.columns = range(windowRange[0], windowRange[1])
+
+        # Save raw data
+        savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+
+    # Get coverage over other signals
+    for j in range(len(signals)):
+        signalName = signals['sampleName'][j]
+        print(sampleName, signalName)
+
+        exportName = "-".join([sampleName, signalName])
+        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+            print(sampleName, signalName)
+            bamFile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
+
+            cov = coverage(bamFile, peaks, fragmentsize, strand_specific=True)
+
+            # Make multiindex dataframe
+            levels = [cov.keys(), ["+", "-"]]
+            labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
+            index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
+            df = pd.DataFrame(np.vstack(cov.values()), index=index)
+            df.columns = range(windowRange[0], windowRange[1])
+
+            # Save raw data
+            savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
 
 # Average signals
 if os.path.exists(os.path.join(plotsDir, "pickles", "aveSignals.pickle")):
