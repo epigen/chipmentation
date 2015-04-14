@@ -13,8 +13,7 @@ All downstream analysis is performed with scripts in `src` using libraries such 
 See annotation sheet here: [CSV](metadata/chipmentation.sample_annotation.csv)
 
 See tracks here:
-- [UCSC](http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://www.biomedical-sequencing.at/bocklab/arendeiro/chipmentation/bigWig/trackHub_hg19.curated.txt)
-- [UCSC from GCS](http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://storage.googleapis.com/storage-cm/bigWig/tracks.txt)
+- [UCSC from GCS](http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://storage.googleapis.com/storage-cm/bigWig/trackHub_hg19.txt)
 
 ### Sample names
 Sample names are a concatenation of the annotation fields: `cellLine, numberCells, technique, ip, patient, treatment, biologicalReplicate, technicalReplicate, genome`. 
@@ -86,37 +85,36 @@ I will document the other folders in due time.
 
 ### Manuscript
 - Better tracks to display the data
-- Reinforce the idea of novelty by showing the addditional information captured (as reviwer #3 appreciates) in a better way
-- Rephrase that ChIPmentation does allow the usage of less cells, but that is dependant on the abundance of the factor and antibody efficiency
+- Reinforce the idea of novelty by showing the additional information captured (as reviwer #3 appreciates) in a better way
+- Rephrase that ChIPmentation does allow the usage of less cells, but that is dependent on the abundance of the factor and antibody efficiency
 - Mention that we're able to recover much smaller fragments due to no adapter dimers (show bioanalyzer profiles)
 - Mention we remove the transposase by washing the ChIP with SDS (as previously demonstrated)
 - Show library size distribution created with different amounts of transposase (see [relevant document](results/fragment_size))
 
 # Internal todo
-- make vplots
-- TSS plots of all controls (in, igg, chip-tag, atac-seq), replot normalized by controls
-- TF plots with all controls (in, igg, chip-tag, atac-seq), replot normalized by controls
+- Select final set of samples to use (Christian)
+    - Make figures with tracks (Christian)
+    - Replot correlations (add x=y line)
+    - Calculate FRiP, NSC and RSC for all samples
+
 - Fragment size
-    - plot fragment size distribution all in one 
-        - H3K4 + igg
-        - PU1 + igg
-        - normalize by total size
-    - separate into fractions
+    - separate into quantiles per 
         - repeat all plots + FRiP
-        - mapping quality per read fraction
     - calculate enrichment of reads per fragment size in various regions (like buenrostro)
     - split reads into nucleosome-free (<\100bp) and various nucleosomes bins, check enrichment at TSSs for each bin
-- New correlations (all samples)
-    - add line to middle
 - ROC curve and AUC for # of Encode ChIP-seq peaks recovered from own CM and ChIP dependent on number of reads sampled
-- Nucleossome prediction
-    - run NucleoATAC
+or
+- Peak recovery (5% in top 1% and vice-versa or against encode)
+
+- Nucleosome prediction
+    - run NucleoATAC on K562_10M_CM_H3K4ME1_PE
         - get V plots
     + Visualize
+- Nucleosome stability
     - Plot CM, DNase, MNase in DARNS:
         - From the middle of the DARN (mid-peak)
         - From the 5' and 3' end of nucleosome Dyads
-            - predict dyads: http://www-hsc.usc.edu/~valouev/NuMap/README.txt
+            - predict dyads: NuMap
         - DARNS frequency around TSSs (models and CAGE) and TTSs
         - DARNS frequency around CpGs islands
     - Do it on permuted (and IGG?)
@@ -125,6 +123,4 @@ I will document the other folders in due time.
     - Plot read oscillation:
         - Whole-genome
         - Gene deserts vs CpG islands
-Compare DNase 
-Get data from other library perp methods, compare mapped, duplicates, n. peaks, ...
-New browser plots with Sushi
+Get data from other library prep methods, compare mapped, duplicates, n. peaks, ...
