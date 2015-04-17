@@ -2,7 +2,7 @@
 
 splitBam() {
     NAME=$1
-    samtools view -h /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/${NAME}.trimmed.bowtie2.shifted.bam | \
+    samtools view -h /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/${NAME}.trimmed.bowtie2.shifted.dups.bam | \
     awk '{
         abs=($9<0?-$9:$9)
         if( $1 ~ /^\@/ ) {
@@ -137,7 +137,8 @@ export -f countReadsInPeaks
 
 declare -a SAMPLES
 
-SAMPLES=(K562_10M_ATAC_H3K4ME1_nan_PE_1_1_hg19 K562_10M_ATAC_PU1_nan_PE_1_1_hg19 
+# K562_10M_ATAC_PU1_nan_PE_1_1_hg19
+SAMPLES=(K562_10M_ATAC_H3K4ME1_nan_PE_1_1_hg19 
     K562_10M_CM_H3K4ME1_nan_PE_1_1_hg19 K562_10M_CM_PU1_nan_PE_1_1_hg19 
     K562_500K_ATAC_H3K4ME3_nan_01ULTN5_PE_1_1_hg19 K562_500K_CM_H3K4ME3_nan_02ULTN5_PE_1_1_hg19 
     K562_500K_CM_H3K4ME3_nan_05ULTN5_PE_1_1_hg19 K562_500K_CM_H3K4ME3_nan_1ULTN5_PE_1_1_hg19 

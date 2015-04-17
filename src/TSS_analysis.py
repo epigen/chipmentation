@@ -20,7 +20,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.font_manager as font_manager
 
-fontpath = '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf'
+fontpath = '/usr/share/fonts/truetype/Roboto-Regular.ttf'
 
 prop = font_manager.FontProperties(fname=fontpath)
 matplotlib.rcParams['font.family'] = prop.get_name()

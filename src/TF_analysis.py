@@ -15,9 +15,19 @@ import HTSeq
 import pybedtools
 import numpy as np
 import pandas as pd
+import matplotlib
+# Force matplotlib to not use any Xwindows backend.
+matplotlib.use('Agg')
+import matplotlib.font_manager as font_manager
+
+fontpath = '/usr/share/fonts/truetype/Roboto-Regular.ttf'
+
+prop = font_manager.FontProperties(fname=fontpath)
+matplotlib.rcParams['font.family'] = prop.get_name()
 
 import matplotlib.pyplot as plt
 import seaborn as sns  # changes plt style (+ full plotting library)
+sns.set_style("whitegrid")
 
 import cPickle as pickle
 
@@ -291,6 +301,13 @@ samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.an
 # Replace input sample
 # samples.loc[:, "controlSampleFilePath"] = samples["controlSampleFilePath"].apply(lambda x: re.sub("K562_10M_CM_IGG_nan_nan_0_0_hg19", "K562_10M_CM_IGG_nan_nan_1_0_hg19", str(x)))
 
+# Replace peaks of low cell number TFs
+p = "/projects/chipmentation/data/peaks/"
+samples.loc[samples['sampleName'] == "K562_500K_CM_CTCF_nan_nan_0_0_hg19", "peakFile"] = p + "K562_10M_CM_CTCF_nan_nan_0_0_hg19/K562_10M_CM_CTCF_nan_nan_0_0_hg19_peaks.narrowPeak"
+samples.loc[samples['sampleName'] == "K562_500K_CM_PU1_nan_nan_0_0_hg19", "peakFile"] = p + "K562_10M_CM_PU1_nan_nan_0_0_hg19/K562_10M_CM_PU1_nan_nan_0_0_hg19_peaks.narrowPeak"
+samples.loc[samples['sampleName'] == "K562_100K_CM_GATA1_nan_nan_0_0_hg19", "peakFile"] = p + "K562_10M_CM_GATA1_nan_nan_0_0_hg19/K562_10M_CM_GATA1_nan_nan_0_0_hg19_peaks.narrowPeak"
+samples.loc[samples['sampleName'] == "K562_100K_CM_REST_nan_nan_0_0_hg19", "peakFile"] = p + "K562_10M_CM_REST_nan_nan_0_0_hg19/K562_10M_CM_REST_nan_nan_0_0_hg19_peaks.narrowPeak"
+
 # replace bam path with local
 import re
 fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/"
@@ -322,7 +339,7 @@ signals = samples[
         "K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19|" +
         "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19|" +
         "K562_50K_ATAC_nan_nan_nan_0_0_hg19|" +
-        "K562_500K_ATAC_INPUT_nan_0.1ULTN5_PE_CM25_1_1"
+        "K562_500K_ATAC_INPUT_nan_01ULTN5_PE_1_1_hg19"
     )
 ].reset_index(drop=True)
 signals = signals.sort(["ip", "technique"])
@@ -429,7 +446,7 @@ for i in range(len(sampleSubset)):
         exportName = "-".join([sampleName, signalName])
         if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
             print(sampleName, signalName)
-            bamFile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
+            bamFile = HTSeq.BAM_Reader(signals['filePath'][j])
 
             cov = coverage(bamFile, peaks, fragmentsize, strand_specific=True)
 
@@ -549,22 +566,39 @@ for sample in df['sample'].unique():
         for strand in ["average", "positive", "negative"]:
             treat = df[
                 (df["sample"] == sample) &
-                (df["signal"] == signal)
+                (df["signal"] == signal) &
+                (df['x'] >= -400) &
+                (df['x'] <= 400)
             ][strand]
 
             controlName = sampleSubset.loc[sampleSubset["sampleName"] == sample, "controlSampleName"]
             controlName = controlName.tolist()[0]
             ctrl = df[
                 (df["sample"] == sample) &
-                (df["signal"] == controlName)
+                (df["signal"] == controlName) &
+                (df['x'] >= -400) &
+                (df['x'] <= 400)
             ][strand]
 
             # standardize: 0-1
-            treat = smooth((treat - treat.min()) / (treat.max() - treat.min()))
-            ctrl = smooth((ctrl - ctrl.min()) / (ctrl.max() - ctrl.min()))
+            treat = (treat - treat.min()) / (treat.max() - treat.min())
+            ctrl = (ctrl - ctrl.min()) / (ctrl.max() - ctrl.min())
 
             # normalize by input
             norm = np.array(treat) - np.array(ctrl)
+
+            # smooth
+            treat = smooth(treat)
+            norm = smooth(norm)
+
+            # add raw scalled and smoothed
+            tmp = pd.DataFrame()
+            tmp[strand] = treat
+            tmp['sample'] = sample
+            tmp['signal'] = signal
+            tmp['x'] = np.array(range(len(tmp))) - (len(tmp) / 2)
+            tmp['type'] = "raw"
+            df2 = df2.append(tmp, ignore_index=True)
 
             tmp = pd.DataFrame()
             tmp[strand] = norm
@@ -572,15 +606,28 @@ for sample in df['sample'].unique():
             tmp['signal'] = signal
             tmp['x'] = np.array(range(len(tmp))) - (len(tmp) / 2)
             tmp['type'] = "norm"
-
             df2 = df2.append(tmp, ignore_index=True)
 
 # append normalized df to df
-aveSignals = pd.concat([aveSignals, df2])
+aveSignals = df2
 aveSignals.reset_index(drop=True, inplace=True)
 
 # Grid plots
 # raw
+# all
+sub = aveSignals[
+    (aveSignals['type'] == "raw") &
+    (aveSignals['x'] >= -400) &
+    (aveSignals['x'] <= 400)
+]
+
+grid = sns.FacetGrid(sub, col="sample", hue="signal", sharey=False, col_wrap=4)
+grid.map(plt.plot, "x", "average")
+grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+grid.add_legend()
+plt.savefig(os.path.join(plotsDir, "footprints.raw.pdf"), bbox_inches='tight')
+
+# individual
 for sample in aveSignals['sample'].unique():
     sub = aveSignals[
         (aveSignals['sample'] == sample) &
@@ -591,12 +638,25 @@ for sample in aveSignals['sample'].unique():
 
     # plot
     grid = sns.FacetGrid(sub, col="signal", hue="signal", sharey=False, col_wrap=4)
-    grid.map(plt.plot, "x", "positive")
-    # grid.set(xlim=(-100, 100))
+    grid.map(plt.plot, "x", "average")
+    # grid.set(xlim=(-400, 400))
     grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
     plt.savefig(os.path.join(plotsDir, sample + ".footprints.raw.pdf"), bbox_inches='tight')
 
 # norm
+# all
+sub = aveSignals[
+    (aveSignals['type'] == "norm") &
+    (aveSignals['x'] >= -400) &
+    (aveSignals['x'] <= 400)
+]
+
+grid = sns.FacetGrid(sub, col="sample", hue="signal", sharey=False, col_wrap=4)
+grid.map(plt.plot, "x", "average")
+grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+grid.add_legend()
+plt.savefig(os.path.join(plotsDir, "footprints.norm.pdf"), bbox_inches='tight')
+
 for sample in aveSignals['sample'].unique():
     sub = aveSignals[
         (aveSignals['sample'] == sample) &
@@ -607,8 +667,7 @@ for sample in aveSignals['sample'].unique():
 
     # plot
     grid = sns.FacetGrid(sub, col="signal", hue="signal", sharey=False, col_wrap=4)
-    grid.map(plt.plot, "x", "positive")
-    # grid.set(xlim=(-100, 100))
+    grid.map(plt.plot, "x", "average")
     grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
     plt.savefig(os.path.join(plotsDir, sample + ".footprints.norm.pdf"), bbox_inches='tight')
 
@@ -628,7 +687,6 @@ for sample in aveSignals['sample'].unique():
         plt.plot(sub["x"], np.log10(sub["average"]), label=signal, color=colourPerFactor(signal))
     plt.title(sample)
     plt.xlabel("distance to motif")
-    plt.ylabel("distance to motif")
     plt.legend(loc='best', prop={'size': 4})
     plt.savefig(os.path.join(plotsDir, sample + ".footprints.raw.pdf"), bbox_inches='tight',)
     plt.close()
@@ -652,7 +710,9 @@ for sample in aveSignals['sample'].unique():
     plt.legend(loc='best', prop={'size': 4})
     plt.savefig(os.path.join(plotsDir, sample + ".footprints.norm.pdf"), bbox_inches='tight',)
 
+
 # Heatmaps sorted by signal abundance
+
 
 # Average signals
 aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "r"))
