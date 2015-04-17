@@ -1,19 +1,6 @@
 project.init2("chipmentation")
 getwd()
 
-# This is how I rsynced the raw data to my local hard drive during the corruption
-# rsync -av /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/ /media/nsheffield/red6/chipmentation/data/mapped
-
-baseDir = getOption("PROJECT.DATA.BASE")
-
-loadPSA = function() {
-	#psa = fread("metadata/chipmentation.sample_annotation.csv")
-	#psa[, sampleName := paste(cellLine, numberCells, technique, ip, patient, treatment, biologicalReplicate, technicalReplicate, sep="_")]
-	psa = fread("metadata/chipmentation.replicates.annotation_sheet.csv")
-	psa[, filePath := sub("/fhgfs/groups/lab_bock/shared/projects/", baseDir, filePath)]
-	psa[which(!file.exists(filePath)),]
-	psa
-}
 
 
 psa = loadPSA()
@@ -22,22 +9,54 @@ psa = loadPSA()
 psa[biologicalReplicate==0 & technicalReplicate==0,]
 
 
-utility("funcGenomeSignals.R")
-utility("funcGenomeLocations.R")
 
 
 bed =fread(paste0(baseDir, "chipmentation/data/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
 
+# Divide the CAGE peaks into TATA and Cpg Island groups:
+
+bed[, group:=interaction(V10, V11)]
 bed
-bedGR = dtToGr(bed, "V1", "V2", "V3")
-bedGR
+bedGR = dtToGr(bed, "V1", "V2", "V3", strand="V6", splitFactor="group")
+bedGR=GRangesList(bedGR)
+
 seqLength = 50
-bedGR= promoters(dtToGr(bed, "V1", "V2", "V3", strand="V6"), upstream=seqLength, downstream=0)
+bedGR= promoters(bedGR, upstream=100, downstream=100)
+bedGR
+lapply(bedGR, length)
 
 
-loadBSgenome("hg19")
 
-bam = bamSlurp(psa[biologicalReplicate==0 & technicalReplicate==0 & ip=="",filePath], bedGR)
+bam = bamSlurp(psa[biologicalReplicate==0 & technicalReplicate==0 & ip=="",filePath], bedGR[["TATA.CpG-less"]])
+
+v = bamSlurpVectors(bam, bedGR[["TATA.CpG-less"]])
+# Convert from Rle to numeric vectors
+bamVec = lapply(v, function(x) { as.numeric(rep(as.vector(runValue(x)), as.vector(runLength(x)))) })
+
+
+bamMat = do.call(rbind, bamVec)
+bamMat
+
+plot(apply(bamMat > 0, 2, sum), type="l", main="Total Signal")
+
+
+bamFile = psa[biologicalReplicate==0 & technicalReplicate==0 & ip=="",filePath]
+
+wholeChrom <- GRangesForUCSCGenome(genome, chrom=chr)
+param = ScanBamParam(which = wholeChrom, what=scanBamWhat())
+x = rep(NA, length(singleChromGR))
+tryCatch( {
+sb = scanBam(bamFile, param=param);
+sb
+
+bedGRL = split(bedGR[["TATA.CpG-less"]], seqnames(bedGR[["TATA.CpG-less"]]))	
+
+bamSlurpList(bamFile, bedGR[["TATA.CpG-less"]])
+
+
+
+
+
 
 
 
