@@ -92,12 +92,29 @@ def colourPerFactor(name):
         raise ValueError
 
 
-def plotCorrelations(normCounts, plotName, method="ward", metric="euclidean"):
-    colours = map(colourPerFactor, normCounts.columns)
-    # cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
+def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+    import matplotlib.colors as colors
+    new_cmap = colors.LinearSegmentedColormap.from_list(
+        'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
+        cmap(np.linspace(minval, maxval, n)))
+    return new_cmap
 
-    sns.clustermap(normCounts.corr(), row_colors=colours, method=method, metric=metric,
-                   col_colors=colours, figsize=(15, 15), cmap=plt.get_cmap("YlGn"))
+
+def plotCorrelations(normCounts, plotName, method="ward", metric="euclidean"):
+    corr = normCounts.corr()
+
+    # col/row colours
+    colours = map(colourPerFactor, normCounts.columns)
+
+    # data colour map
+    cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
+    # cmap = plt.get_cmap("YlGn")
+
+    # scale from 0 to 1
+    new_cmap = truncate_colormap(cmap, corr.min().min(), 1)
+
+    sns.clustermap(corr, row_colors=colours, method=method, metric=metric,
+                   col_colors=colours, figsize=(15, 15), cmap=new_cmap)
 
     plt.savefig(plotName, bbox_inches='tight')
 
@@ -315,16 +332,6 @@ else:
 plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.histones.pdf"), method="single")
 plotCorrelations(normCounts.filter(regex='10M|500K'), os.path.join(plotsDir, "correlations.histones.best.pdf"), method="single")
 plotCorrelations(normCounts.filter(regex='CM'), os.path.join(plotsDir, "correlations.histones.CM.pdf"), method="single")
-
-
-# test plotting
-# d = normCounts.filter(regex='CM')
-
-# colours = map(colourPerFactor, d.columns)
-# cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
-
-# sns.clustermap(d.corr(), row_colors=colours, method="ward",
-#                col_colors=colours, figsize=(15, 15), cmap=plt.get_cmap("Blues"), standard_scale=None)
 
 
 # TFs
