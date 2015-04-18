@@ -16,15 +16,15 @@ import itertools
 import rpy2.robjects as robj  # for ggplot in R
 import rpy2.robjects.pandas2ri  # for R dataframe conversion
 
-import matplotlib
-# Force matplotlib to not use any Xwindows backend.
-matplotlib.use('Agg')
-import matplotlib.font_manager as font_manager
+# import matplotlib
+# # Force matplotlib to not use any Xwindows backend.
+# matplotlib.use('Agg')
+# import matplotlib.font_manager as font_manager
 
-fontpath = '/usr/share/fonts/truetype/Roboto-Regular.ttf'
+# fontpath = '/usr/share/fonts/truetype/Roboto-Regular.ttf'
 
-prop = font_manager.FontProperties(fname=fontpath)
-matplotlib.rcParams['font.family'] = prop.get_name()
+# prop = font_manager.FontProperties(fname=fontpath)
+# matplotlib.rcParams['font.family'] = prop.get_name()
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -100,7 +100,7 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
     return new_cmap
 
 
-def plotCorrelations(normCounts, plotName, method="ward", metric="euclidean"):
+def plotCorrelations(normCounts, plotName, method="ward", metric="euclidean", values=False):
     corr = normCounts.corr()
 
     # col/row colours
@@ -113,8 +113,12 @@ def plotCorrelations(normCounts, plotName, method="ward", metric="euclidean"):
     # scale from 0 to 1
     new_cmap = truncate_colormap(cmap, corr.min().min(), 1)
 
-    sns.clustermap(corr, row_colors=colours, method=method, metric=metric,
-                   col_colors=colours, figsize=(15, 15), cmap=new_cmap)
+    if not values:
+        sns.clustermap(corr, row_colors=colours, method=method, metric=metric,
+                       col_colors=colours, figsize=(15, 15), cmap=new_cmap)
+    else:
+        sns.clustermap(corr, row_colors=colours, method=method, metric=metric,
+                       col_colors=colours, figsize=(15, 15), cmap=new_cmap, annot=True)
 
     plt.savefig(plotName, bbox_inches='tight')
 
@@ -413,7 +417,7 @@ else:
 # a = normCounts.index.values
 # idx = np.array([a, a, a, a, a]).T.flatten()[:len(a)]
 # normCounts = normCounts.groupby(idx).mean()
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.titration.pdf"), method="complete")
+plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.titration.pdf"), method="complete", values=True)
 
 
 # Scatter plots
