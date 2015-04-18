@@ -34,19 +34,16 @@ TODO:
         * Do the same using IGG data as background.
 """
 
-from argparse import ArgumentParser
 from collections import Counter, OrderedDict
 from divideAndSlurm import DivideAndSlurm, Task
 from matplotlib import pyplot as plt
 from pybedtools import BedTool
-from scipy import signal
 import cPickle as pickle
 import HTSeq
 import itertools
 import numpy as np
 import pandas as pd
 import os
-import sys
 import random
 import re
 import seaborn as sns
@@ -54,8 +51,9 @@ import string
 import textwrap
 import time
 import yahmm
-from sklearn.linear_model import LinearRegression
+from sklearn.metrics import classification_report, roc_curve, roc_auc_score, precision_recall_curve, average_precision_score
 
+sns.set_style("whitegrid")
 np.set_printoptions(linewidth=200)
 
 
@@ -1768,7 +1766,8 @@ pickle.dump(
     open(os.path.join(results_dir, sampleName + "_DARNS.features.pickle"), "wb"),
     protocol=pickle.HIGHEST_PROTOCOL
 )
-DARNS_features = pickle.load(open(os.path.join(results_dir, sampleName + "_DARNS.features.pickle"), "r"))
+# DARNS_features = pickle.load(open(os.path.join(results_dir, sampleName + "_DARNS.features.pickle"), "r"))
+DARNS_features = pd.read_pickle(os.path.join(results_dir, sampleName + "_DARNS.features.pickle"))
 
 # Test significant differences between Real and Permuted DARNS
 from scipy.stats import ks_2samp
@@ -1848,10 +1847,24 @@ plt.savefig(os.path.join(results_dir, sampleName + "_DARNS.pairplot.pdf"))
 plt.close()
 
 # Train classifier on features
+# You can start from here.
+# Previous variables:
+samples = {re.sub("\.bam", "", os.path.basename(sampleFile)): os.path.abspath(sampleFile) for sampleFile in bam_files}
+sampleName = "H3K4me3_K562_500k_CM"
+sampleFile = samples[sampleName]
+regionName = "H3K4me3_only"
+exportName = os.path.join(data_dir, sampleName + "_" + regionName)
+features = ["length", "space_upstream", "space_downstream",
+            "read_count", "read_density", "n_pospeaks", "n_negpeaks"]
+features = ["length", "space_upstream", "space_downstream",
+            "read_count", "read_density", "n_pospeaks", "n_negpeaks"]
+
+DARNS_features = pd.read_pickle(os.path.join(results_dir, sampleName + "_DARNS.features.pickle"))
+
 # Standardize
-from sklearn import preprocessing
-for feature in features:
-    DARNS_features.loc[:, feature] = preprocessing.scale(DARNS_features[feature])
+# from sklearn import preprocessing
+# for feature in features:
+#     DARNS_features.loc[:, feature] = preprocessing.scale(DARNS_features[feature])
 
 # get random tenth of data to train on
 randomRows = [random.randrange(0, len(DARNS_features)) for _ in range(len(DARNS_features) / 10)]
@@ -1860,105 +1873,93 @@ train_features = DARNS_features.loc[randomRows, features]
 # get class labels for data
 train_labels = DARNS_features.loc[randomRows, "type"].tolist()
 
-classifier = "neighbours"  # tree
+for classifier in ["linear", "tree", "forest", "neighbours"]:
+    print(classifier)
+    if classifier == "linear":
+        # Linear model classifier - logistic regressor
+        from sklearn.linear_model import LogisticRegression
+        clf = LogisticRegression()
+    elif classifier == "svm":
+        from sklearn import svm
+        clf = svm.SVC()
+    elif classifier == "neighbours":
+        # Use nearest neighbours classifier
+        from sklearn import neighbors
+        n_neighbors = 4
+        clf = neighbors.KNeighborsClassifier(n_neighbors, weights="uniform")  # try with "distance"
+    elif classifier == "tree":
+        # Use decision tree
+        from sklearn.tree import DecisionTreeClassifier
+        clf = DecisionTreeClassifier()
+    elif classifier == "forest":
+        from sklearn.ensemble import RandomForestClassifier
+        clf = RandomForestClassifier()
 
-if classifier == "linear":
-    # Linear model classifier - logistic regressor
-    from sklearn.linear_model import LogisticRegression
-    clf = LogisticRegression()
-elif classifier == "neighbours":
-    # Use nearest neighbours classifier
-    from sklearn import neighbors
-    n_neighbors = 4
-    clf = neighbors.KNeighborsClassifier(n_neighbors, weights="uniform")  # try with "distance"
-elif classifier == "tree":
-    # Use decision tree
-    from sklearn.tree import DecisionTreeClassifier
-    clf = DecisionTreeClassifier()
-elif classifier == "forest":
-    from sklearn.ensemble import RandomForestClassifier
-    clf = RandomForestClassifier()
+    # Train
+    print("training...")
+    clf.fit(train_features, train_labels)
 
-# Train
-clf.fit(train_features, train_labels)
+    # Predict for all data
+    # put in data frame form
+    # pred = pd.DataFrame()
+    # pred["name"] = DARNS_features["name"].tolist()
+    # pred["type"] = DARNS_features["type"].tolist()
+    # split = list(DARNS_features["name"].apply(lambda x: x.split("_")))
+    # pred["chr"] = [i[0] for i in split]
+    # pred["start"] = [i[1] for i in split]
+    # pred["end"] = [i[2] for i in split]
+    # pred["center"] = [i[3] for i in split]
 
-# Predict for all data
-# put in data frame form
-pred = pd.DataFrame()
-pred["name"] = DARNS_features["name"].tolist()
-pred["type"] = DARNS_features["type"].tolist()
-split = list(DARNS_features["name"].apply(lambda x: x.split("_")))
-pred["chr"] = [i[0] for i in split]
-pred["start"] = [i[1] for i in split]
-pred["end"] = [i[2] for i in split]
-pred["center"] = [i[3] for i in split]
+    # Predict N times for all data
+    N = 10
 
-# Predict N times for all data
-N = 100
+    pred = list()
+    for i in range(N):  # try increasing N
+        print("predicting ", i)
+        pred += list(clf.predict_proba(DARNS_features.loc[:, features])[:, 0])
 
-for i in range(N):  # try increasing N
-    pred[i] = clf.predict(DARNS_features.loc[:, features])
+    # pickle.dump(
+    #     pred,
+    #     open(os.path.join(results_dir, sampleName + "_DARNS." + classifier + ".predictions.pickle"), "wb"),
+    #     protocol=pickle.HIGHEST_PROTOCOL
+    # )
 
-pickle.dump(
-    pred,
-    open(os.path.join(results_dir, sampleName + "_DARNS.predictions.pickle"), "wb"),
-    protocol=pickle.HIGHEST_PROTOCOL
-)
+    # Get metrics
+    print("getting metrics")
+    y_true = [0 if i == "DARNSP" else 1 for i in DARNS_features["type"].tolist()] * N
 
-# Metrics
-# from sklearn
-from sklearn.metrics import classification_report, roc_curve, roc_auc_score, precision_recall_curve
-y_true = pred["type"].tolist()
-y_score = pred.apply(lambda x: len(x[np.array(range(N)) + 2]).count("DARNS") / len(x[np.array(range(N)) + 2]), axis=1)
-classification_report(y_true, pred[0])  # only works for one prediction at a time
-fpr, tpr, thresholds = roc_curve(y_true, y_score, pos_label="DARNS")
-AUC = roc_auc_score(y_true, y_score)
+    # report
+    # classification_report(y_true, pred)
 
-precision, recall, thresholds = precision_recall_curve(y_true, y_score, pos_label="DARNS")
-AUC = roc_auc_score(y_true, y_score)
+    # ROC
+    fpr, tpr, thresholds = roc_curve(y_true, pred)
+    AUC = roc_auc_score(y_true, pred)
 
-# plot ROC
-plt.plt(fpr, tpr)
-plt.text(0.05, 0.95, "AUC = %s" % AUC, fontsize=12)
-plt.plot([0, 1], [0, 1], 'k--')
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.05])
-plt.savefig(os.path.join(results_dir, sampleName + "_DARNS.roc.pdf"))
-plt.close()
+    # PRC
+    precision, recall, thresholds = precision_recall_curve(y_true, pred)
+    APS = average_precision_score(y_true, pred)
 
-# plot PRC
-plt.plt(recall, precision)
-plt.text(0.05, 0.95, "AUC = %s" % AUC, fontsize=12)
-plt.plot([0, 1], [0, 1], 'k--')
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.05])
-plt.savefig(os.path.join(results_dir, sampleName + "_DARNS.prc.pdf"))
-plt.close()
+    print("plotting")
+    # plot ROC
+    plt.plot(fpr, tpr)
+    plt.text(0.05, 0.95, "AUC = %s" % AUC, fontsize=12)
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.savefig(os.path.join(results_dir, sampleName + "_DARNS." + classifier + ".roc.pdf"))
+    plt.close()
 
-# Manual
-# Get confusion matrix
-# counts of True positives, False positives, False negatives, True negatives
-pred["TP"] = pred.apply(lambda x: list(x[np.array(range(N)) + 2]).count("DARNS") if x["type"] == "DARNS" else 0, axis=1)
-pred["TN"] = pred.apply(lambda x: list(x[np.array(range(N)) + 2]).count("DARNSP") if x["type"] == "DARNSP" else 0, axis=1)
-pred["FN"] = pred.apply(lambda x: list(x[np.array(range(N)) + 2]).count("DARNSP") if x["type"] == "DARNS" else 0, axis=1)
-pred["FP"] = pred.apply(lambda x: list(x[np.array(range(N)) + 2]).count("DARNS") if x["type"] == "DARNSP" else 0, axis=1)
+    # plot PRC
+    plt.plot(recall, precision)
+    plt.text(0.05, 0.95, "AUC = %s" % APS, fontsize=12)
+    plt.plot([0, 1], [1, 0], 'k--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.savefig(os.path.join(results_dir, sampleName + "_DARNS." + classifier + ".prc.pdf"))
+    plt.close()
 
-# calculate rates
-pred["TPR"] = pred["TP"] / (pred["TP"] + pred["FN"])  # sensitivity
-pred["FPR"] = pred["FP"] / (pred["FP"] + pred["TN"])  # fall-out (false positive rate)
-pred["TNR"] = pred["TN"] / (pred["FP"] + pred["TN"])  # specificity
-pred["NPV"] = pred["TN"] / (pred["TN"] + pred["FN"])  # negative predictive value
-pred["FDR"] = pred["FP"] / (pred["TP"] + pred["FP"])  # false dicovery rate
-P = pred["TP"] + pred["FP"]
-pred["ACC"] = (pred["TP"] + pred["TN"]) / (P + N)     # accuracy
 
-pickle.dump(
-    pred,
-    open(os.path.join(results_dir, sampleName + "_DARNS.FDRs.pickle"), "wb"),
-    protocol=pickle.HIGHEST_PROTOCOL
-)
-
-pred = pickle.load(open(os.path.join(results_dir, sampleName + "_DARNS.FDRs.pickle"), "r"))
+# Calculate FDR for each DARN
 
 # Export DARN tracks
 allDARNS = pred[pred["type"] == "DARNS"]
