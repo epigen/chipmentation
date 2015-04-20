@@ -21,7 +21,15 @@ loadPSA = function() {
 	psa = fread("metadata/chipmentation.replicates.annotation_sheet.csv")
 	psa[, filePath := sub("/fhgfs/groups/lab_bock/shared/projects/", baseDir, filePath)]
 	psa[which(!file.exists(filePath)),]
+	psa[,xcfile:= paste0(baseDir, "chipmentation/data/shiftedExactCuts/", sampleName, ".bigWig")]
+	psa[which(!file.exists(xcfile)),]
 	psa
 }
 
+
+
+loadCageTSS = function() {
+	tss = fread(paste0(baseDir, "chipmentation/data/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
+	#tss400 = 
+}
 
