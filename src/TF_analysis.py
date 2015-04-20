@@ -287,7 +287,9 @@ def exportToJavaTreeView(df, filename):
 
 
 # Define variables
-projectRoot = "/projects/chipmentation/"
+# projectRoot = "/projects/chipmentation/"
+projectRoot = "/media/afr/cemm-backup/chipmentation/"
+# projectRoot = "/home/arendeiro/chipmentation/"
 bamsDir = os.path.join(projectRoot, "data", "mapped/")
 peaksDir = os.path.join(projectRoot, "data", "peaks/")
 resultsDir = os.path.join(projectRoot, "results")
@@ -712,11 +714,6 @@ for sample in aveSignals['sample'].unique():
 
 
 # Heatmaps sorted by signal abundance
-
-
-# Average signals
-aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "r"))
-
 for i in range(len(sampleSubset)):
     sampleName = sampleSubset['sampleName'][i]
 
@@ -732,48 +729,9 @@ for i in range(len(sampleSubset)):
         neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
         df = (pos + neg) / 2
 
+        s = df.apply(sum, axis=1)
+        df["s"] = s.tolist()
+
+        df.sort(['s'], ascending=False, inplace=True)
+        df.drop('s', axis=1, inplace=True)
         exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))
-
-    # PU1 chip-tagmentation
-    if sampleName == "K562_10M_CM_PU1_nan_PE_1_1_hg19":
-        signalName = "K562_10M_ATAC_PU1_nan_PE_1_1_hg19"
-        exportName = "-".join([sampleName, signalName])
-        print(exportName)
-
-        if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
-
-            pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
-            neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
-            df = (pos + neg) / 2
-
-            exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))
-
-    # Control
-    signalName = sampleSubset['controlSampleName'][i]
-    exportName = "-".join([sampleName, signalName])
-    print(exportName)
-
-    # Get control average profiles and append to dataframe
-    if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-        df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
-
-        pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
-        neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
-        df = (pos + neg) / 2
-
-        exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))
-
-    for j in range(len(signals)):
-        signalName = signals['sampleName'][j]
-        exportName = "-".join([sampleName, signalName])
-        print(exportName)
-
-        if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
-
-            pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
-            neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
-            df = (pos + neg) / 2
-
-            exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))

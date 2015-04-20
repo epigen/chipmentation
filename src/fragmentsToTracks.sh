@@ -97,15 +97,15 @@ export -f addTrackToHub
 
 
 samToBam2() {
-    NAME=$1
+    N=$1
     samtools view -S -b \
-    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.sam \
-    -o /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.bam
+    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${N}.sam \
+    -o /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${N}.bam
 
-    samtools sort /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.bam \
-    /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.sorted
+    #samtools sort /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${N}.bam \
+    #/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${N}.sorted
     
-    samtools index /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${NAME}.sorted.bam
+    #samtools index /fhgfs/groups/lab_bock/shared/projects/chipmentation/data/pe/${N}.sorted.bam
 }
 export -f samToBam2
 
