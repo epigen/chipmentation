@@ -1,23 +1,16 @@
 project.init2("chipmentation")
-getwd()
-
-
-
 psa = loadPSA()
 
 # Look for combined samples
+
 psa[biologicalReplicate==0 & technicalReplicate==0,]
 
-
-
-
-bed =fread(paste0(baseDir, "chipmentation/data/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
-
+tss = loadCageTSS();
 # Divide the CAGE peaks into TATA and Cpg Island groups:
 
-bed[, group:=interaction(V10, V11)]
-bed
-bedGR = dtToGr(bed, "V1", "V2", "V3", strand="V6", splitFactor="group")
+tss[, group:=interaction(V10, V11)]
+tss
+bedGR = dtToGr(tss, "V1", "V2", "V3", strand="V6", splitFactor="group")
 bedGR=GRangesList(bedGR)
 
 seqLength = 50
@@ -57,6 +50,15 @@ bamSlurpList(bamFile, bedGR[["TATA.CpG-less"]])
 
 
 
+#Now take a look at exact cuts:
+psa[,xcfile:= paste0("media/nsheffield/red6/chipmentation/data/shiftedExactCuts/", sampleName, ".bigWig")]
+psa[1,]
+
+
+am = as.matrix(a[, -1, with=FALSE])
+dim(am)
+
+plot(apply(am, 2, sum), type="l")
 
 
 
