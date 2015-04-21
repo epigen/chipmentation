@@ -10,25 +10,24 @@
 #############################################################################################
 
 import os
+import re
 from collections import OrderedDict
 import HTSeq
 import pybedtools
 import numpy as np
 import pandas as pd
+import cPickle as pickle
+from sklearn.cluster import k_means
 import matplotlib
-# Force matplotlib to not use any Xwindows backend.
-matplotlib.use('Agg')
-import matplotlib.font_manager as font_manager
-
-fontpath = '/usr/share/fonts/truetype/Roboto-Regular.ttf'
-
-prop = font_manager.FontProperties(fname=fontpath)
-matplotlib.rcParams['font.family'] = prop.get_name()
 
 import matplotlib.pyplot as plt
 import seaborn as sns  # changes plt style (+ full plotting library)
 
-import cPickle as pickle
+
+# Force matplotlib to not use any Xwindows backend.
+matplotlib.use('Agg')
+# Set seaborn style
+sns.set_style("whitegrid")
 
 
 def loadBed(filename):
@@ -238,7 +237,6 @@ MNase = os.path.join(bamsDir, "wgEncodeSydhNsomeK562Aln.merged.bam")
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
 
 # replace bam path with local
-import re
 fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/"
 samples.loc[:, "filePath"] = samples["filePath"].apply(lambda x: re.sub(fhPath, bamsDir, x))
 
@@ -416,3 +414,130 @@ for sample in aveSignals['name'].unique():
     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
     plt.savefig(os.path.join(plotsDir, sample + ".tss2.pdf"), bbox_inches='tight')
     plt.close()
+
+# overlaid plots
+# dnase and H3K4ME3
+sub = aveSignals[
+    (aveSignals['type'] == "raw") &
+    (aveSignals['x'] >= -80) &
+    (aveSignals['x'] <= 80) &
+    (aveSignals['name'].str.contains(
+        "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19|" +
+        "DNase"))
+]
+sub.drop(["positive", "negative", "type"], axis=1, inplace=True)
+sub.dropna(inplace=True)
+
+for name in sub.name.unique():
+    x = sub["x"].unique()
+    y = normalize(sub[sub['name'] == name]["average"])
+    plt.plot(x, y)
+plt.savefig(os.path.join(plotsDir, "all.tss2.raw.overlaid.open.pdf"), bbox_inches='tight')
+plt.close("all")
+
+# mnase and H3K27ME3
+sub = aveSignals[
+    (aveSignals['type'] == "raw") &
+    (aveSignals['x'] >= -80) &
+    (aveSignals['x'] <= 80) &
+    (aveSignals['name'].str.contains(
+        "K562_500K_CM_H3K27ME3_nan_nan_0_0_hg19|" +
+        "K562_10M_CM_H3K4ME1_nan_nan_0_0_hg19|" +
+        "MNase"))
+]
+sub.drop(["positive", "negative", "type"], axis=1, inplace=True)
+sub.dropna(inplace=True)
+
+for name in sub.name.unique():
+    x = sub["x"].unique()
+    y = normalize(sub[sub['name'] == name]["average"])
+    plt.plot(x, y)
+plt.savefig(os.path.join(plotsDir, "all.tss2.raw.overlaid.closed+1K4.pdf"), bbox_inches='tight')
+plt.close("all")
+
+
+# HEATMAPS
+rawSignals = pd.read_pickle(os.path.join(resultsDir, "TSS_rawSignals.2.pickle"))
+
+# Loop through raw signals, normalize, k-means cluster, save pickle, plot heatmap, export cdt
+signals = ["K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19",
+           "DNase",
+           "MNase",
+           "K562_50K_ATAC_nan_nan_nan_0_0_hg19",
+           "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19"]
+
+for name in signals:
+    print("Clustering based on %s" % name)
+    exportName = "{0}.tssSignal_{1}bp.kmeans_{2}k".format(name, str(windowWidth), n_clusters)
+
+    df = rawSignals[name]
+
+    # join strand name (plus + minus)
+    df = df.sum(axis=0, level="tss")
+
+    # scale row signal to 0:1 (standardization)
+    dfNorm = df.apply(normalize, axis=1)
+    dfNorm.replace(["inf", "NaN"], 0, inplace=True)
+
+    # cluster
+    clust = k_means(
+        dfNorm,
+        n_clusters,
+        n_init=25,
+        max_iter=10000,
+        n_jobs=-1
+    )  # returns centroid, label, inertia
+
+    # keep dataframe with assigned cluster and row index
+    clustOrder = pd.DataFrame(
+        clust[1],
+        columns=["cluster"],
+        index=dfNorm.index.values
+    )
+
+    # save object
+    pickle.dump(
+        clust,
+        open(os.path.join(plotsDir, "..", exportName + ".pickle"), "wb"),
+        protocol=pickle.HIGHEST_PROTOCOL
+    )
+
+    print("Exporting heatmaps for %s" % name)
+
+    # now sort by clust order
+    dfNorm = pd.merge(dfNorm, clustOrder, on=None, left_index=True, right_index=True)  # get common rows (should be all)
+    dfNorm.replace(["inf", "NaN"], 0, inplace=True)
+    dfNorm.sort_index(by="cluster", axis=0, inplace=True)
+    dfNorm.drop("cluster", axis=1, inplace=True)
+
+    # Plot heatmap
+    # data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
+    # plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".plotly.pdf"))
+    # plotHeatmap(dfNorm, os.path.join(plotsDir, exportName + "." + name2 + "_signal.matplotlib.pdf"))
+
+    # Export as cdt
+    # exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "_signal.cdt"))
+
+    # Sort all signals by dataframe by cluster order
+    for name2 in signals:
+        print("Exporting heatmaps for %s" % name2)
+        df = rawSignals[name2]
+        df = df.xs('+', level="strand") + df.xs('-', level="strand")
+
+        # scale row signal to 0:1 (standardization)
+        dfNorm = df.apply(lambda x: (x - min(x)) / (max(x) - min(x)), axis=1)
+        dfNorm.replace("inf", 0, inplace=True)
+
+        # now sort by clust order
+        dfNorm = pd.merge(dfNorm, clustOrder, on=None, left_index=True, right_index=True)  # get common rows (should be all)
+        dfNorm.replace(["inf", "NaN"], 0, inplace=True)
+        dfNorm.sort_index(by="cluster", axis=0, inplace=True)
+        dfNorm.drop("cluster", axis=1, inplace=True)
+
+        # Plot heatmap
+        # data = Data([Heatmap(z=np.array(dfNorm), colorscale='Portland')])
+        # plotly.image.save_as(data, os.path.join(plotsDir, exportName + ".plotly.pdf"))
+        # plotHeatmap(dfNorm, os.path.join(plotsDir, exportName + "." + name2 + "_signal.matplotlib.pdf"))
+
+        # Export as cdt
+        exportToJavaTreeView(dfNorm.copy(), os.path.join(plotsDir, exportName + "." + name2 + "_signal.cdt"))
