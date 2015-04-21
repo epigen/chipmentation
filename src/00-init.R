@@ -11,25 +11,31 @@ utility("funcGenomeSignals.R")
 utility("funcGenomeLocations.R")
 loadBSgenome("hg19")
 
+dataDir = paste0(getOption("PROJECT.DATA.BASE"), "chipmentation/data/")
+resDir = paste0(getOption("PROJECT.DATA.BASE"), "chipmentation/results/")
 
-
-baseDir = getOption("PROJECT.DATA.BASE")
+dir.create(resDir, showWarnings=FALSE);
 
 loadPSA = function() {
 	#psa = fread("metadata/chipmentation.sample_annotation.csv")
 	#psa[, sampleName := paste(cellLine, numberCells, technique, ip, patient, treatment, biologicalReplicate, technicalReplicate, sep="_")]
 	psa = fread("metadata/chipmentation.replicates.annotation_sheet.csv")
-	psa[, filePath := sub("/fhgfs/groups/lab_bock/shared/projects/", baseDir, filePath)]
+	psa[, filePath := sub("/fhgfs/groups/lab_bock/shared/projects/", dataDir, filePath)]
 	psa[which(!file.exists(filePath)),]
-	psa[,xcfile:= paste0(baseDir, "chipmentation/data/shiftedExactCuts/", sampleName, ".bigWig")]
+	psa[,xcfile:= paste0(dataDir, "shiftedExactCuts/", sampleName, ".bigWig")]
 	psa[which(!file.exists(xcfile)),]
 	psa
 }
 
-
-
 loadCageTSS = function() {
-	tss = fread(paste0(baseDir, "chipmentation/data/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
+	tss = fread(paste0(dataDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
+	tss[, group:=interaction(V10, V11)]
+	tss
 	#tss400 = 
 }
+
+# Paths to communal data files
+
+dat = list()
+dat$cage = paste0(dataDir, "hg19.cage_peak_coord_robust.400bp.bed")
 
