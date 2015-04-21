@@ -19,13 +19,14 @@ import pandas as pd
 import cPickle as pickle
 from sklearn.cluster import k_means
 import matplotlib
+matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 import seaborn as sns  # changes plt style (+ full plotting library)
 
 
 # Force matplotlib to not use any Xwindows backend.
-matplotlib.use('Agg')
+
 # Set seaborn style
 sns.set_style("whitegrid")
 
@@ -325,6 +326,27 @@ for i in range(len(sampleSubset)):
         aveSignals[name] = pd.DataFrame(ave)
         pickle.dump(aveSignals, open(os.path.join(resultsDir, "TSS_aveSignals.2.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
+# Add coverage of dyads in TSSs
+name = "dyads"
+
+tsss = pybedtools.BedTool(bedFilePath).slop(genome=genome, b=windowWidth / 2)
+dyads = pybedtools.BedTool(os.path.join(projectRoot, "data", "dyads", "dyads.bed"))
+
+cov = dyads.coverage(tsss, d=True)
+cov = cov.to_dataframe(
+    names=['chrom', 'start', 'end', 'name', '1', '2', '3', '4', '5', '6', '7', 'bp', "count"]
+)
+cov = cov[["bp", "count"]]
+
+# Get average profiles and append to dict
+cov = cov.groupby(["bp"]).apply(np.mean)
+ave = {
+    "name": name,
+    "average": cov["count"],  # both strands
+}
+aveSignals[name] = pd.DataFrame(ave)
+pickle.dump(aveSignals, open(os.path.join(resultsDir, "TSS_aveSignals.2.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
 # convert dict to dataframe
 aveSignals = pickle.load(open(os.path.join(resultsDir, "TSS_aveSignals.2.pickle"), "r"))
 aveSignals = pd.concat(aveSignals, axis=0)
@@ -451,7 +473,8 @@ sub.dropna(inplace=True)
 for name in sub.name.unique():
     x = sub["x"].unique()
     y = normalize(sub[sub['name'] == name]["average"])
-    plt.plot(x, y)
+    plt.plot(x, y, label=name)
+plt.legend()
 plt.savefig(os.path.join(plotsDir, "all.tss2.raw.overlaid.closed+1K4.pdf"), bbox_inches='tight')
 plt.close("all")
 

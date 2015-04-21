@@ -629,6 +629,7 @@ grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
 grid.add_legend()
 plt.savefig(os.path.join(plotsDir, "footprints.raw.pdf"), bbox_inches='tight')
 
+
 # individual
 for sample in aveSignals['sample'].unique():
     sub = aveSignals[
@@ -645,10 +646,12 @@ for sample in aveSignals['sample'].unique():
     grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
     plt.savefig(os.path.join(plotsDir, sample + ".footprints.raw.pdf"), bbox_inches='tight')
 
-# norm
-# all
+
+# several TF footprints
 sub = aveSignals[
-    (aveSignals['type'] == "norm") &
+    (aveSignals['sample'].str.contains("CTCF|GATA1|PU1|REST")) &
+    (aveSignals['signal'].str.contains("CTCF|GATA1|PU1|REST")) &
+    (aveSignals['type'] == "raw") &
     (aveSignals['x'] >= -400) &
     (aveSignals['x'] <= 400)
 ]
@@ -657,60 +660,181 @@ grid = sns.FacetGrid(sub, col="sample", hue="signal", sharey=False, col_wrap=4)
 grid.map(plt.plot, "x", "average")
 grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
 grid.add_legend()
-plt.savefig(os.path.join(plotsDir, "footprints.norm.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join(plotsDir, "footprints.raw.pdf"), bbox_inches='tight')
 
-for sample in aveSignals['sample'].unique():
+
+# Fig 3:
+# compare footprints of various techniques
+aveSignals['ip'] = aveSignals.apply(lambda x: x['sample'].split("_")[3], axis=1)
+
+fig, axis = plt.subplots(2, 2, sharex=True, figsize=(10, 8))
+for i in range(len(aveSignals.ip.unique())):
+    ip = aveSignals.ip.unique()[i]
     sub = aveSignals[
-        (aveSignals['sample'] == sample) &
-        (aveSignals['type'] == "norm") &
+        (aveSignals['ip'] == ip) &
+        (aveSignals['sample'].str.contains("10M")) &
+        (aveSignals['type'] == "raw") &
         (aveSignals['x'] >= -400) &
         (aveSignals['x'] <= 400)
     ]
+    sample = sub.sample.unique()[0]
 
-    # plot
-    grid = sns.FacetGrid(sub, col="signal", hue="signal", sharey=False, col_wrap=4)
-    grid.map(plt.plot, "x", "average")
-    grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
-    plt.savefig(os.path.join(plotsDir, sample + ".footprints.norm.pdf"), bbox_inches='tight')
+    if i is 0:
+        j, k = (0, 0)
+    elif i is 1:
+        j, k = (0, 1)
+    elif i is 2:
+        j, k = (1, 0)
+    elif i is 3:
+        j, k = (1, 1)
+
+    for signal in [sample, "DNase", "ATAC"]:
+        if signal == sample:
+            sub2 = sub[sub['signal'] == sample]
+            colour = colourPerFactor(sample.split("_")[3])
+            axis[j][k].plot(sub2.average, color=colour, linestyle="-", label="ChIPmentation", alpha=1)
+        else:
+            sub2 = sub[sub['signal'].str.contains(signal)]
+            colour = colourPerFactor(signal)
+            axis[j][k].plot(sub2.average, color=colour, linestyle="-", label=signal, alpha=0.35)
+
+    # subplot attributes
+    axis[j][k].set_title(ip)
+    axis[j][k].legend(loc="best")
+    axis[j][k].set_xlabel("Distance to motif")
+plt.savefig(os.path.join(plotsDir, "footprints.raw.signals.pdf"), bbox_inches='tight')
+plt.close()
+
+fig, axis = plt.subplots(2, 2, sharex=True, figsize=(10, 8))
+for i in range(len(aveSignals.ip.unique())):
+    ip = aveSignals.ip.unique()[i]
+    sub = aveSignals[
+        (aveSignals['ip'] == ip) &
+        (aveSignals['sample'].str.contains("10M")) &
+        (aveSignals['type'] == "raw") &
+        (aveSignals['x'] >= -100) &
+        (aveSignals['x'] <= 100)
+    ]
+    sample = sub.sample.unique()[0]
+
+    if i is 0:
+        j, k = (0, 0)
+    elif i is 1:
+        j, k = (0, 1)
+    elif i is 2:
+        j, k = (1, 0)
+    elif i is 3:
+        j, k = (1, 1)
+
+    for signal in [sample, "DNase", "ATAC"]:
+        if signal == sample:
+            sub2 = sub[sub['signal'] == sample]
+            colour = colourPerFactor(sample.split("_")[3])
+            axis[j][k].plot(sub2.average, color=colour, linestyle="-", label="ChIPmentation", alpha=1)
+        else:
+            sub2 = sub[sub['signal'].str.contains(signal)]
+            colour = colourPerFactor(signal)
+            axis[j][k].plot(sub2.average, color=colour, linestyle="-", label=signal, alpha=0.35)
+
+    # subplot attributes
+    axis[j][k].set_title(ip)
+    axis[j][k].legend(loc="best")
+    axis[j][k].set_xlabel("Distance to motif")
+plt.savefig(os.path.join(plotsDir, "footprints.raw.signals.zoom.pdf"), bbox_inches='tight')
+plt.close()
 
 
-# Overlaid plots
-for sample in aveSignals['sample'].unique():
-    fig, axs = plt.subplots(2, 2, sharex='col', sharey='row')
-    for signal in aveSignals[aveSignals['sample'] == sample]['signal'].unique():
+# Supplement (maybe):
+# compare footprints of different cell numbers for the same factor
+aveSignals['ip'] = aveSignals.apply(lambda x: x['sample'].split("_")[3], axis=1)
+sub = aveSignals[aveSignals['sample'].str.contains("CTCF|GATA1|PU1|REST")]
+
+fig, axis = plt.subplots(2, 2, sharex=True, figsize=(10, 8))
+
+for i in range(len(aveSignals.ip.unique())):
+    ip = aveSignals.ip.unique()[i]
+    sub = aveSignals[aveSignals['ip'] == ip]
+
+    if i is 0:
+        j, k = (0, 0)
+    elif i is 1:
+        j, k = (0, 1)
+    elif i is 2:
+        j, k = (1, 0)
+    elif i is 3:
+        j, k = (1, 1)
+
+    for sample in sub.sample.unique():
         sub = aveSignals[
+            (aveSignals['ip'] == ip) &
             (aveSignals['sample'] == sample) &
-            (aveSignals['signal'] == signal) &
+            (aveSignals['signal'] == sample) &
             (aveSignals['type'] == "raw") &
             (aveSignals['x'] >= -400) &
             (aveSignals['x'] <= 400)
         ]
-        # plot raw
-        plt.plot(sub["x"], np.log10(sub["average"]), label=signal, color=colourPerFactor(signal))
-    plt.title(sample)
-    plt.xlabel("distance to motif")
-    plt.legend(loc='best', prop={'size': 4})
-    plt.savefig(os.path.join(plotsDir, sample + ".footprints.raw.pdf"), bbox_inches='tight',)
-    plt.close()
+        colour = colourPerFactor(sample.split("_")[3])
+        if "100K" in sample:
+            number = "100K"
+        elif "10M" in sample:
+            number = "10M"
+        elif "500K" in sample:
+            number = "500K"
 
-    plt.figure()
-    for signal in aveSignals[aveSignals['sample'] == sample]['signal'].unique():
-        # plot norm
+        if number is not "10M":
+            axis[j][k].plot(sub.average, color=colour, linestyle="-", label=number, alpha=0.7)
+        else:
+            axis[j][k].plot(sub.average, color=colour, linestyle="-", label=number, alpha=1)
+    # subplot attributes
+    axis[j][k].set_title(ip)
+    axis[j][k].legend()
+    axis[j][k].set_xlabel("Distance to motif")
+plt.savefig(os.path.join(plotsDir, "footprints.raw.sameIP.pdf"), bbox_inches='tight')
+plt.close()
+
+# now zoom in
+fig, axis = plt.subplots(2, 2, sharex=True, figsize=(10, 8))
+
+for i in range(len(aveSignals.ip.unique())):
+    ip = aveSignals.ip.unique()[i]
+    sub = aveSignals[aveSignals['ip'] == ip]
+
+    if i is 0:
+        j, k = (0, 0)
+    elif i is 1:
+        j, k = (0, 1)
+    elif i is 2:
+        j, k = (1, 0)
+    elif i is 3:
+        j, k = (1, 1)
+
+    for sample in sub.sample.unique():
         sub = aveSignals[
+            (aveSignals['ip'] == ip) &
             (aveSignals['sample'] == sample) &
-            (aveSignals['signal'] == signal) &
-            (aveSignals['type'] == "norm") &
-            (aveSignals['x'] >= -400) &
-            (aveSignals['x'] <= 400)
+            (aveSignals['signal'] == sample) &
+            (aveSignals['type'] == "raw") &
+            (aveSignals['x'] >= -100) &
+            (aveSignals['x'] <= 100)
         ]
-        # plot norm
-        plt.plot(sub["x"], np.log10(sub["average"]), label=signal, color=colourPerFactor(signal))
-    plt.title(sample)
-    plt.xlim(-400, 400)
-    plt.xlabel("distance to motif")
-    plt.ylabel("distance to motif")
-    plt.legend(loc='best', prop={'size': 4})
-    plt.savefig(os.path.join(plotsDir, sample + ".footprints.norm.pdf"), bbox_inches='tight',)
+        colour = colourPerFactor(sample.split("_")[3])
+        if "100K" in sample:
+            number = "100K"
+        elif "10M" in sample:
+            number = "10M"
+        elif "500K" in sample:
+            number = "500K"
+
+        if number is not "10M":
+            axis[j][k].plot(sub.average, color=colour, linestyle="-", label=number, alpha=0.7)
+        else:
+            axis[j][k].plot(sub.average, color=colour, linestyle="-", label=number, alpha=1)
+    # subplot attributes
+    axis[j][k].set_title(ip)
+    axis[j][k].legend()
+    axis[j][k].set_xlabel("Distance to motif")
+plt.savefig(os.path.join(plotsDir, "footprints.raw.sameIP.zoom.pdf"), bbox_inches='tight')
+plt.close()
 
 
 # Heatmaps sorted by signal abundance
