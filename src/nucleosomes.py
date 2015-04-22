@@ -51,7 +51,8 @@ import string
 import textwrap
 import time
 import yahmm
-from sklearn.metrics import classification_report, roc_curve, roc_auc_score, precision_recall_curve, average_precision_score
+from sklearn.metrics import roc_curve, roc_auc_score, precision_recall_curve, average_precision_score
+import pybedtools
 
 sns.set_style("whitegrid")
 np.set_printoptions(linewidth=200)
@@ -1290,10 +1291,10 @@ def exportBedFile(intervals, filename, trackname):
 projectRoot = "/media/afr/cemm-backup/chipmentation"
 data_dir = os.path.join(projectRoot, "periodicity")
 results_dir = os.path.join(projectRoot, "periodicity")
-plotsDir = os.path.join(results_dir, "/plots")
+plotsDir = os.path.join(results_dir, "plots")
 
-DNase = "/media/afr/cemm-backup/encode/wgEncodeUwDnaseK562Aln.merged.bam"
-MNase = "/media/afr/cemm-backup/encode/wgEncodeSydhNsomeK562Aln.merged.bam"
+DNase = "/media/afr/cemm-backup/chipmentation/data/mapped/wgEncodeUwDnaseK562Aln.merged.bam"
+MNase = "/media/afr/cemm-backup/chipmentation/data/mapped/wgEncodeSydhNsomeK562Aln.merged.bam"
 
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "/chipmentation.replicates.annotation_sheet.csv"))
@@ -1899,45 +1900,49 @@ for classifier in ["linear", "tree", "forest", "neighbours"]:
     print("training...")
     clf.fit(train_features, train_labels)
 
+    # Predict N times for all data
+    N = 25
+
     # Predict for all data
     # put in data frame form
-    # pred = pd.DataFrame()
-    # pred["name"] = DARNS_features["name"].tolist()
-    # pred["type"] = DARNS_features["type"].tolist()
-    # split = list(DARNS_features["name"].apply(lambda x: x.split("_")))
-    # pred["chr"] = [i[0] for i in split]
-    # pred["start"] = [i[1] for i in split]
-    # pred["end"] = [i[2] for i in split]
-    # pred["center"] = [i[3] for i in split]
+    pred = pd.DataFrame()
+    pred["name"] = DARNS_features["name"].tolist()
+    pred["type"] = DARNS_features["type"].tolist()
+    split = list(DARNS_features["name"].apply(lambda x: x.split("_")))
+    pred["chr"] = [i[0] for i in split]
+    pred["start"] = [i[1] for i in split]
+    pred["end"] = [i[2] for i in split]
+    pred["center"] = [i[3] for i in split]
 
-    # Predict N times for all data
-    N = 10
-
-    pred = list()
-    for i in range(N):  # try increasing N
+    for i in range(N):
         print("predicting ", i)
-        pred += list(clf.predict_proba(DARNS_features.loc[:, features])[:, 0])
+        pred[i] = list(clf.predict_proba(DARNS_features.loc[:, features])[:, 0])
 
-    # pickle.dump(
-    #     pred,
-    #     open(os.path.join(results_dir, sampleName + "_DARNS." + classifier + ".predictions.pickle"), "wb"),
-    #     protocol=pickle.HIGHEST_PROTOCOL
-    # )
+    pickle.dump(
+        pred,
+        open(os.path.join(results_dir, sampleName + "_DARNS." + classifier + ".predictions.pickle"), "wb"),
+        protocol=pickle.HIGHEST_PROTOCOL
+    )
+
+    melted = pd.melt(pred, id_vars=['type'], value_vars=range(N))
+
+    y_true = melted.type.tolist()
+    y = melted.value.tolist()
 
     # Get metrics
     print("getting metrics")
     y_true = [0 if i == "DARNSP" else 1 for i in DARNS_features["type"].tolist()] * N
 
     # report
-    # classification_report(y_true, pred)
+    # classification_report(y_true, y)
 
     # ROC
-    fpr, tpr, thresholds = roc_curve(y_true, pred)
-    AUC = roc_auc_score(y_true, pred)
+    fpr, tpr, thresholds = roc_curve(y_true, y)
+    AUC = roc_auc_score(y_true, y)
 
     # PRC
-    precision, recall, thresholds = precision_recall_curve(y_true, pred)
-    APS = average_precision_score(y_true, pred)
+    precision, recall, thresholds = precision_recall_curve(y_true, y)
+    APS = average_precision_score(y_true, y)
 
     print("plotting")
     # plot ROC
@@ -1959,147 +1964,142 @@ for classifier in ["linear", "tree", "forest", "neighbours"]:
     plt.close()
 
 
-# Calculate FDR for each DARN
-
-# Export DARN tracks
+# Calculate confidence score for each DARN
 allDARNS = pred[pred["type"] == "DARNS"]
+allDARNS['average'] = allDARNS.apply(lambda x: np.mean(x.loc[range(N)]), axis=1)
 
-# invert FDR and scale 0-1000 for bed track
-allDARNS.replace({"FDR": {np.inf: 1}}, inplace=True)
-allDARNS.loc[:, "FDR"] = (1 - allDARNS["FDR"]) * 1000
+# Keep DARNS with confidence values > 0.9
+len(allDARNS[allDARNS["average"] > 0.9])
+realOnes = allDARNS[allDARNS["average"] > 0.9]
 
-allDARNS.loc[:, ["chr", "start", "end", "name", "FDR"]].to_csv(
-    os.path.join(results_dir, sampleName + "_DARNS.all.bed"),
+realOnes = realOnes[realOnes["end"].apply(int) < 249250621]
+
+# Export as bed
+realOnes.loc[:, ["chr", "start", "end", "center", "name", "average"]].to_csv(
+    os.path.join(results_dir, sampleName + "_DARNS.clf_filtered.bed"),
+    sep="\t", index=False, header=False
+)
+# Export bed centered on mid-peak
+realOnes["center+"] = realOnes["center"].apply(int) + 1
+
+realOnes.loc[:, ["chr", "center", "center+"]].to_csv(
+    os.path.join(results_dir, sampleName + "_DARNS.clf_filtered.center.bed"),
     sep="\t", index=False, header=False
 )
 
-# Keep DARNS with FDR < 0.5
-len(pred[pred["FDR"] < 0.5])
-realOnes = pred[(pred["FDR"] < 0.5) & (pred["type"] == "DARNS")]
+# Add coverage of dyads in TSSs
+darns = pybedtools.BedTool(os.path.join(results_dir, sampleName + "_DARNS.clf_filtered.center.bed")).slop(genome="hg19", b=200)
+dyads = pybedtools.BedTool(os.path.join(projectRoot, "data", "dyads", "dyads.bed"))
 
-# invert FDR and scale 0-1000 for bed track
-realOnes.replace({"FDR": {np.inf: 1}}, inplace=True)
-realOnes.loc[:, "FDR"] = (1 - realOnes["FDR"]) * 1000
-
-realOnes.loc[:, ["chr", "start", "end", "name", "FDR"]].to_csv(
-    os.path.join(results_dir, sampleName + "_DARNS.FDR_filtered.bed"),
-    sep="\t", index=False, header=False
+# Plot coverage of dyads in darns
+cov = dyads.coverage(darns, d=True)
+cov = cov.to_dataframe(
+    names=['chrom', 'start', 'end', 'bp', "count"]
 )
+cov = cov[["bp", "count"]]
 
-fakeOnes = pred[pred["type"] == "DARNSP"]
-# invert FDR and scale 0-1000 for bed track
-fakeOnes.replace({"FDR": {np.inf: 1}}, inplace=True)
-fakeOnes.loc[:, "FDR"] = (1 - fakeOnes["FDR"]) * 1000
+# Get average profiles and append to dict
+cov = cov.groupby(["bp"]).apply(np.mean)
 
-fakeOnes.loc[:, ["chr", "start", "end", "name", "FDR"]].to_csv(
-    os.path.join(results_dir, sampleName + "_DARNSP.all.bed"),
-    sep="\t", index=False, header=False
+plt.plot(cov['count'])
+
+
+# Get closest dyad to DARN
+darns = pybedtools.BedTool(os.path.join(results_dir, sampleName + "_DARNS.clf_filtered.center.bed"))
+dist = darns.closest(dyads, D="ref")
+
+# Slop 200bp each way
+dist = dist.slop(genome="hg19", b=200)
+
+# Filter darns more than 200 bp from a dyad
+# and separate them into upstream (negative distance) and downstream (positive)
+dist = dist.to_dataframe(names=['chrom', 'start', 'end', 'chrom2', 'start2', 'end2', 'distance'])
+darnsUP = dist[(dist["distance"] < 0) & (dist["distance"] > -200)][["chrom", "start", "end"]]
+darnsUP.to_csv(os.path.join(plotsDir, "darns.upstream.tsv"), sep="\t", index=False, header=False)
+darnsDOWN = dist[(dist["distance"] > 0) & (dist["distance"] < 200)][["chrom", "start", "end"]]
+darnsDOWN.to_csv(os.path.join(plotsDir, "darns.downstream.tsv"), sep="\t", index=False, header=False)
+
+
+# Calculate coverage of dyads in the two sets
+# upstream
+dyadsUP = dyads.coverage(pybedtools.BedTool(os.path.join(plotsDir, "darns.upstream.tsv")), d=True)
+dyadsUP = dyadsUP.to_dataframe(
+    names=['chrom', 'start', 'end', 'bp', "count"]
 )
+dyadsUP = dyadsUP[["bp", "count"]]
+dyadsUP.to_pickle(os.path.join(plotsDir, "darns.upstream.dyads.pickle"))
+# plot
+counts = dyadsUP.groupby(["bp"]).apply(sum)
+plt.figure()
+plt.plot(counts['count'])
+plt.savefig(os.path.join(plotsDir, "darns.upstream.dyads.pdf"))
 
-# Plot again variables for DARNS with FDR < 0.5
-
-# Alternatively, train only with real DARNS overlapping H3K4me3 peaks
-
-# Plot:
-#    - From the middle of the DARN (mid-peak)
-#    - From the 5' and 3' end of nucleosome Dyads
-#    - DARNS frequency around TSSs (models and CAGE) and TTSs
-#    - DARNS frequency around CpGs islands
-
-
-
-
-
-##### OLD #####
-
-# Plot attributes
-assert len(DARNS) == len(DARNSP)
-for data in (DARNS, DARNSP):
-    widths = Counter([darn[1] - darn[0] for darn in data.values()[0]])
-    distances, midDistances = measureDARNS(data)
-
-    plt.plot(widths.keys(), widths.values(), '-', color='orange')
-    plt.plot(distances.keys(), distances.values(), '-', color='purple')
-    plt.plot(midDistances.keys(), midDistances.values(), '-', color='green')
-    # sns.violinplot(widths.values())
-    # decide how to save
-
-# Get scores from DARNS
-probs = {peak: model.retrieveProbabilities(sequence) for peak, sequence in genome_binary.items()}
-
-# Plot predicted darns and post probs in an example region
-#
-chrom = "chr1"
-start = 5990
-end = 6000
-width = (end - start) * 1000  # length in bp
-
-# retrieve post. probs for selected region
-probs = model.retrieveProbabilities(OrderedDict(sorted((genome_binary[chrom][start:end]))))  # random 10kb region
-probsP = model.retrieveProbabilities(OrderedDict(sorted((genome_binaryP[chrom][start:end]))))  # random 10kb region
-
-# start plotting
-from matplotlib.patches import Rectangle
-colors = sns.color_palette('deep', n_colors=6, desat=0.5)
-sns.set_context(rc={"figure.figsize": (14, 6)})
-sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
-sns.plt.xlim([1, width + 1])
-sns.plt.ylim([0, 1.2])
-sns.plt.ylabel(r'posterior probs, $\gamma_k$')
-sns.plt.xlabel(r'$k$')
-axis = sns.plt.gca()
-
-# viterbi predicted DARNS
-# get darns in window
-DARNSinWindow = [darn for darn in DARNS[chrom] if darn[0] >= start and darn[1] <= end]
-# for each darn in window draw a box
-for start, end in DARNSinWindow:
-    axis.add_patch(Rectangle((start + 1, 1.075), end - start + 1, 0.05,
-                             facecolor=colors[0], alpha=0.7))
-
-# line plot of post. probs
-sns.plt.plot(range(1, width + 1), probs,  # post. probs of real data
-             c=colors[2], alpha=0.7)
-sns.plt.plot(range(1, width + 1), probsP,  # post. probs of permuted data
-             c=colors[3], alpha=0.5)
-plt.show()  # decide how to save
-
-# TO IMPLEMENT:
-# Export bed files of predicted DARNS for both real data and permuted
-exportBedFile(
-    DARNS,
-    os.path.join(results_dir, sampleName + ".DARNS.bed"),
-    "DARNS predicted from %s" % sampleName
+# downstream
+dyadsUP = dyads.coverage(pybedtools.BedTool(os.path.join(plotsDir, "darns.downstream.tsv")), d=True)
+dyadsUP = dyadsUP.to_dataframe(
+    names=['chrom', 'start', 'end', 'bp', "count"]
 )
-exportBedFile(
-    DARNS,
-    os.path.join(results_dir, sampleName + ".DARNS.permuted.bed"),
-    "DARNS predicted from %s permuted reads" % sampleName
+dyadsUP = dyadsUP[["bp", "count"]]
+dyadsUP.to_pickle(os.path.join(plotsDir, "darns.downstream.dyads.pickle"))
+# plot
+counts = dyadsUP.groupby(["bp"]).apply(sum)
+plt.figure()
+plt.plot(counts['count'])
+plt.savefig(os.path.join(plotsDir, "darns.downstream.dyads.pdf"))
+
+
+# Calculate MNase coverage in the two sets
+mnase = pybedtools.BedTool(MNase)
+# upstream
+covUP = mnase.coverage(pybedtools.BedTool(os.path.join(plotsDir, "darns.upstream.tsv")), d=True)
+covUP = covUP.to_dataframe(
+    names=['chrom', 'start', 'end', 'bp', "count"]
 )
-# Get overal score for darn from post. prob (or something else)
+covUP = covUP[["bp", "count"]]
+covUP.to_pickle(os.path.join(plotsDir, "darns.upstream.MNase.pickle"))
 
-# Get overal score for darn over permuted
+# plot
+counts = covUP.groupby(["bp"]).apply(sum)
+plt.figure()
+plt.xlim([90, 310])
+plt.plot(counts['count'])
+plt.savefig(os.path.join(plotsDir, "darns.upstream.MNase.pdf"))
 
-# Output bed/wig with scores!
-# Export wig files with raw correlations
-# exportWigFile(
-#     [peaks[i] for i in correlationsPos.keys()],
-#     correlationsPos.values(),
-#     len(pattern) / 2,
-#     os.path.join(results_dir, sampleName + ".peakCorrelationPos.wig"),
-#     sampleName + " raw absolute correlation - positive strand"
-# )
-# exportWigFile(
-#     [peaks[i] for i in correlationsNeg.keys()],
-#     correlationsNeg.values(),
-#     len(pattern) / 2,
-#     os.path.join(results_dir, sampleName + ".peakCorrelationNeg.wig"),
-#     sampleName + " raw absolute correlation - negative strand"
-# )
 
-# TODO:
-# Get regions in extreme quantiles of correlation
-# Check for enrichment in ...
-#     mnase signal
-#     nucleosomes
-#     clusters of CM signal around TSSs
+# downstream
+covDOWN = mnase.coverage(pybedtools.BedTool(os.path.join(plotsDir, "darns.downstream.tsv")), d=True)
+covDOWN = covDOWN.to_dataframe(
+    names=['chrom', 'start', 'end', 'bp', "count"]
+)
+covDOWN = covDOWN[["bp", "count"]]
+covDOWN.to_pickle(os.path.join(plotsDir, "darns.downstream.MNase.pickle"))
+
+# plot
+counts = covDOWN.groupby(["bp"]).apply(sum)
+plt.figure()
+plt.xlim([90, 310])
+plt.plot(counts['count'])
+plt.savefig(os.path.join(plotsDir, "darns.downstream.MNase.pdf"))
+
+
+# enrichment of darns around dyads
+dist = dist.to_dataframe(names=['chrom', 'start', 'end', 'chrom2', 'start2', 'end2', 'distance'])
+darnsCLO = pybedtools.BedTool(dist[(dist["distance"] < 200) & (dist["distance"] > -200)][["chrom", "start", "end"]])
+
+dyads = pybedtools.BedTool(os.path.join(projectRoot, "data", "dyads", "dyads.bed"))
+dyads.slop(g="hg19", b=200)
+# you might have to save and load that ^^
+# dyads.to_csv("dyads", sep="\t", index=False, header=False)
+# dyads = pybedtools.BedTool("dyads")
+
+# Calculate coverage of dyads in the two sets
+cov = darnsCLO.coverage(dyads, d=True)
+cov = cov.to_dataframe(
+    names=['chrom', 'start', 'end', 'bp', "count"]
+)
+cov = cov[["bp", "count"]]
+
+# Get average profiles and append to dict
+counts = cov.groupby(["bp"]).apply(sum)
+
+plt.plot(counts['count'])
