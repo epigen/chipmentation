@@ -15,21 +15,11 @@ import HTSeq
 import pybedtools
 import numpy as np
 import pandas as pd
-import matplotlib
-# Force matplotlib to not use any Xwindows backend.
-matplotlib.use('Agg')
-import matplotlib.font_manager as font_manager
-
-fontpath = '/usr/share/fonts/truetype/Roboto-Regular.ttf'
-
-prop = font_manager.FontProperties(fname=fontpath)
-matplotlib.rcParams['font.family'] = prop.get_name()
-
 import matplotlib.pyplot as plt
 import seaborn as sns  # changes plt style (+ full plotting library)
-sns.set_style("whitegrid")
-
 import cPickle as pickle
+
+sns.set_style("whitegrid")
 
 
 def smooth(x, window_len=11, window='hanning'):
@@ -304,20 +294,17 @@ samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.an
 # samples.loc[:, "controlSampleFilePath"] = samples["controlSampleFilePath"].apply(lambda x: re.sub("K562_10M_CM_IGG_nan_nan_0_0_hg19", "K562_10M_CM_IGG_nan_nan_1_0_hg19", str(x)))
 
 # Replace peaks of low cell number TFs
-p = "/projects/chipmentation/data/peaks/"
-samples.loc[samples['sampleName'] == "K562_500K_CM_CTCF_nan_nan_0_0_hg19", "peakFile"] = p + "K562_10M_CM_CTCF_nan_nan_0_0_hg19/K562_10M_CM_CTCF_nan_nan_0_0_hg19_peaks.narrowPeak"
-samples.loc[samples['sampleName'] == "K562_500K_CM_PU1_nan_nan_0_0_hg19", "peakFile"] = p + "K562_10M_CM_PU1_nan_nan_0_0_hg19/K562_10M_CM_PU1_nan_nan_0_0_hg19_peaks.narrowPeak"
-samples.loc[samples['sampleName'] == "K562_100K_CM_GATA1_nan_nan_0_0_hg19", "peakFile"] = p + "K562_10M_CM_GATA1_nan_nan_0_0_hg19/K562_10M_CM_GATA1_nan_nan_0_0_hg19_peaks.narrowPeak"
-samples.loc[samples['sampleName'] == "K562_100K_CM_REST_nan_nan_0_0_hg19", "peakFile"] = p + "K562_10M_CM_REST_nan_nan_0_0_hg19/K562_10M_CM_REST_nan_nan_0_0_hg19_peaks.narrowPeak"
+samples.loc[samples['sampleName'] == "K562_500K_CM_CTCF_nan_nan_0_0_hg19", "peakFile"] = peaksDir + "K562_10M_CM_CTCF_nan_nan_0_0_hg19/K562_10M_CM_CTCF_nan_nan_0_0_hg19_peaks.narrowPeak"
+samples.loc[samples['sampleName'] == "K562_500K_CM_PU1_nan_nan_0_0_hg19", "peakFile"] = peaksDir + "K562_10M_CM_PU1_nan_nan_0_0_hg19/K562_10M_CM_PU1_nan_nan_0_0_hg19_peaks.narrowPeak"
+samples.loc[samples['sampleName'] == "K562_100K_CM_GATA1_nan_nan_0_0_hg19", "peakFile"] = peaksDir + "K562_10M_CM_GATA1_nan_nan_0_0_hg19/K562_10M_CM_GATA1_nan_nan_0_0_hg19_peaks.narrowPeak"
+samples.loc[samples['sampleName'] == "K562_100K_CM_REST_nan_nan_0_0_hg19", "peakFile"] = peaksDir + "K562_10M_CM_REST_nan_nan_0_0_hg19/K562_10M_CM_REST_nan_nan_0_0_hg19_peaks.narrowPeak"
 
 # replace bam path with local
-import re
 fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/"
 samples.loc[:, "filePath"] = samples["filePath"].apply(lambda x: re.sub(fhPath, bamsDir, str(x)))
 samples.loc[:, "controlSampleFilePath"] = samples["controlSampleFilePath"].apply(lambda x: re.sub(fhPath, bamsDir, str(x)))
 
 # replace peaks path with local
-import re
 fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/peaks/"
 samples.loc[:, "peakFile"] = samples["peakFile"].apply(lambda x: re.sub(fhPath, peaksDir, str(x)))
 
@@ -356,12 +343,22 @@ n_clusters = 5
 
 windowWidth = abs(windowRange[0]) + abs(windowRange[1])
 
-gapsRepeats = pybedtools.BedTool("/projects/reference/hg19/hg19_gapsRepeats.bed")
+gapsRepeats = pybedtools.BedTool(os.path.join("/media/afr/cemm-backup", "reference/hg19/hg19_gapsRepeats.bed"))
 
 # Loop through all samples, compute coverage in peak regions centered on motifs
 for i in range(len(sampleSubset)):
     sampleName = sampleSubset['sampleName'][i]
-    motifCentered = re.sub("\..*", ".", sampleSubset['peakFile'][i]) + "motifCentered.bed"
+    print(sampleName)
+
+    if "100K" in sampleName:
+        peaks = re.sub("100K", "10M", sampleSubset['peakFile'][i]) + "motifCentered.bed"
+    elif "500K" in sampleName:
+        peaks = re.sub("500K", "10M", sampleSubset['peakFile'][i]) + "motifCentered.bed"
+    else:
+        peaks = sampleSubset['peakFile'][i]
+
+    motifCentered = re.sub("\..*", ".", peaks) + "motifCentered.bed"
+    print(motifCentered)
 
     # Load peak file from bed files centered on motif, make window around
     try:
@@ -838,24 +835,27 @@ plt.close()
 
 
 # Heatmaps sorted by signal abundance
-for i in range(len(sampleSubset)):
-    sampleName = sampleSubset['sampleName'][i]
-
+for sampleName in sampleSubset['sampleName'].unique():
     # Self
     signalName = sampleName
     exportName = "-".join([sampleName, signalName])
     print(exportName)
 
     if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-        df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+        if not os.path.isfile(os.path.join(plotsDir, "cdt", exportName + ".cdt")):
+            try:
+                df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+            except:
+                print("Couldn't load sample %s" % sampleName)
+                continue
 
-        pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
-        neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
-        df = (pos + neg) / 2
+            pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
+            neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
+            df = (pos + neg) / 2
 
-        s = df.apply(sum, axis=1)
-        df["s"] = s.tolist()
+            s = df.apply(sum, axis=1)
+            df["s"] = s.tolist()
 
-        df.sort(['s'], ascending=False, inplace=True)
-        df.drop('s', axis=1, inplace=True)
-        exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))
+            df.sort(['s'], ascending=False, inplace=True)
+            df.drop('s', axis=1, inplace=True)
+            exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))
