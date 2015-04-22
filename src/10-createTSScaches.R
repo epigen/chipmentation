@@ -1,21 +1,38 @@
 # Creates caches for signal surrounding TSSs.
-
 project.init2("chipmentation")
-
-utility("funcGenomeSignals.R")
+#sParam = getSlurmParams()
 
 psa=loadPSA()
+tss = loadCageTSS();
+negStrand = which(tss$V6=="-")
+
+
 
 # Create caches:
-for (i in 1:nrow(psa)) {
-	xcfile = psa[i, xcfile]
+for (i in 1:nrow(msa)) {
+	xcfile = msa[i, xcfile]
 	if (!file.exists(xcfile)) {
 		warning("DNE: ", xcfile);
 		next();
 	}
-	message(psa[i, sampleName]);
-	psa[i, xcfile]
-	simpleCache(psa[i, sampleName], { x = bwSummaryOverBed(	psa[i, xcfile], dat$cage, nElem=400); xm = as.matrix(x[, -1, with=FALSE]); xm }, cacheSubDir="tss400bp", noload=TRUE, recreate=FALSE, nofail=TRUE)
+	message(msa[i, sampleName]);
+	msa[i, xcfile]
+	simpleCache(msa[i, sampleName], { x = bwSummaryOverBed(	msa[i, xcfile], dat$cage, nElem=400); xm = as.matrix(x[, -1, with=FALSE]); xm = flipRows(xm, negStrand); }, cacheSubDir="tss400bp", noload=TRUE, recreate=FALSE, nofail=TRUE)
+}
+
+# Capped and binary caches:
+for (i in 1:nrow(msa)) {
+	xcfile = msa[i, xcfile]
+	if (!file.exists(xcfile)) {
+		warning("DNE: ", xcfile);
+		next();
+	}
+	message(msa[i, sampleName]);
+	simpleCache(msa[i, sampleName], cacheSubDir="tss400bp", assignToVariable="M", recreate=FALSE, nofail=TRUE, reload=TRUE)
+	# set max to 1
+	
+	simpleCache(paste0(msa[i, sampleName], "_cap"), { capData(M, .999); }, cacheSubDir="tss400bp_capped", noload=TRUE, recreate=FALSE, nofail=TRUE)
+	simpleCache(paste0(msa[i, sampleName], "_bin"), { M[M>1] = 1; M; }, cacheSubDir="tss400bp_bin", noload=TRUE, recreate=FALSE, nofail=TRUE)
 }
 
 

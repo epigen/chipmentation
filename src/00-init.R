@@ -9,6 +9,7 @@
 
 utility("funcGenomeSignals.R")
 utility("funcGenomeLocations.R")
+utility("funcLoadSharedData.R")
 loadBSgenome("hg19")
 
 dataDir = paste0(getOption("PROJECT.DATA.BASE"), "chipmentation/data/")
@@ -24,8 +25,18 @@ loadPSA = function() {
 	psa[which(!file.exists(filePath)),]
 	psa[,xcfile:= paste0(dataDir, "shiftedExactCuts/", sampleName, ".bigWig")]
 	psa[which(!file.exists(xcfile)),]
-	psa
+
+	# Our new algorithm to select the one best merged sample for each
+# experiment type
+	msa = psa[order(biologicalReplicate,technicalReplicate), .SD[1,], by=c("cellLine", "numberCells", "technique", "ip", "treatment", "genome")]
+	return(nlist(psa, msa))
 }
+
+
+
+
+
+
 
 loadCageTSS = function() {
 	tss = fread(paste0(dataDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")

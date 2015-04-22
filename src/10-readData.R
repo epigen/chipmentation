@@ -1,9 +1,8 @@
-project.init2("chipmentation")
-psa = loadPSA()
+project.init("chipmentation", "projects/chipmentation")
+#psa = loadPSA()
+svloadenv(loadPSA())
 
 # Look for combined samples
-psa[biologicalReplicate==0 & technicalReplicate==0,]
-
 
 # Divide the CAGE peaks into TATA and Cpg Island groups:
 tss = loadCageTSS();
@@ -12,19 +11,64 @@ tssGroupIds = split(1:nrow(tss), tss$group)
 names(tssGroupIds)
 tssGroupIds$TATA.CpG
 
-msa = psa[biologicalReplicate==0 & technicalReplicate==0,]
-psa[1,]
+msa = psa[biologicalReplicate==0 | technicalReplicate==0,]
 
-pdf(paste0(resDir, "tss400.pdf"))
+
+psa
+
+tss
+
+pdf(paste0(resDir, "tss400_raw.pdf"), width=16)
 for (i in 1:nrow(msa)) {
-	message(msa[i, sampleName])
-	simpleCache(msa[i, sampleName], cacheSubDir="tss400bp")
-	mat = get(msa[i, sampleName])[tssGroupIds$TATA.CpG,]
-	plot(apply(mat, 2, sum), type="l", main = msa[i, sampleName])
+	message(i, ": ", msa[i, sampleName])
+	simpleCache(paste0(msa[i, sampleName]), cacheSubDir="tss400bp", reload=FALSE, assignToVariable="mat")
+
+	par(mfrow=c(2,4))
+	for (type in names(tssGroupIds)) {
+	plot(-199:200, apply(mat[tssGroupIds[[type]],], 2, sum), type="l", main = paste0(msa[i, sampleName]), xlab="TSS")
+	legend('topleft', type, bty='n', cex=.8)
+	abline(v=0, col="gray", lty="dotted")
+	plot(-50:50, apply(mat[tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
+	legend('topleft', type, bty='n', cex=.8)
+	abline(v=0, col="gray", lty="dotted")
+	} # for
 }
 dev.off()
 
 
+pdf(paste0(resDir, "tss400_cap.pdf"), width=16)
+for (i in 1:nrow(msa)) {
+	message(i, ": ", msa[i, sampleName])
+	simpleCache(paste0(msa[i, sampleName], "_cap"), cacheSubDir="tss400bp_capped", reload=FALSE, assignToVariable="mat")
+
+	par(mfrow=c(2,4))
+	for (type in names(tssGroupIds)) {
+	plot(-199:200, apply(mat[tssGroupIds[[type]],], 2, sum), type="l", main = paste0(msa[i, sampleName]), xlab="TSS")
+	legend('topleft', type, bty='n', cex=.8)
+	abline(v=0, col="gray", lty="dotted")
+	plot(-50:50, apply(mat[tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
+	legend('topleft', type, bty='n', cex=.8)
+	abline(v=0, col="gray", lty="dotted")
+	} # for
+}
+dev.off()
+
+
+pdf(paste0(resDir, "tss400_bin.pdf"), width=16)
+for (i in 1:nrow(msa)) {
+	message(i, ": ", msa[i, sampleName])
+	simpleCache(paste0(msa[i, sampleName], "_bin"), cacheSubDir="tss400bp_bin", reload=TRUE, assignToVariable="mat")
+	par(mfrow=c(2,4))
+	for (type in names(tssGroupIds)) {
+	plot(-199:200, apply(mat[tssGroupIds[[type]],], 2, sum), type="l", main = paste0(msa[i, sampleName]), xlab="TSS")
+	legend('topleft', type, bty='n', cex=.8)
+	abline(v=0, col="gray", lty="dotted")
+	plot(-50:50, apply(mat[tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
+	legend('topleft', type, bty='n', cex=.8)
+	abline(v=0, col="gray", lty="dotted")
+	} # for
+}
+dev.off()
 
 
 
