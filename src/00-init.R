@@ -10,7 +10,8 @@
 utility("funcGenomeSignals.R")
 utility("funcGenomeLocations.R")
 utility("funcLoadSharedData.R")
-utility("funcEnrichment.R") #for topn
+utility("funcDNASequence.R")
+
 loadBSgenome("hg19")
 
 dataDir = paste0(getOption("PROJECT.DATA.DIR"), "/data/")
@@ -51,5 +52,30 @@ loadCageTSS = function() {
 
 dat = list()
 dat$cage = paste0(dataDir, "hg19.cage_peak_coord_robust.400bp.bed")
+
+
+
+
+
+
+
+
+# Some notes on early command-line versions of exact cuts:
+
+
+#/fhgfs/groups/lab_bock/arendeiro/share/chipmentationBamFiles
+
+#bamToBed -i /fhgfs/groups/lab_bock/arendeiro/share/chipmentationBamFiles/H3K4me3_K562_500k_CM.bam > temp.bed
+
+# bedToExactWig.pl temp.bed ~/fhgfs/share/data/ucsc/chromInfo.hg19.txt out
+
+
+#/fhgfs/groups/lab_bock/arendeiro/share/chipmentationBedFiles/H3K4me3_K562_500k_ChIP.5prime.bw
+
+
+#bigWigSummaryOverBed /fhgfs/groups/lab_bock/arendeiro/share/chipmentationBedFiles/H3K4me3_K562_500k_ChIP.5prime.bw promoters.bed out.tab 200
+
+
+
 
 
