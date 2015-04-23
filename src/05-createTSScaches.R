@@ -31,8 +31,9 @@ for (i in 1:nrow(SV$msa)) {
 	simpleCache(SV$msa[i, sampleName], cacheSubDir="tss400bp", assignToVariable="M", recreate=FALSE, nofail=TRUE, reload=TRUE)
 	# set max to 1
 	
-	simpleCache(paste0(SV$msa[i, sampleName], "_cap"), { capData(M, .999); }, cacheSubDir="tss400bp_capped", noload=TRUE, recreate=FALSE, nofail=TRUE)
+	simpleCache(paste0(SV$msa[i, sampleName], "_cap"), { capData(M, .999); }, cacheSubDir="tss400bp_cap", noload=TRUE, recreate=FALSE, nofail=TRUE)
 	simpleCache(paste0(SV$msa[i, sampleName], "_bin"), { M[M>1] = 1; M; }, cacheSubDir="tss400bp_bin", noload=TRUE, recreate=FALSE, nofail=TRUE)
+	simpleCache(paste0(SV$msa[i, sampleName], "_cap5"), { M[M>5] = 5; M; }, cacheSubDir="tss400bp_cap5", noload=TRUE, recreate=FALSE, nofail=TRUE)
 }
 
 
