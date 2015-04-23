@@ -1,38 +1,38 @@
 # Creates caches for signal surrounding TSSs.
-project.init2("chipmentation")
+project.init("chipmentation", "projects/chipmentation")
 #sParam = getSlurmParams()
 
-psa=loadPSA()
+svloadenv(loadPSA())
 tss = loadCageTSS();
 negStrand = which(tss$V6=="-")
 
 
 
 # Create caches:
-for (i in 1:nrow(msa)) {
-	xcfile = msa[i, xcfile]
+for (i in 1:nrow(SV$msa)) {
+	xcfile = SV$msa[i, xcfile]
 	if (!file.exists(xcfile)) {
 		warning("DNE: ", xcfile);
 		next();
 	}
-	message(msa[i, sampleName]);
-	msa[i, xcfile]
-	simpleCache(msa[i, sampleName], { x = bwSummaryOverBed(	msa[i, xcfile], dat$cage, nElem=400); xm = as.matrix(x[, -1, with=FALSE]); xm = flipRows(xm, negStrand); }, cacheSubDir="tss400bp", noload=TRUE, recreate=FALSE, nofail=TRUE)
+	message(SV$msa[i, sampleName]);
+	SV$msa[i, xcfile]
+	simpleCache(SV$msa[i, sampleName], { x = bwSummaryOverBed(	SV$msa[i, xcfile], dat$cage, nElem=400); xm = as.matrix(x[, -1, with=FALSE]); xm = flipRows(xm, negStrand); }, cacheSubDir="tss400bp", noload=TRUE, recreate=FALSE, nofail=TRUE)
 }
 
 # Capped and binary caches:
-for (i in 1:nrow(msa)) {
-	xcfile = msa[i, xcfile]
+for (i in 1:nrow(SV$msa)) {
+	xcfile = SV$msa[i, xcfile]
 	if (!file.exists(xcfile)) {
 		warning("DNE: ", xcfile);
 		next();
 	}
-	message(msa[i, sampleName]);
-	simpleCache(msa[i, sampleName], cacheSubDir="tss400bp", assignToVariable="M", recreate=FALSE, nofail=TRUE, reload=TRUE)
+	message(SV$msa[i, sampleName]);
+	simpleCache(SV$msa[i, sampleName], cacheSubDir="tss400bp", assignToVariable="M", recreate=FALSE, nofail=TRUE, reload=TRUE)
 	# set max to 1
 	
-	simpleCache(paste0(msa[i, sampleName], "_cap"), { capData(M, .999); }, cacheSubDir="tss400bp_capped", noload=TRUE, recreate=FALSE, nofail=TRUE)
-	simpleCache(paste0(msa[i, sampleName], "_bin"), { M[M>1] = 1; M; }, cacheSubDir="tss400bp_bin", noload=TRUE, recreate=FALSE, nofail=TRUE)
+	simpleCache(paste0(SV$msa[i, sampleName], "_cap"), { capData(M, .999); }, cacheSubDir="tss400bp_capped", noload=TRUE, recreate=FALSE, nofail=TRUE)
+	simpleCache(paste0(SV$msa[i, sampleName], "_bin"), { M[M>1] = 1; M; }, cacheSubDir="tss400bp_bin", noload=TRUE, recreate=FALSE, nofail=TRUE)
 }
 
 

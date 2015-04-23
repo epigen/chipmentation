@@ -10,10 +10,11 @@
 utility("funcGenomeSignals.R")
 utility("funcGenomeLocations.R")
 utility("funcLoadSharedData.R")
+utility("funcEnrichment.R") #for topn
 loadBSgenome("hg19")
 
-dataDir = paste0(getOption("PROJECT.DATA.BASE"), "chipmentation/data/")
-resDir = paste0(getOption("PROJECT.DATA.BASE"), "chipmentation/results/")
+dataDir = paste0(getOption("PROJECT.DATA.DIR"), "/data/")
+resDir = paste0(getOption("PROJECT.DATA.DIR"), "/results/")
 
 dir.create(resDir, showWarnings=FALSE);
 
@@ -29,6 +30,7 @@ loadPSA = function() {
 	# Our new algorithm to select the one best merged sample for each
 # experiment type
 	msa = psa[order(biologicalReplicate,technicalReplicate), .SD[1,], by=c("cellLine", "numberCells", "technique", "ip", "treatment", "genome")]
+	msa = msa[-51,]
 	return(nlist(psa, msa))
 }
 
@@ -49,4 +51,5 @@ loadCageTSS = function() {
 
 dat = list()
 dat$cage = paste0(dataDir, "hg19.cage_peak_coord_robust.400bp.bed")
+
 
