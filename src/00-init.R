@@ -14,10 +14,16 @@ utility("funcDNASequence.R")
 
 loadBSgenome("hg19")
 
+# Set up some directories
 dataDir = paste0(getOption("PROJECT.DATA.DIR"), "/data/")
+annoDir = paste0(getOption("PROJECT.DATA.DIR"), "/annotation/")
 resDir = paste0(getOption("PROJECT.DATA.DIR"), "/results/")
-
 dir.create(resDir, showWarnings=FALSE);
+
+# Paths to communal data files
+dat = list()
+dat$cage = paste0(dataDir, "hg19.cage_peak_coord_robust.400bp.bed")
+
 
 loadPSA = function() {
 	#psa = fread("metadata/chipmentation.sample_annotation.csv")
@@ -37,21 +43,58 @@ loadPSA = function() {
 
 
 
-
-
-
-
 loadCageTSS = function() {
-	tss = fread(paste0(dataDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
-	tss[, group:=interaction(V10, V11)]
+	tss = fread(paste0(annoDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
+	# or switch to this set and look at robust ones?
+	
+	#tssall = fread(paste0(annoDir, "/hg19.cage_peak_all_annotation.tsv"), sep="\t")
+
+	#sum(tssall[["Robust set"]]>0)
+
+	setkey(tss, "V5")
+
+	k562tss = fread(paste0(annoDir, "/hg19.cage_peak_K562_normexpression.tsv"), sep="\t")
+	setnames(k562tss, c("tss_id", "description", "gene_id", "uniprot_id", "exp1", "exp2", "exp3"))
+
+	setkey(k562tss, "tss_id")
+	k562tss[,expMean:=pmean(exp1, exp2, exp3)]
+	tss[k562tss, expMean := expMean]
+	tss[, expGroup := ifelse(expMean > 0.5, "Exp", "NoExp") ]
+	tss[, group:=interaction(V10, V11, expGroup)]
 	tss
-	#tss400 = 
+	tss[,.N, by=group]
+	return(nlist(tss))
+	#distance distribution:
+	summary(diff(tss$V3))
 }
 
-# Paths to communal data files
 
-dat = list()
-dat$cage = paste0(dataDir, "hg19.cage_peak_coord_robust.400bp.bed")
+
+loadTransposePWM = function() {
+	downloadCache("transposasePWM", "https://raw.githubusercontent.com/GreenleafLab/NucleoATAC/master/pyatac/pwm/Human2.PWM.txt")
+	return(list(tpwm = as.matrix(transposasePWM)))
+}
+
+
+makeWindowAroundTSS = function() {
+
+# Produce a bed file with 400bp surrounding each cage peak,
+# to extract exact cuts.
+
+tss = fread(paste0(annoDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
+
+tss[, V2:=pmax(0, V2-200)]
+tss[, V3:=V3+200]
+tss[, uniqueName:=1:nrow(tss)]
+tss
+tss[, c(1,2,3, 12), with=FALSE]
+tssGR = dtToGr(tss, "V1", "V2", "V3")
+
+write.tsv(tss[, c(1,2,3, 12), with=FALSE], file=paste0(data, "/hg19.cage_peak_coord_robust.400bp.bed"), col.names=FALSE)
+
+}
+
+
 
 
 

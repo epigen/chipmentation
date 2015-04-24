@@ -1,15 +1,15 @@
 project.init("chipmentation", "projects/chipmentation")
 #psa = loadPSA()
-svloadenv(loadPSA())
+eload(loadPSA())
 
 # Look for combined samples
 
 # Divide the CAGE peaks into TATA and Cpg Island groups:
-tss = loadCageTSS();
-tss
-tssGroupIds = split(1:nrow(tss), tss$group)
+eload(loadCageTSS());
+SV$tss
+tssGroupIds = split(1:nrow(SV$tss), SV$tss$group)
 names(tssGroupIds)
-tssGroupIds$TATA.CpG
+#tssGroupIds$TATA.CpG
 
 i=1
 
@@ -18,13 +18,13 @@ for (i in 1:nrow(SV$msa)) {
 	message(i, ": ", SV$msa[i, sampleName])
 	simpleCache(paste0(SV$msa[i, sampleName]), cacheSubDir="tss400bp", reload=FALSE, assignToVariable="mat")
 
-	par(mfrow=c(2,4))
+	par(mfrow=c(4,4))
 	for (type in names(tssGroupIds)) {
 	plot(-199:200, apply(mat[tssGroupIds[[type]],], 2, sum), type="l", main = paste0(SV$msa[i, sampleName]), xlab="TSS")
-	legend('topleft', type, bty='n', cex=.8)
+	legend('topleft', type, bty='n', cex=.9)
 	abline(v=0, col="gray", lty="dotted")
 	plot(-50:50, apply(mat[tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
-	legend('topleft', type, bty='n', cex=.8)
+	legend('topleft', type, bty='n', cex=.9)
 	abline(v=0, col="gray", lty="dotted")
 	} # for
 }
@@ -54,7 +54,7 @@ for (i in 1:nrow(SV$msa)) {
 	message(i, ": ", SV$msa[i, sampleName])
 	simpleCache(paste0(SV$msa[i, sampleName], "_cap5"), cacheSubDir="tss400bp_cap5", reload=FALSE, assignToVariable="mat")
 
-	par(mfrow=c(2,4))
+	par(mfrow=c(4,4))
 	for (type in names(tssGroupIds)) {
 	plot(-199:200, apply(mat[tssGroupIds[[type]],], 2, sum), type="l", main = paste0(SV$msa[i, sampleName]), xlab="TSS")
 	legend('topleft', type, bty='n', cex=.8)
@@ -220,6 +220,38 @@ for (i in 1:10) {
 dev.off()
 
 km = kmeans(mat, 10)
+
+
+
+
+
+
+
+
+# Addressing sequencing bias:
+
+tssGR = dtToGr(tss, "V1", "V2", "V3")
+tssGR = resize(tssGR, 500)
+
+rp()
+eload(loadTransposePWM())
+tssGR[1]
+s = extractSequences(tssGR[1]) #broken
+s = getSeq(Hsapiens, tssGR[1:10000])
+s
+rownames(SV$tpwm) = DNA_BASES
+
+
+matchPWM(SV$tpwm, as.character(s))
+PWMscoreStartingAt(SV$tpwm, as.character(s))
+PWMscoreStartingAt countPWM(SV$tpwm, as.character(s))
+
+
+as.character(s)
+
+
+
+
 
 
 
