@@ -10,7 +10,7 @@ OUTPUT=${ROOT}/data/nucleoATAC/$SAMPLE
 mkdir -p $OUTPUT
 
 samtools index $BAM
-nucleoatac run --bed $PEAKS --bam $BAM --fasta $GENOME --out $OUTPUT --cores 4
+nucleoatac run --bed $PEAKS --bam $BAM --fasta $GENOME --out $OUTPUT --cores 16
 
 
 # 
@@ -61,10 +61,22 @@ GENOME=/media/afr/cemm-backup/reference/hg19/forBowtie2/hg19.fa
 OUTPUT=${ROOT}/data/nucleoATAC/${SAMPLE}.vplot
 mkdir -p $OUTPUT
 
-sort -k9nr $PEAKS | head -n 1000 > $PEAKS_TOP
+sort -k9nr $PEAKS | head -n 10000 > $PEAKS_TOP
 
 pyatac vplot --cores 4 --lower 0 --upper 250 --flank 200 --plot_extra --bed $PEAKS_TOP --bam $BAM --out $OUTPUT
 
+
+
+# vplot 1k4 on predicted nucleosomes
+ROOT=/media/afr/cemm-backup/chipmentation
+SAMPLE=K562_10M_CM_H3K4ME1_nan_PE_1_1_hg19
+PEAKS=${ROOT}/data/nucleoATAC/K562_10M_CM_H3K4ME1_nan_PE_1_1_hg19.nfrpos.UNFINISHED.bed
+BAM=${ROOT}/data/mapped/${SAMPLE}.trimmed.bowtie2.shifted.dups.bam
+GENOME=/media/afr/cemm-backup/reference/hg19/forBowtie2/hg19.fa
+OUTPUT=${ROOT}/data/nucleoATAC/${SAMPLE}.nucleosomes.UNFINISHED.vplot
+mkdir -p $OUTPUT
+
+pyatac vplot --cores 4 --lower 0 --upper 250 --flank 200 --plot_extra --bed $PEAKS --bam $BAM --out $OUTPUT
 
 
 pyatac bias --fasta $GENOME
