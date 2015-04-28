@@ -529,3 +529,90 @@ for ip in samples['ip'].unique():
                         pdf
                     )
                 )
+
+# Table with TF correlation values (Fig. 1d)
+# get all TF samples
+sampleSubset = samples[
+    (samples["technique"].str.contains("CM")) &
+    (samples["ip"].str.contains("CTCF|PU1|GATA1|REST")) &
+    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
+    (samples["technicalReplicate"] == 0)
+].reset_index(drop=True)
+sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
+
+# get counts
+if os.path.exists(os.path.join(plotsDir, "correlations.table.pickle")):
+    normCounts = pd.read_pickle(os.path.join(plotsDir, "correlations.table.pickle"))
+else:
+    normCounts = getCounts(sampleSubset)
+    normCounts.to_pickle(os.path.join(plotsDir, "correlations.table.pickle"))
+
+
+# group by everything except biological rep
+corr = pd.DataFrame()
+
+
+# get only CM samples
+sampleSubset = samples[
+    (samples["technique"].str.contains("CM")) &
+    (samples["ip"].str.contains("CTCF|PU1|GATA1|REST")) &
+    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
+    (samples["biologicalReplicate"] != 0) &
+    (samples["technicalReplicate"] == 0)
+].reset_index(drop=True)
+sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
+
+groups = sampleSubset.groupby(['cellLine', 'numberCells', 'technique', 'ip',  'patient', 'treatment'])
+
+for g in groups.groups.items():
+    if g[0][5] == "PE":
+        continue
+    df = pd.DataFrame()
+    for i in g[1]:
+        name = sampleSubset.ix[i]['sampleName']
+        name = re.sub("_hg19", "", name)
+        name = re.sub("K562_", "", name)
+        try:
+            df = df.append(normCounts[name], ignore_index=True)
+        except:
+            print("failed sample %s" % name)
+    if len(df) == 2:
+        corr.loc[name, 'CR'] = df.T.corr()[1][0]
+
+# get only 0_0 samples
+sampleSubset = samples[
+    (samples["technique"].str.contains("CM|CHIP")) &
+    (samples["ip"].str.contains("CTCF|PU1|GATA1|REST")) &
+    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
+    (samples["biologicalReplicate"] == 0) &
+    (samples["technicalReplicate"] == 0)
+].reset_index(drop=True)
+sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
+
+
+groups = sampleSubset.groupby(['cellLine', 'numberCells', 'ip',  'patient', 'treatment'])
+
+for g in groups.groups.items():
+    if len(g[1]) == 2:
+        print(g)
+        df = pd.DataFrame()
+        for i in g[1]:
+            name = sampleSubset.ix[i]['sampleName']
+            name = re.sub("_hg19", "", name)
+            name = re.sub("K562_", "", name)
+            print(name)
+            try:
+                df = df.append(normCounts[name], ignore_index=True)
+            except:
+                print("failed sample %s" % name)
+                break
+        if len(df) == 2:
+            corr.loc[name, 'CT'] = df.T.corr()[1][0]
+
+# plot
+cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
+new_cmap = truncate_colormap(cmap, corr.min().min(), 1)
+
+f, ax = plt.subplots()
+sns.heatmap(corr.sort(), vmax=.8, linewidths=0, square=True, cmap=new_cmap, annot=True, fmt=".3")
+plt.savefig(os.path.join(plotsDir, "correlations.TF.table.pdf"), bbox_inches="tight")
