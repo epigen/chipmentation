@@ -92,35 +92,31 @@ I will document the other folders in due time.
 - Show library size distribution created with different amounts of transposase (see [relevant document](results/fragment_size))
 
 # Internal todo
-- Select final set of samples to use (Christian)
-    - Make figures with tracks (Christian)
-    - Replot correlations (add x=y line)
-    - Calculate FRiP, NSC and RSC for all samples
-
-- Fragment size
-    - separate into quantiles per 
-        - repeat all plots + FRiP
-    - calculate enrichment of reads per fragment size in various regions (like buenrostro)
-    - split reads into nucleosome-free (<\100bp) and various nucleosomes bins, check enrichment at TSSs for each bin
-- ROC curve and AUC for # of Encode ChIP-seq peaks recovered from own CM and ChIP dependent on number of reads sampled
-or
-- Peak recovery (5% in top 1% and vice-versa or against encode)
-
-- Nucleosome prediction
-    - run NucleoATAC on K562_10M_CM_H3K4ME1_PE
-        - get V plots
-    + Visualize
+- NucleoATAC
+    - Run with H3K4ME3_PE
+    - Run with all PE data concatenated
+    - Distogram & Phasogram -> compare with MNase
+    - Make browser track. Include: MNase, H3K4ME1, H4K4ME3, ATAC-seq, nucleosomes
+- Fig 1d: table (heatmap) with genome-wide correlation values between replicates (one column) and between techniques (another column).
+- Footprints
+    - Plot signal of PU1 ATAC
+    - Call footprints for all TFs
+    - Call footprints using concatenated histone data for all TFs
+    - De novo footprints on histone data exclusively
+    - Footprint using DNase, compare numbers with CM
+    - Think how best to show this
+- TFs
+    - Heatmaps for all + DNase + ATAC-seq
+    - Tn5 PWM score across windows
 - Nucleosome stability
-    - Plot CM, DNase, MNase in DARNS:
-        - From the middle of the DARN (mid-peak)
-        - From the 5' and 3' end of nucleosome Dyads
-            - predict dyads: NuMap
-        - DARNS frequency around TSSs (models and CAGE) and TTSs
-        - DARNS frequency around CpGs islands
-    - Do it on permuted (and IGG?)
-    - Calculate scores:
-        - Compare at the pattern correlation level with permuted with F-score
-    - Plot read oscillation:
-        - Whole-genome
-        - Gene deserts vs CpG islands
-Get data from other library prep methods, compare mapped, duplicates, n. peaks, ...
+    - Plot read oscillation
+    - DARNS frequency around TSSs (models and CAGE) and TTSs
+    - DARNS frequency around CpGs islands
+
+- Address bias: score of Tn5 PWM in windows
+
+- Change scale of Vplot
+- Scale of heatmap in fig. 1c
+- Show DNase and ATAC-seq tracks 
+- ROC curve and AUC for # of Encode ChIP-seq peaks recovered from own CM and ChIP dependent on number of reads sampled
+- Peak recovery (5% in top 1% and vice-versa or against encode)
