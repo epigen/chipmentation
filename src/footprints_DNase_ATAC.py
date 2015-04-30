@@ -306,7 +306,7 @@ def callFootprints(cuts, annot):
     annot_R = robj.conversion.py2ri(annot)
 
     # run the plot function on the dataframe
-    return robj.conversion.ri2py(footprint(cuts_R, annot_R))
+    return np.ndarray.flatten(robj.conversion.ri2py(footprint(cuts_R, annot_R)))
 
 
 # Define variables
@@ -394,19 +394,19 @@ for name, (bams, peaks) in samples.items():
             exportName = name + "_histones"
 
         # get cuts
-        #if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-        print("Getting cuts for %s" % exportName)
-        bam = HTSeq.BAM_Reader(bams[i])
+        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+            print("Getting cuts for %s" % exportName)
+            bam = HTSeq.BAM_Reader(bams[i])
 
-        cov = coverage(bam, peaksInt, fragmentsize, strand_specific=False)
+            cov = coverage(bam, peaksInt, fragmentsize, strand_specific=False)
 
-        # Make dataframe
-        df = pd.DataFrame(np.vstack(cov.values()), index=cov.keys())
+            # Make dataframe
+            df = pd.DataFrame(np.vstack(cov.values()), index=cov.keys())
 
-        # Save raw data
-        savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
-        #else:
-        #   df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+            # Save raw data
+            savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+        else:
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
 
         # Centipede footprinting
         print("calling footprints for %s" % exportName)
@@ -419,8 +419,6 @@ for name, (bams, peaks) in samples.items():
         # filter
         annot[annot[2] > -1.000000e+10]
         df = df.ix[annot.index]
-        # standardize
-        # annot[2] = (annot[2] - min(annot[2])) / (max(annot[2]) - min(annot[2])) + 5
 
         # sort both in the same way
         df.sort(inplace=True)
@@ -431,22 +429,43 @@ for name, (bams, peaks) in samples.items():
         r = (len(df.columns) / 2 - 200, len(df.columns) / 2 + 199)
 
         # call
-        foots[exportName] = callFootprints(df.loc[:, r[0]:r[1]], annot[[3, 2]])
-
-
+        f = callFootprints(df.loc[:, r[0]:r[1]], annot[[3, 2]])
+        foots[exportName] = f
         pickle.dump(foots, open(os.path.join(plotsDir, "pickles", "footprintProbs.pickle"), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
+        # export confident foots as bed
+        # get original bed
+        p = pd.read_csv(peaks, sep="\t", header=None)
+        p.columns = ["chrom", "start", "end", "name", "score", "strand"]
+
+        df = df.loc[f > 0.9, :]
+        df["name"] = df.index
+
+        df = p.merge(df)[["chrom", "start", "end"]]
+
+        df.to_csv(os.path.join(peaksDir, exportName + "_footprints.bed"), sep="\t", index=False)
+
 # Plot
-foots =  pickle.load(open(os.path.join(plotsDir, "pickles", "footprintProbs.pickle"), 'rb'))
+foots = pickle.load(open(os.path.join(plotsDir, "pickles", "footprintProbs.pickle"), 'rb'))
 
 # Compare overlap of footprints predicted independently by each technique
 # 1. export beds
 # 2. overlap
 # 3. venn diagrams
-
 fig, axis = plt.subplots(2, 2, sharey=True, figsize=(10, 8))
 i = 0
 for TF in ["CTCF", "GATA1", "PU1", "REST"]:
+    d = pd.DataFrame([
+        np.ndarray.flatten(foots["CM_" + TF]),
+        np.ndarray.flatten(foots["DNase_" + TF]),
+        np.ndarray.flatten(foots["ATAC_" + TF]),
+    ]).T
+    d.columns = ["CM_" + TF, "DNase_" + TF, "ATAC_" + TF]
+
+    # export confident footprints
+    d.loc[d["CM_" + TF] > 0.9, "CM_" + TF]
+
+    # Plot 
     if i is 0:
         j, k = (0, 0)
     elif i is 1:
@@ -456,14 +475,10 @@ for TF in ["CTCF", "GATA1", "PU1", "REST"]:
     elif i is 3:
         j, k = (1, 1)
 
-    d = pd.DataFrame([
-        np.ndarray.flatten(foots["CM_" + TF]),
-        np.ndarray.flatten(foots["DNase_" + TF]),
-        np.ndarray.flatten(foots["ATAC_" + TF]),
-    ]).T
-    plt.boxplot([d["CM_" + TF], d["DNase_" + TF], d["ATAC_" + TF]])
+    axis[j][k].boxplot([d["CM_" + TF], d["DNase_" + TF], d["ATAC_" + TF]])
+    axis[j][k].set_title(TF)
+    axis[j][k].set_ylabel("Footprint probability")
     i += 1
-
 plt.savefig(os.path.join(plotsDir, "footprint.probs.independent.pdf"), bbox_inches='tight')
 plt.close()
 
