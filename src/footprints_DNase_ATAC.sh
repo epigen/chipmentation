@@ -42,7 +42,7 @@ do
     do
         annotatePeaks.pl ${SAMPLE}/${SAMPLE}_peaks.filtered.broadPeak \
         hg19 \
-        -size 200 -center ../motifs/K562_10M_CM_${TF}_nan_nan_0_0_hg19/homerResults/motif1.motif | \
+        -size 2000 -center ../motifs/K562_10M_CM_${TF}_nan_nan_0_0_hg19/homerResults/motif1.motif | \
         awk -v OFS='\t' '{print $2, $3, $4, $1, $6, $5}' | \
         awk -v OFS='\t' -F '\t' '{ gsub("0", "+", $6) ; gsub("1", "-", $6) ; print }' | \
         python ~/fix_bedfile_genome_boundaries.py hg19 | \
@@ -51,7 +51,7 @@ do
         annotatePeaks.pl ${SAMPLE}/${SAMPLE}_peaks.filtered.${TF}-motifCentered.bed \
         hg19 \
         -mask -mscore -m ../motifs/K562_10M_CM_${TF}_nan_nan_0_0_hg19/homerResults/motif1.motif | \
-        tail -n +2 \
+        tail -n +2 | cut -f 1,5,22 \
         > ${SAMPLE}/${SAMPLE}_peaks.filtered.${TF}-motifAnnotated.bed
         # cut this ^^
     done

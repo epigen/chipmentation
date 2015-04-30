@@ -276,6 +276,39 @@ def exportToJavaTreeView(df, filename):
     df.to_csv(filename, sep="\t", index=False)
 
 
+def callFootprints(cuts, annot):
+    """
+    Call footprints.
+    Requires dataframe with cuts and dataframe with annotation (2> cols).
+    """
+    import rpy2.robjects as robj  # for ggplot in R
+    import rpy2.robjects.pandas2ri  # for R dataframe conversion
+
+    # Plot with R
+    footprint = robj.r("""
+    library(CENTIPEDE)
+
+    function(cuts, annot) {
+        centFit <- fitCentipede(
+            Xlist = list(as.matrix(cuts)),
+            Y = as.matrix(annot)
+        )
+        # imageCutSites(cuts[order(centFit$PostPr),][c(1:100, (dim(cuts)[1]-100):(dim(cuts)[1])),])
+        # plotProfile(centFit$LambdaParList[[1]],Mlen=2)
+        return(centFit$PostPr)
+    }
+
+    """)
+
+    # convert the pandas dataframe to an R dataframe
+    robj.pandas2ri.activate()
+    cuts_R = robj.conversion.py2ri(cuts)
+    annot_R = robj.conversion.py2ri(annot)
+
+    # run the plot function on the dataframe
+    return robj.conversion.ri2py(footprint(cuts_R, annot_R))
+
+
 # Define variables
 # projectRoot = "/projects/chipmentation/"
 projectRoot = "/media/afr/cemm-backup/chipmentation/"
@@ -307,7 +340,7 @@ samples = {
         peaksDir + "K562_10M_CM_REST_nan_nan_0_0_hg19/K562_10M_CM_REST_nan_nan_0_0_hg19_peaks.motifCentered.bed"
     ),
     "ATAC_PU1": (
-        [ATAC], peaksDir + "K562_50K_ATAC_nan_nan_nan_0_0_hg19/K562_50K_ATAC_nan_nan_nan_0_0_hg19_peaks.filtered.PU1-motifCentered.bed"
+        [ATAC], peaksDir + "K562_50K_ATAC_nan_nan_nan_0_0_hg19/K562_50K_ATAC_nan_nan_nan_0_0_hg19_peaks.filtered.PU1-motifCentered.bed",
     ),
     "ATAC_GATA1": (
         [ATAC], peaksDir + "K562_50K_ATAC_nan_nan_nan_0_0_hg19/K562_50K_ATAC_nan_nan_nan_0_0_hg19_peaks.filtered.GATA1-motifCentered.bed"
@@ -338,37 +371,128 @@ n_clusters = 5
 
 gapsRepeats = pybedtools.BedTool(os.path.join("/media/afr/cemm-backup", "reference/hg19/hg19_gapsRepeats.bed"))
 
+foots = dict()
+
 # Loop through all samples, compute coverage in peak regions centered on motifs
 for name, (bams, peaks) in samples.items():
     # Load peak file from bed files centered on motif, make window around
     try:
-        peaks = pybedtools.BedTool(peaks)  # .slop(genome=genome, b=windowWidth / 2)
+        peaksInt = pybedtools.BedTool(peaks)  # .slop(genome=genome, b=windowWidth / 2)
     except:
         print("Sample's peaks were not found: %s" % name)
         continue
 
     # Exclude peaks in gaps or repeats
-    peaks.intersect(b=gapsRepeats, v=True, wa=True)
-    peaks = bedToolsInterval2GenomicInterval(peaks)
+    peaksInt.intersect(b=gapsRepeats, v=True, wa=True)
+    peaksInt = bedToolsInterval2GenomicInterval(peaksInt)
 
-    # Get coverage over other signals
+    # Get coverage over all signals (self and histone for CM)
     for i in range(len(bams)):
         if i == 0:
             exportName = name
         else:
             exportName = name + "_histones"
-        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-            bam = HTSeq.BAM_Reader(bams[i])
 
-            cov = coverage(bam, peaks, fragmentsize, strand_specific=False)
+        # get cuts
+        #if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+        print("Getting cuts for %s" % exportName)
+        bam = HTSeq.BAM_Reader(bams[i])
 
-            # Make dataframe
-            df = pd.DataFrame(np.vstack(cov.values()), index=cov.keys())
+        cov = coverage(bam, peaksInt, fragmentsize, strand_specific=False)
 
-            # Save raw data
-            savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+        # Make dataframe
+        df = pd.DataFrame(np.vstack(cov.values()), index=cov.keys())
+
+        # Save raw data
+        savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+        #else:
+        #   df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+
+        # Centipede footprinting
+        print("calling footprints for %s" % exportName)
+        annot = pd.read_csv(re.sub("motifCentered", "motifAnnotated", peaks), sep="\t", header=None)
+
+        annot[3] = 1
+        annot.index = annot[0]
+        annot = annot.ix[df.index]
+
+        # filter
+        annot[annot[2] > -1.000000e+10]
+        df = df.ix[annot.index]
+        # standardize
+        # annot[2] = (annot[2] - min(annot[2])) / (max(annot[2]) - min(annot[2])) + 5
+
+        # sort both in the same way
+        df.sort(inplace=True)
+        annot.sort(inplace=True)
+
+        # get 200bp in middle of window of cuts
+        n = len(df.columns)
+        r = (len(df.columns) / 2 - 200, len(df.columns) / 2 + 199)
+
+        # call
+        foots[exportName] = callFootprints(df.loc[:, r[0]:r[1]], annot[[3, 2]])
 
 
-# Centipede footprinting
+        pickle.dump(foots, open(os.path.join(plotsDir, "pickles", "footprintProbs.pickle"), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
-# Select center of the window (200 bp) for all samples
+# Plot
+foots =  pickle.load(open(os.path.join(plotsDir, "pickles", "footprintProbs.pickle"), 'rb'))
+
+# Compare overlap of footprints predicted independently by each technique
+# 1. export beds
+# 2. overlap
+# 3. venn diagrams
+
+fig, axis = plt.subplots(2, 2, sharey=True, figsize=(10, 8))
+i = 0
+for TF in ["CTCF", "GATA1", "PU1", "REST"]:
+    if i is 0:
+        j, k = (0, 0)
+    elif i is 1:
+        j, k = (0, 1)
+    elif i is 2:
+        j, k = (1, 0)
+    elif i is 3:
+        j, k = (1, 1)
+
+    d = pd.DataFrame([
+        np.ndarray.flatten(foots["CM_" + TF]),
+        np.ndarray.flatten(foots["DNase_" + TF]),
+        np.ndarray.flatten(foots["ATAC_" + TF]),
+    ]).T
+    plt.boxplot([d["CM_" + TF], d["DNase_" + TF], d["ATAC_" + TF]])
+    i += 1
+
+plt.savefig(os.path.join(plotsDir, "footprint.probs.independent.pdf"), bbox_inches='tight')
+plt.close()
+
+# Compare number of footprints called by each technique in each technique
+# 1. Save probs as dict for each technique
+# 2. put together in dataframe (cols - techniques)
+# 3. plot distributions of probabilities as factor
+fig, axis = plt.subplots(2, 2, sharey=True, figsize=(10, 8))
+i = 0
+for TF in ["CM_CTCF", "CM_GATA1", "CM_PU1", "CM_REST"]:
+    if i is 0:
+        j, k = (0, 0)
+    elif i is 1:
+        j, k = (0, 1)
+    elif i is 2:
+        j, k = (1, 0)
+    elif i is 3:
+        j, k = (1, 1)
+
+    d = pd.DataFrame([
+        np.ndarray.flatten(foots[TF]),
+        np.ndarray.flatten(foots[TF + "_histones"])
+    ])
+    d = d.T
+    d.columns = [TF, TF + "_histones"]
+
+    axis[j][k].boxplot([d[TF], d[TF + "_histones"]])
+    axis[j][k].set_title(TF)
+    axis[j][k].set_ylabel("Footprint probability")
+    i += 1
+plt.savefig(os.path.join(plotsDir, "footprint.probs.CM_vs_CMhistones.pdf"), bbox_inches='tight')
+plt.close()
