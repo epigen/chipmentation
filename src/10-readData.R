@@ -1,11 +1,9 @@
 project.init("chipmentation", "projects/chipmentation")
 #psa = loadPSA()
 eload(loadPSA())
-
-# Look for combined samples
-
-# Divide the CAGE peaks into TATA and Cpg Island groups:
 eload(loadCageTSS());
+
+
 SV$tss
 tssGroupIds = split(1:nrow(SV$tss), SV$tss$group)
 names(tssGroupIds)
@@ -165,6 +163,7 @@ for (i in cmIds) {
 }
 mat =allCM
 
+# Produces a PDF of the combined CM data: 
 pdf(paste0(resDir, "tssSignals/tss400_bin_cm_combined.pdf"), width=16)
 par(mfrow=c(2,4))
 	for (type in names(tssGroupIds)) {
@@ -179,8 +178,13 @@ dev.off()
 
 
 # build the model:
-mod = apply(mat[tssGroupIds[["TATA-less.CpG-less"]],150:250], 2, sum)
+sapply(tssGroupIds, length)
+
+mod = apply(mat[tssGroupIds[["TATA-less.CpG-less.Exp"]],150:250], 2, sum)
+mod = apply(mat[,150:250], 2, sum)
+(mod)
 subMat = mat[tssGroupIds[["TATA-less.CpG-less"]],150:250]
+
 plot(mod, type="l")
 scalemod = scale(mod)[,1]
 plot(scalemod, type="l")
@@ -227,27 +231,6 @@ km = kmeans(mat, 10)
 
 
 
-
-# Addressing sequencing bias:
-
-tssGR = dtToGr(tss, "V1", "V2", "V3")
-tssGR = resize(tssGR, 500)
-
-rp()
-eload(loadTransposePWM())
-tssGR[1]
-s = extractSequences(tssGR[1]) #broken
-s = getSeq(Hsapiens, tssGR[1:10000])
-s
-rownames(SV$tpwm) = DNA_BASES
-
-
-matchPWM(SV$tpwm, as.character(s))
-PWMscoreStartingAt(SV$tpwm, as.character(s))
-PWMscoreStartingAt countPWM(SV$tpwm, as.character(s))
-
-
-as.character(s)
 
 
 

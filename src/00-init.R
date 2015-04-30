@@ -14,7 +14,7 @@ utility("funcDNASequence.R")
 
 loadBSgenome("hg19")
 
-# Set up some directories
+# Set up some quick alias variables to refer to project directories easily.
 dataDir = paste0(getOption("PROJECT.DATA.DIR"), "/data/")
 annoDir = paste0(getOption("PROJECT.DATA.DIR"), "/annotation/")
 resDir = paste0(getOption("PROJECT.DATA.DIR"), "/results/")
@@ -72,6 +72,7 @@ loadCageTSS = function() {
 
 loadTransposePWM = function() {
 	downloadCache("transposasePWM", "https://raw.githubusercontent.com/GreenleafLab/NucleoATAC/master/pyatac/pwm/Human2.PWM.txt")
+	rownames(tpwm) = DNA_BASES
 	return(list(tpwm = as.matrix(transposasePWM)))
 }
 
