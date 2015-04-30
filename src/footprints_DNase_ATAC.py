@@ -462,10 +462,7 @@ for TF in ["CTCF", "GATA1", "PU1", "REST"]:
     ]).T
     d.columns = ["CM_" + TF, "DNase_" + TF, "ATAC_" + TF]
 
-    # export confident footprints
-    d.loc[d["CM_" + TF] > 0.9, "CM_" + TF]
-
-    # Plot 
+    # Plot
     if i is 0:
         j, k = (0, 0)
     elif i is 1:
@@ -479,7 +476,34 @@ for TF in ["CTCF", "GATA1", "PU1", "REST"]:
     axis[j][k].set_title(TF)
     axis[j][k].set_ylabel("Footprint probability")
     i += 1
-plt.savefig(os.path.join(plotsDir, "footprint.probs.independent.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join(plotsDir, "footprint.probs.independent.boxplot.pdf"), bbox_inches='tight')
+plt.close()
+
+
+fig, axis = plt.subplots(2, 2, sharey=True, figsize=(10, 8))
+i = 0
+for TF in ["CTCF", "GATA1", "PU1", "REST"]:
+    d = pd.DataFrame([
+        np.ndarray.flatten(foots["CM_" + TF]),
+        np.ndarray.flatten(foots["DNase_" + TF]),
+        np.ndarray.flatten(foots["ATAC_" + TF]),
+    ]).T
+    d.columns = ["CM_" + TF, "DNase_" + TF, "ATAC_" + TF]
+
+    # Plot
+    if i is 0:
+        j, k = (0, 0)
+    elif i is 1:
+        j, k = (0, 1)
+    elif i is 2:
+        j, k = (1, 0)
+    elif i is 3:
+        j, k = (1, 1)
+
+    sns.violinplot(d.dropna(), inner="points", inner_kws={"ms": 1}, ax=axis[j][k])
+    sns.despine(left=True, bottom=True, ax=axis[j][k])
+    i += 1
+plt.savefig(os.path.join(plotsDir, "footprint.probs.independent.violinplot.pdf"), bbox_inches='tight')
 plt.close()
 
 # Compare number of footprints called by each technique in each technique
@@ -511,3 +535,68 @@ for TF in ["CM_CTCF", "CM_GATA1", "CM_PU1", "CM_REST"]:
     i += 1
 plt.savefig(os.path.join(plotsDir, "footprint.probs.CM_vs_CMhistones.pdf"), bbox_inches='tight')
 plt.close()
+
+
+# Venn diagrams
+"""
+for TF in CTCF GATA1 PU1 REST
+do
+    for TECH1 in ATAC CM DNase
+    do
+        for TECH2 in ATAC CM DNase
+        do
+            T=`wc -l ${TECH1}_${TF}_footprints.bed`
+            O=`bedtools intersect -u \
+            -a ${TECH1}_${TF}_footprints.bed \
+            -b ${TECH2}_${TF}_footprints.bed \
+            | wc -l`
+            echo $TECH1 $TECH2 $TF $O
+        done
+    done
+done
+
+ATAC    ATAC    CTCF    16290
+ATAC    CM  CTCF    8481
+ATAC    DNase   CTCF    10372
+CM  ATAC    CTCF    9017
+CM  CM  CTCF    16717
+CM  DNase   CTCF    9052
+DNase   ATAC    CTCF    10462
+DNase   CM  CTCF    8596
+DNase   DNase   CTCF    15419
+ATAC    ATAC    GATA1   13187
+ATAC    CM  GATA1   2817
+ATAC    DNase   GATA1   6148
+CM  ATAC    GATA1   2847
+CM  CM  GATA1   13727
+CM  DNase   GATA1   3072
+DNase   ATAC    GATA1   6317
+DNase   CM  GATA1   3119
+DNase   DNase   GATA1   16411
+ATAC    ATAC    PU1 3099
+ATAC    CM  PU1 945
+ATAC    DNase   PU1 781
+CM  ATAC    PU1 922
+CM  CM  PU1 6429
+CM  DNase   PU1 744
+DNase   ATAC    PU1 823
+DNase   CM  PU1 792
+DNase   DNase   PU1 3318
+ATAC    ATAC    REST    429
+ATAC    CM  REST    260
+ATAC    DNase   REST    162
+CM  ATAC    REST    291
+CM  CM  REST    1201
+CM  DNase   REST    243
+DNase   ATAC    REST    160
+DNase   CM  REST    232
+DNase   DNase   REST    430
+"""
+o = pd.read_clipboard(header=None)
+o.columns = ['tec1', 'tec2', 'ip', 'count']
+
+for g in o.groupby(['ip']).groups.items():
+    import matplotlib_venn as venn
+    plt.figure()
+    venn.venn3(subsets=o.ix[g[1]]['count'].tolist(), set_labels = (o.ix[g[1]]['tec1'].unique()))
+    plt.savefig(os.path.join(plotsDir, "footprint.overlap.%s.pdf" % g[0]), bbox_inches='tight')
