@@ -5,9 +5,8 @@ eload(loadCageTSS());
 
 
 SV$tss
-tssGroupIds = split(1:nrow(SV$tss), SV$tss$group)
-names(tssGroupIds)
-#tssGroupIds$TATA.CpG
+names(SV$tssGroupIds)
+#SV$tssGroupIds$TATA.CpG
 
 i=1
 
@@ -17,11 +16,11 @@ for (i in 1:nrow(SV$msa)) {
 	simpleCache(paste0(SV$msa[i, sampleName]), cacheSubDir="tss400bp", reload=FALSE, assignToVariable="mat")
 
 	par(mfrow=c(4,4))
-	for (type in names(tssGroupIds)) {
-	plot(-199:200, apply(mat[tssGroupIds[[type]],], 2, sum), type="l", main = paste0(SV$msa[i, sampleName]), xlab="TSS")
+	for (type in names(SV$tssGroupIds)) {
+	plot(-199:200, apply(mat[SV$tssGroupIds[[type]],], 2, sum), type="l", main = paste0(SV$msa[i, sampleName]), xlab="TSS")
 	legend('topleft', type, bty='n', cex=.9)
 	abline(v=0, col="gray", lty="dotted")
-	plot(-50:50, apply(mat[tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
+	plot(-50:50, apply(mat[SV$tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
 	legend('topleft', type, bty='n', cex=.9)
 	abline(v=0, col="gray", lty="dotted")
 	} # for
@@ -35,11 +34,11 @@ for (i in 1:nrow(SV$msa)) {
 	simpleCache(paste0(SV$msa[i, sampleName], "_cap"), cacheSubDir="tss400bp_cap", reload=FALSE, assignToVariable="mat")
 
 	par(mfrow=c(2,4))
-	for (type in names(tssGroupIds)) {
-	plot(-199:200, apply(mat[tssGroupIds[[type]],], 2, sum), type="l", main = paste0(SV$msa[i, sampleName]), xlab="TSS")
+	for (type in names(SV$tssGroupIds)) {
+	plot(-199:200, apply(mat[SV$tssGroupIds[[type]],], 2, sum), type="l", main = paste0(SV$msa[i, sampleName]), xlab="TSS")
 	legend('topleft', type, bty='n', cex=.8)
 	abline(v=0, col="gray", lty="dotted")
-	plot(-50:50, apply(mat[tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
+	plot(-50:50, apply(mat[SV$tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
 	legend('topleft', type, bty='n', cex=.8)
 	abline(v=0, col="gray", lty="dotted")
 	} # for
@@ -53,11 +52,11 @@ for (i in 1:nrow(SV$msa)) {
 	simpleCache(paste0(SV$msa[i, sampleName], "_cap5"), cacheSubDir="tss400bp_cap5", reload=FALSE, assignToVariable="mat")
 
 	par(mfrow=c(4,4))
-	for (type in names(tssGroupIds)) {
-	plot(-199:200, apply(mat[tssGroupIds[[type]],], 2, sum), type="l", main = paste0(SV$msa[i, sampleName]), xlab="TSS")
+	for (type in names(SV$tssGroupIds)) {
+	plot(-199:200, apply(mat[SV$tssGroupIds[[type]],], 2, sum), type="l", main = paste0(SV$msa[i, sampleName]), xlab="TSS")
 	legend('topleft', type, bty='n', cex=.8)
 	abline(v=0, col="gray", lty="dotted")
-	plot(-50:50, apply(mat[tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
+	plot(-50:50, apply(mat[SV$tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
 	legend('topleft', type, bty='n', cex=.8)
 	abline(v=0, col="gray", lty="dotted")
 	} # for
@@ -69,11 +68,11 @@ for (i in 1:nrow(SV$msa)) {
 	message(i, ": ", SV$msa[i, sampleName])
 	simpleCache(paste0(SV$msa[i, sampleName], "_bin"), cacheSubDir="tss400bp_bin", reload=TRUE, assignToVariable="mat")
 	par(mfrow=c(2,4))
-	for (type in names(tssGroupIds)) {
-	plot(-199:200, apply(mat[tssGroupIds[[type]],], 2, sum), type="l", main = paste0(SV$msa[i, sampleName]), xlab="TSS")
+	for (type in names(SV$tssGroupIds)) {
+	plot(-199:200, apply(mat[SV$tssGroupIds[[type]],], 2, sum), type="l", main = paste0(SV$msa[i, sampleName]), xlab="TSS")
 	legend('topleft', type, bty='n', cex=.8)
 	abline(v=0, col="gray", lty="dotted")
-	plot(-50:50, apply(mat[tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
+	plot(-50:50, apply(mat[SV$tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
 	legend('topleft', type, bty='n', cex=.8)
 	abline(v=0, col="gray", lty="dotted")
 	} # for
@@ -93,9 +92,9 @@ simpleCache(paste0(SV$msa[i, sampleName], "_cap5"), cacheSubDir="tss400bp_cap5",
 mat
 
 # build the model:
-mod = apply(mat[tssGroupIds[["TATA-less.CpG-less"]],150:250], 2, sum)
-fullmod = apply(mat[tssGroupIds[["TATA-less.CpG-less"]],], 2, sum)
-subMat = mat[tssGroupIds[["TATA-less.CpG-less"]],150:250]
+mod = apply(mat[SV$tssGroupIds[["TATA-less.CpG-less"]],150:250], 2, sum)
+fullmod = apply(mat[SV$tssGroupIds[["TATA-less.CpG-less"]],], 2, sum)
+subMat = mat[SV$tssGroupIds[["TATA-less.CpG-less"]],150:250]
 plot(mod, type="l")
 scalemod = scale(mod)[,1]
 scalefullmod = scale(fullmod)[,1]
@@ -149,6 +148,7 @@ plot((mat[showme[1],]), type="b")
 
 
 # COMBINE ALL CM DATA:
+simpleCache("combinedCMData", {
 SV$msa[technique=="CM" & substr(ip, 1, 2) == "H3" & numberCells != "1K",]
 cmIds = SV$msa[technique=="CM" & substr(ip, 1, 2) == "H3" & numberCells != "1K", which=TRUE]
 cmIds
@@ -162,39 +162,56 @@ for (i in cmIds) {
 	allCM = allCM+mat
 }
 mat =allCM
+mat
+}) #end simpleCache code
 
+mat = combinedCMData
 # Produces a PDF of the combined CM data: 
 pdf(paste0(resDir, "tssSignals/tss400_bin_cm_combined.pdf"), width=16)
 par(mfrow=c(2,4))
-	for (type in names(tssGroupIds)) {
-	plot(-199:200, apply(mat[tssGroupIds[[type]],], 2, sum), type="l", main = paste0("CM combined"), xlab="TSS")
+	for (type in names(SV$tssGroupIds)) {
+	plot(-199:200, apply(mat[SV$tssGroupIds[[type]],], 2, sum), type="l", main = paste0("CM combined"), xlab="TSS")
 	legend('topleft', type, bty='n', cex=.8)
 	abline(v=0, col="gray", lty="dotted")
-	plot(-50:50, apply(mat[tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
+	plot(-50:50, apply(mat[SV$tssGroupIds[[type]],150:250], 2, sum), type="l", xlab="TSS")
 	legend('topleft', type, bty='n', cex=.8)
 	abline(v=0, col="gray", lty="dotted")
 	} # for
 dev.off()
 
 
-# build the model:
-sapply(tssGroupIds, length)
+# build the model; a different model for each TSS type:
+sapply(SV$tssGroupIds, length)
 
-mod = apply(mat[tssGroupIds[["TATA-less.CpG-less.Exp"]],150:250], 2, sum)
-mod = apply(mat[,150:250], 2, sum)
-(mod)
-subMat = mat[tssGroupIds[["TATA-less.CpG-less"]],150:250]
+tssCMModels = list()
+par(mfrow=c(4,4))
+for (type in names(SV$tssGroupIds)) {
+	# add expression condition:
+	#type = paste0(type, ".NoExp")
+	subsetIds = SV$tssGroupIds[[type]]
+	message(type, ":", length(subsetIds));
+	mod = apply(mat[subsetIds,150:250], 2, sum)
+	#mod = apply(mat[,150:250], 2, sum)
+	(mod)
+	subMat = mat[subsetIds,150:250]
 
-plot(mod, type="l")
-scalemod = scale(mod)[,1]
-plot(scalemod, type="l")
-sum(scalemod * subMat[1,])
-# Multiply scaled model by data set
-sts = sweep(subMat, MARGIN=2, scalemod, `*`)
-sts
+	# plot(mod, type="l")
+	scalemod = scale(mod)[,1] # Scale the model.
+	plot(-50:50, scalemod, type="l", main=type)
+	abline(v=0, col="darkblue", lty="dotted")
+	abline(h=0, col="darkblue", lty="dotted")
+	legend("bottomright", paste0("n=", length(subsetIds)), bty='n', col='darkblue')
+	sum(scalemod * subMat[1,])
+	# Multiply scaled model by data set
+	sts = sweep(subMat, MARGIN=2, scalemod, `*`)
+	sts
+	tssCMModels[[type]] = scalemod;
+}
 
-mattt = mat[tssGroupIds[["TATA-less.CpG-less"]],]
 
+
+# A few plots showing the model, along with some examples of good fits
+# to it.
 plot(-50:50, scalemod, type="l")
 pdf(paste0(resDir, "tssSignals/singleTssFits.pdf"))
 par(mfrow=c(5,2))
@@ -203,7 +220,7 @@ for (i in 1:10) {
 	lines(scalemod+2, col="darkblue", lty="dashed")
 	abline(v=50, col="darkblue", lty="dotted")
 
-	signalLines(mattt[showme[i],])
+	signalLines(subMat[showme[i],])
 	lines(scalefullmod+2, col="darkblue", lty="dashed")
 	abline(v=200, col="darkblue", lty="dotted")
 }
@@ -217,7 +234,7 @@ for (i in 1:10) {
 	lines(scalemod+2, col="darkblue", lty="dashed")
 	abline(v=50, col="darkblue", lty="dotted")
 
-	signalLines(mattt[randme[i],])
+	signalLines(subMat[randme[i],])
 	lines(scalefullmod+2, col="darkblue", lty="dashed")
 	abline(v=200, col="darkblue", lty="dotted")
 }

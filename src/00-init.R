@@ -61,9 +61,12 @@ loadCageTSS = function() {
 	tss[k562tss, expMean := expMean]
 	tss[, expGroup := ifelse(expMean > 0.5, "Exp", "NoExp") ]
 	tss[, group:=interaction(V10, V11, expGroup)]
+	tss[, groupNoExp:=interaction(V10, V11)]
 	tss
 	tss[,.N, by=group]
-	return(nlist(tss))
+	tssGroupIds = split(1:nrow(tss), tss$group)
+	tssGroupIdsNoExp = split(1:nrow(tss), tss$groupNoExp)
+	return(nlist(tss, tssGroupIds, tssGroupIdsNoExp))
 	#distance distribution:
 	summary(diff(tss$V3))
 }
@@ -72,7 +75,8 @@ loadCageTSS = function() {
 
 loadTransposePWM = function() {
 	downloadCache("transposasePWM", "https://raw.githubusercontent.com/GreenleafLab/NucleoATAC/master/pyatac/pwm/Human2.PWM.txt")
-	rownames(tpwm) = DNA_BASES
+	transposasePWM = data.frame(transposasePWM);
+	rownames(transposasePWM) = DNA_BASES
 	return(list(tpwm = as.matrix(transposasePWM)))
 }
 
