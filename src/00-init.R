@@ -22,8 +22,21 @@ dir.create(resDir, showWarnings=FALSE);
 
 # Paths to communal data files
 dat = list()
-dat$cage = paste0(dataDir, "hg19.cage_peak_coord_robust.400bp.bed")
+dat$tss = paste0(dataDir, "hg19.cage_peak_coord_robust.400bp.bed")
 
+loadPeaks = function() {
+	ctcfBedFile = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/peaks/K562_10M_CM_CTCF_nan_nan_0_0_hg19_peaks.motifCentered.bed"
+	gata1BedFile = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/peaks/K562_10M_CM_GATA1_nan_nan_0_0_hg19_peaks.motifCentered.bed"
+	pu1BedFile = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/peaks/K562_10M_CM_PU1_nan_nan_0_0_hg19_peaks.motifCentered.bed"
+	restBedFile = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/peaks/K562_10M_CM_REST_nan_nan_0_0_hg19_peaks.motifCentered.bed"
+
+	ctcf = readBed(ctcfBedFile)
+	gata1 = readBed(gata1BedFile)
+	pu1 = readBed(pu1BedFile)
+	rest = readBed(restBedFile)
+
+	return(nlist(ctcf, ctcfBedFile, gata1, gata1BedFile, pu1, pu1BedFile, rest, restBedFile))
+}
 
 loadPSA = function() {
 	#psa = fread("metadata/chipmentation.sample_annotation.csv")
@@ -66,7 +79,7 @@ loadCageTSS = function() {
 	tss[,.N, by=group]
 	tssGroupIds = split(1:nrow(tss), tss$group)
 	tssGroupIdsNoExp = split(1:nrow(tss), tss$groupNoExp)
-	return(nlist(tss, tssGroupIds, tssGroupIdsNoExp))
+	return(nlist(tss, tssGroupIds, tssGroupIdsNoExp, tssBedFile))
 	#distance distribution:
 	summary(diff(tss$V3))
 }
@@ -98,6 +111,8 @@ tssGR = dtToGr(tss, "V1", "V2", "V3")
 write.tsv(tss[, c(1,2,3, 12), with=FALSE], file=paste0(data, "/hg19.cage_peak_coord_robust.400bp.bed"), col.names=FALSE)
 
 }
+
+
 
 
 
