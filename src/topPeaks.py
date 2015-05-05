@@ -8,8 +8,10 @@ import itertools  # for R dataframe conversion
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+sns.set_style("whitegrid")
 
-def getTopPeakOverlap(a, b, perc=1):
+
+def getTopPeakOverlap(a, b, perc=100):
     """
     Gets fraction of top peaks in sample A in top peaks of sample B.
     """
@@ -138,97 +140,132 @@ for n, i in samples.groupby(["cellLine", "numberCells", "technique", "ip",
     if len(i) == 1:
         samples.loc[i[0], "technicalReplicate"] = 0
 
-overlaps = pd.DataFrame(index=samples.sampleName.unique(), columns=samples.sampleName.unique())
 
-# Scatter plots
-print("techniques")
-# Different techniques
-for ip in samples['ip'].unique():
-    for c in samples['numberCells'].unique():
-        cells = samples['technique'].unique()
-        for (t1, t2) in itertools.combinations(cells, 2):
-            s1 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c) &
-                (samples["technique"] == t1) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == 0)
-            ]
-            s2 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c) &
-                (samples["technique"] == t2) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == 0)
-            ]
-            ctrl = ["IGG", "INPUT"]
-            if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
-                continue
+samples = samples[samples.ip.notnull()]
+samples = samples[samples.ip.str.contains("PU1|CTCF|GATA1|REST")]
 
-            overlaps.loc[s1.sampleName.values[0], s2.sampleName.values[0]] = getTopPeakOverlap(s1, s2)
-            overlaps.loc[s2.sampleName.values[0], s1.sampleName.values[0]] = getTopPeakOverlap(s2, s1)
 
-print("cells")
-# Different number of cells
-for ip in samples['ip'].unique():
-    for t in samples['technique'].unique():
-        cells = samples['numberCells'].unique()
-        for (c1, c2) in itertools.combinations(cells, 2):
-            s1 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c1) &
-                (samples["technique"] == t) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == 0)
-            ]
-            s2 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c2) &
-                (samples["technique"] == t) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == 0)
-            ]
-            if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
-                continue
+overlaps = pd.DataFrame()
 
-            overlaps.loc[s1.sampleName.values[0], s2.sampleName.values[0]] = getTopPeakOverlap(s1, s2)
-            overlaps.loc[s2.sampleName.values[0], s1.sampleName.values[0]] = getTopPeakOverlap(s2, s1)
+for threshold in [1, 3, 5, 10, 12, 18, 25, 50, 100]:
+    # Scatter plots
+    print("techniques")
+    # Different techniques
+    for ip in samples['ip'].unique():
+        for c in samples['numberCells'].unique():
+            cells = samples['technique'].unique()
+            for (t1, t2) in itertools.combinations(cells, 2):
+                s1 = samples[
+                    (samples["ip"] == ip) &
+                    (samples["numberCells"] == c) &
+                    (samples["technique"] == t1) &
+                    (samples["technicalReplicate"] == 0) &
+                    (samples["biologicalReplicate"] == 0)
+                ]
+                s2 = samples[
+                    (samples["ip"] == ip) &
+                    (samples["numberCells"] == c) &
+                    (samples["technique"] == t2) &
+                    (samples["technicalReplicate"] == 0) &
+                    (samples["biologicalReplicate"] == 0)
+                ]
+                ctrl = ["IGG", "INPUT"]
+                if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
+                    continue
 
-print("replicates")
-# Replicate 1 vs 2
-for ip in samples['ip'].unique():
-    for c in samples['numberCells'].unique():
-        for t in samples['technique'].unique():
-            r1 = 1
-            r2 = 2
-            s1 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c) &
-                (samples["technique"] == t) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == r1)
-            ]
-            s2 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c) &
-                (samples["technique"] == t) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == r2)
-            ]
-            if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
-                continue
+                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold))
+                s = pd.Series(
+                    [ip, c, c, t1, t2, 0, 0, o, 'techniques', threshold],
+                    index=['ip', 'c1', 'c2', 't1', 't2', 'r1', 'r2', 'overlap', 'type', 'threshold'])
+                overlaps = overlaps.append(s, ignore_index=True)
 
-            overlaps.loc[s1.sampleName.values[0], s2.sampleName.values[0]] = getTopPeakOverlap(s1, s2)
-            overlaps.loc[s2.sampleName.values[0], s1.sampleName.values[0]] = getTopPeakOverlap(s2, s1)
+    print("cells")
+    # Different number of cells
+    for ip in samples['ip'].unique():
+        for t in ["CM"]:
+            cells = samples['numberCells'].unique()
+            for (c1, c2) in itertools.combinations(cells, 2):
+                s1 = samples[
+                    (samples["ip"] == ip) &
+                    (samples["numberCells"] == c1) &
+                    (samples["technique"] == t) &
+                    (samples["technicalReplicate"] == 0) &
+                    (samples["biologicalReplicate"] == 0)
+                ]
+                s2 = samples[
+                    (samples["ip"] == ip) &
+                    (samples["numberCells"] == c2) &
+                    (samples["technique"] == t) &
+                    (samples["technicalReplicate"] == 0) &
+                    (samples["biologicalReplicate"] == 0)
+                ]
+                if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
+                    continue
+
+                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold))
+                s = pd.Series(
+                    [ip, c1, c2, t, t, 0, 0, o, 'cells', threshold],
+                    index=['ip', 'c1', 'c2', 't1', 't2', 'r1', 'r2', 'overlap', 'type', 'threshold'])
+                overlaps = overlaps.append(s, ignore_index=True)
+
+    print("replicates")
+    # Replicate 1 vs 2
+    for ip in samples['ip'].unique():
+        for c in samples['numberCells'].unique():
+            for t in ["CM"]:
+                r1 = 1
+                r2 = 2
+                s1 = samples[
+                    (samples["ip"] == ip) &
+                    (samples["numberCells"] == c) &
+                    (samples["technique"] == t) &
+                    (samples["technicalReplicate"] == 0) &
+                    (samples["biologicalReplicate"] == r1)
+                ]
+                s2 = samples[
+                    (samples["ip"] == ip) &
+                    (samples["numberCells"] == c) &
+                    (samples["technique"] == t) &
+                    (samples["technicalReplicate"] == 0) &
+                    (samples["biologicalReplicate"] == r2)
+                ]
+                if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
+                    continue
+
+                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold))
+                s = pd.Series(
+                    [ip, c, c, t, t, r1, r2, o, 'replicates', threshold],
+                    index=['ip', 'c1', 'c2', 't1', 't2', 'r1', 'r2', 'overlap', 'type', 'threshold'])
+                overlaps = overlaps.append(s, ignore_index=True)
+
+# Remove replicates overlap between low cell number points
+oo = overlaps[~(
+    (overlaps['type'] == "replicates") &
+    (overlaps['c1'] != "10M") & (overlaps['c2'] != "10M")
+)]
 
 # Plot
-# col/row colours
-colours = map(colourPerFactor, overlaps.index)
+colours = {ip: colourPerFactor(ip) for ip in overlaps['ip'].unique()}
 
-# data colour map
-cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
+# All
+g = sns.FacetGrid(overlaps, col="type", hue="ip")  # , hue_kws=colours)
+# g.map(plt.scatter, "threshold", "overlap")
+# g.map(plt.plot, "threshold", "overlap")
+g.map(sns.pointplot, "threshold", "overlap")
+g.add_legend()
+plt.savefig(os.path.join(plotsDir, "topPeakOverlaps.all.pdf"), bbox_inches='tight')
 
-sns.clustermap(overlaps.fillna(0), row_colors=colours, method="ward", metric="euclidean",
-               col_colors=colours, figsize=(15, 15), cmap=cmap)
-
+# Major
+g = sns.FacetGrid(oo, col="type", hue="ip")
+g.map(sns.pointplot, "threshold", "overlap")
+g.add_legend()
 plt.savefig(os.path.join(plotsDir, "topPeakOverlaps.pdf"), bbox_inches='tight')
+
+# Subset
+oo = oo[oo['threshold'] < 50]
+
+g = sns.FacetGrid(oo, col="type", hue="ip")
+g.map(sns.pointplot, "threshold", "overlap")
+g.add_legend()
+
+plt.savefig(os.path.join(plotsDir, "topPeakOverlaps.subset.pdf"), bbox_inches='tight')
