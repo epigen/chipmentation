@@ -598,5 +598,61 @@ o.columns = ['tec1', 'tec2', 'ip', 'count']
 for g in o.groupby(['ip']).groups.items():
     import matplotlib_venn as venn
     plt.figure()
-    venn.venn3(subsets=o.ix[g[1]]['count'].tolist(), set_labels = (o.ix[g[1]]['tec1'].unique()))
+    venn.venn3(subsets=o.ix[g[1]]['count'].tolist(), set_labels=(o.ix[g[1]]['tec1'].unique()))
     plt.savefig(os.path.join(plotsDir, "footprint.overlap.%s.pdf" % g[0]), bbox_inches='tight')
+
+
+# Pie charts overlap with ChIP
+"""
+for TF in CTCF GATA1 PU1 REST
+do
+    for TECH1 in ATAC CM DNase
+    do
+        T=`wc -l ${TECH1}_${TF}_footprints.bed`
+        O=`bedtools intersect -u \
+        -a ${TECH1}_${TF}_footprints.bed \
+        -b K562_10M_CHIP_${TF}_nan_nan_0_0_hg19/K562_10M_CHIP_${TF}_nan_nan_0_0_hg19_peaks.narrowPeak \
+        | wc -l`
+        echo $TECH1 $TF $T $O
+    done
+done
+
+
+ATAC    CTCF    16290   14900
+CM  CTCF    16717   16420
+DNase   CTCF    15419   14614
+ATAC    GATA1   13187   7357
+CM  GATA1   13727   11899
+DNase   GATA1   16411   8409
+ATAC    PU1 3099    2308
+CM  PU1 6429    6383
+DNase   PU1 3318    2280
+ATAC    REST    429 345
+CM  REST    1201    1024
+DNase   REST    430 318
+
+
+"""
+o = pd.read_clipboard(header=None)
+o.columns = ['tec', 'ip', 'total', 'count']
+
+o['over'] = o['count'] / o['total']
+o['leftover'] = 1 - (o['count'] / o['total'])
+
+
+for ip in o['ip'].unique():
+    i = 0
+    fig, axis = plt.subplots(1, 3)
+    for tec in o['tec'].unique():
+        s = o[
+            (o['ip'] == ip) &
+            (o['tec'] == tec)
+        ]
+        axis[i].pie(s['over'], s['leftover'], colors=['white', 'black'])
+        i += 1
+    plt.savefig(os.path.join(plotsDir, "footprint.ChIP-overlap.%s.pie.pdf" % ip), bbox_inches='tight')
+    plt.close()
+
+g = sns.FacetGrid(o, col="ip", size=4, aspect=.5)
+g.map(sns.barplot, "tec", "over")
+plt.savefig(os.path.join(plotsDir, "footprint.ChIP-overlap.bar.pdf"), bbox_inches='tight')
