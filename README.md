@@ -92,31 +92,18 @@ I will document the other folders in due time.
 - Show library size distribution created with different amounts of transposase (see [relevant document](results/fragment_size))
 
 # Internal todo
-- See what's wrong with dyad signal coverage plot
 - Footprints
-    - Call footprints for all TFs
-    - Footprint using DNase, compare numbers with CM
     - Call footprints using concatenated histone data for all TFs
     - De novo footprints on histone data exclusively
     - Plot signal of PU1 ATAC
-    - Think how best to show this
 - TFs
-    - PU1 heatmap for Fig 2.
-    - Heatmaps for all + DNase + ATAC-seq
     - Tn5 PWM score across windows
-- Fig 1d:
-    - Top peaks overlap
-    - Encode ROC & AUC peak recovery
 - NucleoATAC
     - Distogram & Phasogram -> compare with MNase
-    - Make browser track. Include: MNase, H3K4ME1, H4K4ME3, ATAC-seq, nucleosomes
 - Nucleosome stability
-    - Plot read oscillation
     - DARNS frequency around TSSs (models and CAGE) and TTSs
     - DARNS frequency around CpGs islands
 
 - Address bias: score of Tn5 PWM in windows
 
-- Show DNase and ATAC-seq tracks 
-- ROC curve and AUC for # of Encode ChIP-seq peaks recovered from own CM and ChIP dependent on number of reads sampled
-- Peak recovery (5% in top 1% and vice-versa or against encode)
+- Show DNase and ATAC-seq tracks
