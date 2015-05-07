@@ -11,7 +11,7 @@ import seaborn as sns
 sns.set_style("whitegrid")
 
 
-def getTopPeakOverlap(a, b, perc=100):
+def getTopPeakOverlap(a, b, percA=100, percB=100):
     """
     Gets fraction of top peaks in sample A in top peaks of sample B.
     """
@@ -49,10 +49,11 @@ def getTopPeakOverlap(a, b, perc=100):
     out, err = proc.communicate()
     totalB = re.sub("\D.*", "", out)
 
-    frac = 100 / perc
+    fracA = 100 / percA
+    fracB = 100 / percB
 
-    topA = str(math.trunc(int(totalA) / frac))
-    topB = str(math.trunc(int(totalB) / frac))
+    topA = str(math.trunc(int(totalA) / fracA))
+    topB = str(math.trunc(int(totalB) / fracB))
 
     # sort files by score and get top 1%
     ps = subprocess.Popen(('sort', '-k9rn', peakA), stdout=subprocess.PIPE)
@@ -173,7 +174,7 @@ for threshold in [1, 3, 5, 10, 12, 18, 25, 50, 100]:
                 if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
                     continue
 
-                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold))
+                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold, 100))
                 s = pd.Series(
                     [ip, c, c, t1, t2, 0, 0, o, 'techniques', threshold],
                     index=['ip', 'c1', 'c2', 't1', 't2', 'r1', 'r2', 'overlap', 'type', 'threshold'])
@@ -202,7 +203,7 @@ for threshold in [1, 3, 5, 10, 12, 18, 25, 50, 100]:
                 if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
                     continue
 
-                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold))
+                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold, 100))
                 s = pd.Series(
                     [ip, c1, c2, t, t, 0, 0, o, 'cells', threshold],
                     index=['ip', 'c1', 'c2', 't1', 't2', 'r1', 'r2', 'overlap', 'type', 'threshold'])
@@ -232,7 +233,7 @@ for threshold in [1, 3, 5, 10, 12, 18, 25, 50, 100]:
                 if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
                     continue
 
-                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold))
+                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold, 100))
                 s = pd.Series(
                     [ip, c, c, t, t, r1, r2, o, 'replicates', threshold],
                     index=['ip', 'c1', 'c2', 't1', 't2', 'r1', 'r2', 'overlap', 'type', 'threshold'])
@@ -243,6 +244,9 @@ oo = overlaps[~(
     (overlaps['type'] == "replicates") &
     (overlaps['c1'] != "10M") & (overlaps['c2'] != "10M")
 )]
+
+# set > 1 to 1 (this is due to multiple overlapping)
+oo.loc[oo['overlap'] > 1,'overlap'] = 1
 
 # Plot
 colours = {ip: colourPerFactor(ip) for ip in overlaps['ip'].unique()}
@@ -269,3 +273,15 @@ g.map(sns.pointplot, "threshold", "overlap")
 g.add_legend()
 
 plt.savefig(os.path.join(plotsDir, "topPeakOverlaps.subset.pdf"), bbox_inches='tight')
+
+
+
+# Pie charts with 5 and 25 thresholds
+ooo = oo[oo['threshold'] == 5]
+g = sns.FacetGrid(ooo, col="type", hue="ip")
+g.map(plt.scatter, "threshold", "overlap")
+
+
+ooo = oo[oo['threshold'] == 25]
+
+
