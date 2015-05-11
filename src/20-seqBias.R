@@ -69,9 +69,8 @@ sv()
 # Get sequences:
 Hsapiens.masked = BSgenome.Hsapiens.UCSC.hg19.masked
 
-
 simpleCache("tssSeq", { getSeq(Hsapiens , SV$tssGR) }, assignToVariable="seqs")
-simpleCache("tssSeqMasked", { extractSequences(SV$tssGR, Hsapiens.masked); }, assignToVariable="seqs", recreate=TRUE)
+simpleCache("tssSeqMasked", { extractSequences(SV$tssGR, Hsapiens.masked); }, assignToVariable="seqMasked", recreate=TRUE)
 
 seqs
 
@@ -88,9 +87,51 @@ m = summarizeMatrixModel(combinedCMData)
 # Plot them on the same axis:
 
 pdfrd("tssSignals/tss_tpswm_score2.pdf", width=16)
-plot(gscale(pwmScoreMatrix), pwmScoreMatrix, type="l")
-lines(gscale(m), m, type="l", main = paste0("CM combined"), xlab="TSS", col="blue")
+
 dev.off()
+
+
+# Subset if desired:
+for (type in names(SV$tssGroupIds)) {
+	# add expression condition:
+	#type = paste0(type, ".NoExp")
+	subsetIds = SV$tssGroupIds[[type]]
+}
+
+
+
+subsetIds = SV$tssGroupIds[["TATA.CpG.Exp"]]
+
+subsetIds = SV$tssGroupIds[["TATA-less.CpG-less.Exp"]]
+
+seqBias("tss_TATA-less.CpG-less.Exp", SV$tssGR[subsetIds], combinedCMData[subsetIds,])
+ 
+# and a function to do the same:
+factorName="tss"
+seqBias = function(factorName, GR, signalData) {
+	message("Get sequences...")
+	simpleCache(paste0(factorName, "Seq"), { getSeq(Hsapiens , GR) }, assignToVariable="seqs", buildEnvir=nlist(GR))
+	simpleCache(paste0(factorName, "SeqMasked"), { extractSequences(GR, Hsapiens.masked) }, assignToVariable="seqsMasked", buildEnvir=nlist(GR))
+	# TODO: extractSequences needs to control for strand.
+
+	message("Calculate PWM matches...")
+	setLapplyAlias(8)
+	simpleCache(paste0(factorName, "PWM"), {
+		pwmMatchSignal(seqs, SV$tpwm)
+	}, buildEnvir=nlist(seqs), assignToVariable="pwmScoreMatrix")
+	simpleCache(paste0(factorName, "PWMMasked"), {
+		pwmMatchSignal(seqsMasked, SV$tpwm)
+	}, buildEnvir=nlist(seqsMasked), assignToVariable="pwmScoreMatrixMasked")
+
+	m = summarizeMatrixModel(signalData)
+	plot(gscale(pwmScoreMatrix), pwmScoreMatrix, type="l", ylim=c(-3, 3))
+	lines(gscale(pwmScoreMatrixMasked), pwmScoreMatrixMasked, type="l", col="red")
+	lines(gscale(m), m, type="l", main = paste0("CM combined"), xlab="TSS", col="blue")
+	legend('topleft', c("PWM match (rpts)", "PWM match (masked)", "CM signal"), col=c("black", "red", "blue"), lty=1)
+	crosshair()
+}
+# TODO: Now run this on every category of interest...
+
 
 
 
