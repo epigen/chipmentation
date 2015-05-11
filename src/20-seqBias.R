@@ -1,14 +1,21 @@
 # Addressing sequencing bias:
-
-project.init("chipmentation", "projects/chipmentation")
+project.init("chipmentation", "chipmentation")
 utility("funcMotif.R")
 library(seqLogo)
 eload(loadPSA())
 eload(loadCageTSS());
 eload(loadTransposePWM())
 SV$tss
-tssGR = dtToGr(SV$tss, "V1", "V2", "V3", strand="V6")
-tssGR = resize(tssGR, 500, fix='center')
+
+eload(loadPeaks())
+
+
+for i in 
+simpleCache("ctcfSeq", { getSeq(BSgenome.Hsapiens.UCSC.hg19.masked, SV$ctcf) }, cacheSubDir="sequence")
+tssConsensus = (consensusMatrix(ctcfSeq, as.prob=TRUE)[DNA_BASES,])
+	seqLogoLabeled(makePWM(tssConsensus), ic.scale=FALSE, main=type)
+}
+
 
 #s = extractSequences(tssGR[1]) #broken
 #tssSequences = getSeq(Hsapiens, tssGR[1:50000])
@@ -41,17 +48,6 @@ dev.off()
 
 
 
-tssSequences_500
-setLapplyAlias(8)
-pwmScores = lapplyAlias(as.character(tssSequences_500), matchPWMscoreI, SV$tpwm)
-pwmScoreMatrix = do.call(rbind, pwmScores)
-scale(colSums(pwmScoreMatrix))
-pdfrd("tssSignals/tss_tpswm_score2.pdf", width=16)
-plot(-240:239, scale(colSums(pwmScoreMatrix)), type="b")
-plot(-90:110, scale(colSums(pwmScoreMatrix[,150:350])), type="b", lwd=2)
-lines(-50:50, scalemod, col="blue", lwd=2)
-dev.off()
-
 pdfrd("tssSignals/tss_tpswm_score_divided.pdf", width=16)
 for (type in names(SV$tssGroupIdsNoExp)) {
 	message(type);
@@ -61,12 +57,56 @@ for (type in names(SV$tssGroupIdsNoExp)) {
 	pwmScoreMatrix = do.call(rbind, pwmScores)
 plot(-240:239, scale(colSums(pwmScoreMatrix)), type="l", main=type)
 plot(-90:110, smooth.spline(scale(colSums(pwmScoreMatrix[,150:350])))$y, type="l", lwd=2)
-
 lines(-50:50, smooth.spline(tssCMModels[[paste0(type, ".Exp")]])$y, col="darkgreen", lwd=1)
 lines(-50:50, smooth.spline(tssCMModels[[paste0(type, ".NoExp")]])$y, col="maroon", lwd=1)
-
-
-
 }
 dev.off()
+
+sv()
+
+
+# TSS ###############################
+# Get sequences:
+Hsapiens.masked = BSgenome.Hsapiens.UCSC.hg19.masked
+
+
+simpleCache("tssSeq", { getSeq(Hsapiens , SV$tssGR) }, assignToVariable="seqs")
+simpleCache("tssSeqMasked", { extractSequences(SV$tssGR, Hsapiens.masked); }, assignToVariable="seqs", recreate=TRUE)
+
+seqs
+
+# Calculate PWM matches: 
+setLapplyAlias(8)
+pwmScoreMatrix = pwmMatchSignal(seqs, SV$tpwm)
+
+# Grab signal data:
+simpleCache("combinedCMData", { mergeCachedMatrices(paste0(SV$msa[cmIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
+
+dim(combinedCMData)
+m = summarizeMatrixModel(combinedCMData)
+
+# Plot them on the same axis:
+
+pdfrd("tssSignals/tss_tpswm_score2.pdf", width=16)
+plot(gscale(pwmScoreMatrix), pwmScoreMatrix, type="l")
+lines(gscale(m), m, type="l", main = paste0("CM combined"), xlab="TSS", col="blue")
+dev.off()
+
+
+
+
+
+# CTCF: 
+simpleCache("mat_ctcf", { mergeCachedMatrices(paste0(SV$msa[cmIds, sampleName], "_cap5"), "signal/ctcf_cap5/") } )
+mod_ctcf = summarizeMatrixModel(mat_ctcf)
+lines(mod_ctcf, type='l')
+ 
+
+
+
+sapply(c(100,101,102,105), function(x) { length(gscale(x)) } )
+
+
+
+
 

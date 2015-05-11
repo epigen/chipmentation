@@ -2,8 +2,6 @@ project.init("chipmentation", "projects/chipmentation")
 #psa = loadPSA()
 eload(loadPSA())
 eload(loadCageTSS());
-
-
 SV$tss
 names(SV$tssGroupIds)
 #SV$tssGroupIds$TATA.CpG
@@ -148,22 +146,13 @@ plot((mat[showme[1],]), type="b")
 
 
 # COMBINE ALL CM DATA:
-simpleCache("combinedCMData", {
 SV$msa[technique=="CM" & substr(ip, 1, 2) == "H3" & numberCells != "1K",]
 cmIds = SV$msa[technique=="CM" & substr(ip, 1, 2) == "H3" & numberCells != "1K", which=TRUE]
 cmIds
 SV$msa[technique=="CM",]
 cmIds = SV$msa[technique=="CM", which=TRUE]
 
-allCM = matrix(0, nrow=184827, ncol=400)
-for (i in cmIds) {
-	message(i, ": ", SV$msa[i, sampleName])
-	simpleCache(paste0(SV$msa[i, sampleName], "_cap5"), cacheSubDir="tss400bp_cap5", reload=TRUE, assignToVariable="mat")
-	allCM = allCM+mat
-}
-mat =allCM
-mat
-}) #end simpleCache code
+
 
 mat = combinedCMData
 # Produces a PDF of the combined CM data: 
@@ -182,6 +171,10 @@ dev.off()
 
 # build the model; a different model for each TSS type:
 sapply(SV$tssGroupIds, length)
+
+
+
+
 
 tssCMModels = list()
 par(mfrow=c(4,4))
@@ -241,8 +234,6 @@ for (i in 1:10) {
 dev.off()
 
 km = kmeans(mat, 10)
-
-
 
 
 
