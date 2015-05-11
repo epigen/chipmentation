@@ -58,3 +58,22 @@ do
 done
 
 
+# 2nd approach: start from ChIP-seq peaks
+# Center peaks on motifs
+for TF in CTCF PU1 GATA1 REST
+do
+    annotatePeaks.pl K562_10M_CM_${TF}_nan_nan_0_0_hg19/K562_10M_CM_${TF}_nan_nan_0_0_hg19_peaks.narrowPeak \
+    hg19 \
+    -size 2000 -center ../motifs/K562_10M_CM_${TF}_nan_nan_0_0_hg19/homerResults/motif1.motif | \
+    awk -v OFS='\t' '{print $2, $3, $4, $1, $6, $5}' | \
+    awk -v OFS='\t' -F '\t' '{ gsub("0", "+", $6) ; gsub("1", "-", $6) ; print }' | \
+    python ~/fix_bedfile_genome_boundaries.py hg19 | \
+    sortBed > K562_10M_CM_${TF}_nan_nan_0_0_hg19/K562_10M_CM_${TF}_nan_nan_0_0_hg19_peaks.motifCentered.bed
+
+    annotatePeaks.pl K562_10M_CM_${TF}_nan_nan_0_0_hg19/K562_10M_CM_${TF}_nan_nan_0_0_hg19_peaks.motifCentered.bed \
+    hg19 \
+    -mask -mscore -m ../motifs/K562_10M_CM_${TF}_nan_nan_0_0_hg19/homerResults/motif1.motif | \
+    tail -n +2 | cut -f 1,5,22 \
+    > K562_10M_CM_${TF}_nan_nan_0_0_hg19/K562_10M_CM_${TF}_nan_nan_0_0_hg19_peaks.motifAnnotated.bed
+    # cut this ^^
+done

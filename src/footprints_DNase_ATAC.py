@@ -22,60 +22,6 @@ import cPickle as pickle
 sns.set_style("whitegrid")
 
 
-def smooth(x, window_len=11, window='hanning'):
-    """smooth the data using a window with requested size.
-
-    This method is based on the convolution of a scaled window with the signal.
-    The signal is prepared by introducing reflected copies of the signal
-    (with the window size) in both ends so that transient parts are minimized
-    in the begining and end part of the output signal.
-
-    input:
-        x: the input signal
-        window_len: the dimension of the smoothing window; should be an odd integer
-        window: the type of window from 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'
-            flat window will produce a moving average smoothing.
-
-    output:
-        the smoothed signal
-
-    example:
-
-    t=linspace(-2,2,0.1)
-    x=sin(t)+randn(len(t))*0.1
-    y=smooth(x)
-
-    see also:
-
-    numpy.hanning, numpy.hamming, numpy.bartlett, numpy.blackman, numpy.convolve
-    scipy.signal.lfilter
-
-    TODO: the window parameter could be the window itself if an array instead of a string
-    NOTE: length(output) != length(input), to correct this: return y[(window_len/2-1):-(window_len/2)] instead of just y.
-    """
-    if x.ndim != 1:
-        raise ValueError("smooth only accepts 1 dimension arrays.")
-
-    if x.size < window_len:
-        raise ValueError("Input vector needs to be bigger than window size.")
-
-    if window_len < 3:
-        return x
-
-    if window not in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
-        raise ValueError("Window is one of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
-
-    s = np.r_[x[window_len - 1:0:-1], x, x[-1:-window_len:-1]]
-    # print(len(s))
-    if window == 'flat':  # moving average
-        w = np.ones(window_len, 'd')
-    else:
-        w = eval('np.' + window + '(window_len)')
-
-    y = np.convolve(w / w.sum(), s, mode='valid')
-    return y
-
-
 def savePandas(fname, data):
     '''Save DataFrame or Series
 
@@ -309,6 +255,35 @@ def callFootprints(cuts, annot):
     return np.ndarray.flatten(robj.conversion.ri2py(footprint(cuts_R, annot_R)))
 
 
+def plotFootprintModel(cuts, annot):
+    """
+    Plot footprint model.
+    Requires dataframe with cuts and dataframe with annotation (2> cols).
+    """
+    import rpy2.robjects as robj  # for ggplot in R
+    import rpy2.robjects.pandas2ri  # for R dataframe conversion
+
+    # Plot with R
+    footprint = robj.r("""
+    library(CENTIPEDE)
+
+    function(cuts, annot) {
+        imageCutSites(cuts[order(centFit$PostPr),][c(1:100, (dim(cuts)[1]-100):(dim(cuts)[1])),])
+        plotProfile(centFit$LambdaParList[[1]],Mlen=2)
+        return(centFit$PostPr)
+    }
+
+    """)
+
+    # convert the pandas dataframe to an R dataframe
+    robj.pandas2ri.activate()
+    cuts_R = robj.conversion.py2ri(cuts)
+    annot_R = robj.conversion.py2ri(annot)
+
+    # run the plot function on the dataframe
+    return np.ndarray.flatten(robj.conversion.ri2py(footprint(cuts_R, annot_R)))
+
+
 # Define variables
 # projectRoot = "/projects/chipmentation/"
 projectRoot = "/media/afr/cemm-backup/chipmentation/"
@@ -316,7 +291,7 @@ projectRoot = "/media/afr/cemm-backup/chipmentation/"
 bamsDir = os.path.join(projectRoot, "data", "mapped/")
 peaksDir = os.path.join(projectRoot, "data", "peaks/")
 resultsDir = os.path.join(projectRoot, "results")
-plotsDir = os.path.join(resultsDir, "plots")
+plotsDir = os.path.join(resultsDir, "footprints")
 CM = os.path.join(bamsDir, "CM_H3K4ME1-H3K27AC.bam")
 DNase = os.path.join(bamsDir, "wgEncodeUwDnaseK562Aln.merged.bam")
 ATAC = os.path.join(bamsDir, "K562_50K_ATAC_nan_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam")
@@ -324,44 +299,60 @@ ATAC = os.path.join(bamsDir, "K562_50K_ATAC_nan_nan_nan_0_0_hg19.trimmed.bowtie2
 # Get samples
 samples = {
     "CM_CTCF": (
-        [bamsDir + "K562_10M_CM_CTCF_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam", CM],
+        [bamsDir + "K562_10M_CM_CTCF_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam"],
         peaksDir + "K562_10M_CM_CTCF_nan_nan_0_0_hg19/K562_10M_CM_CTCF_nan_nan_0_0_hg19_peaks.motifCentered.bed"
     ),
     "CM_GATA1": (
-        [bamsDir + "K562_10M_CM_GATA1_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam", CM],
+        [bamsDir + "K562_10M_CM_GATA1_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam"],
         peaksDir + "K562_10M_CM_GATA1_nan_nan_0_0_hg19/K562_10M_CM_GATA1_nan_nan_0_0_hg19_peaks.motifCentered.bed"
     ),
     "CM_PU1": (
-        [bamsDir + "K562_10M_CM_PU1_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam", CM],
+        [bamsDir + "K562_10M_CM_PU1_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam"],
         peaksDir + "K562_10M_CM_PU1_nan_nan_0_0_hg19/K562_10M_CM_PU1_nan_nan_0_0_hg19_peaks.motifCentered.bed"
     ),
     "CM_REST": (
-        [bamsDir + "K562_10M_CM_REST_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam", CM],
+        [bamsDir + "K562_10M_CM_REST_nan_nan_0_0_hg19.trimmed.bowtie2.shifted.dups.bam"],
         peaksDir + "K562_10M_CM_REST_nan_nan_0_0_hg19/K562_10M_CM_REST_nan_nan_0_0_hg19_peaks.motifCentered.bed"
     ),
-    "ATAC_PU1": (
-        [ATAC], peaksDir + "K562_50K_ATAC_nan_nan_nan_0_0_hg19/K562_50K_ATAC_nan_nan_nan_0_0_hg19_peaks.filtered.PU1-motifCentered.bed",
+    "CMHIST_CTCF": (
+        [CM],
+        peaksDir + "K562_10M_CM_CTCF_nan_nan_0_0_hg19/K562_10M_CM_CTCF_nan_nan_0_0_hg19_peaks.motifCentered.bed"
     ),
-    "ATAC_GATA1": (
-        [ATAC], peaksDir + "K562_50K_ATAC_nan_nan_nan_0_0_hg19/K562_50K_ATAC_nan_nan_nan_0_0_hg19_peaks.filtered.GATA1-motifCentered.bed"
+    "CMHIST_GATA1": (
+        [CM],
+        peaksDir + "K562_10M_CM_GATA1_nan_nan_0_0_hg19/K562_10M_CM_GATA1_nan_nan_0_0_hg19_peaks.motifCentered.bed"
     ),
-    "ATAC_REST": (
-        [ATAC], peaksDir + "K562_50K_ATAC_nan_nan_nan_0_0_hg19/K562_50K_ATAC_nan_nan_nan_0_0_hg19_peaks.filtered.REST-motifCentered.bed"
+    "CMHIST_PU1": (
+        [CM],
+        peaksDir + "K562_10M_CM_PU1_nan_nan_0_0_hg19/K562_10M_CM_PU1_nan_nan_0_0_hg19_peaks.motifCentered.bed"
+    ),
+    "CMHIST_REST": (
+        [CM],
+        peaksDir + "K562_10M_CM_REST_nan_nan_0_0_hg19/K562_10M_CM_REST_nan_nan_0_0_hg19_peaks.motifCentered.bed"
     ),
     "ATAC_CTCF": (
-        [ATAC], peaksDir + "K562_50K_ATAC_nan_nan_nan_0_0_hg19/K562_50K_ATAC_nan_nan_nan_0_0_hg19_peaks.filtered.CTCF-motifCentered.bed"
+        [ATAC], peaksDir + "K562_10M_CM_CTCF_nan_nan_0_0_hg19/K562_10M_CM_CTCF_nan_nan_0_0_hg19_peaks.motifCentered.bed",
     ),
-    "DNase_PU1": (
-        [DNase], peaksDir + "wgEncodeUwDnaseK562Aln.merged/wgEncodeUwDnaseK562Aln.merged_peaks.filtered.PU1-motifCentered.bed",
+    "ATAC_GATA1": (
+        [ATAC], peaksDir + "K562_10M_CM_GATA1_nan_nan_0_0_hg19/K562_10M_CM_GATA1_nan_nan_0_0_hg19_peaks.motifCentered.bed",
     ),
-    "DNase_GATA1": (
-        [DNase], peaksDir + "wgEncodeUwDnaseK562Aln.merged/wgEncodeUwDnaseK562Aln.merged_peaks.filtered.GATA1-motifCentered.bed",
+    "ATAC_PU1": (
+        [ATAC], peaksDir + "K562_10M_CM_PU1_nan_nan_0_0_hg19/K562_10M_CM_PU1_nan_nan_0_0_hg19_peaks.motifCentered.bed",
     ),
-    "DNase_REST": (
-        [DNase], peaksDir + "wgEncodeUwDnaseK562Aln.merged/wgEncodeUwDnaseK562Aln.merged_peaks.filtered.REST-motifCentered.bed",
+    "ATAC_REST": (
+        [ATAC], peaksDir + "K562_10M_CM_REST_nan_nan_0_0_hg19/K562_10M_CM_REST_nan_nan_0_0_hg19_peaks.motifCentered.bed",
     ),
     "DNase_CTCF": (
-        [DNase], peaksDir + "wgEncodeUwDnaseK562Aln.merged/wgEncodeUwDnaseK562Aln.merged_peaks.filtered.CTCF-motifCentered.bed"
+        [DNase], peaksDir + "K562_10M_CM_CTCF_nan_nan_0_0_hg19/K562_10M_CM_CTCF_nan_nan_0_0_hg19_peaks.motifCentered.bed"
+    ),
+    "DNase_GATA1": (
+        [DNase], peaksDir + "K562_10M_CM_GATA1_nan_nan_0_0_hg19/K562_10M_CM_GATA1_nan_nan_0_0_hg19_peaks.motifCentered.bed",
+    ),
+    "DNase_PU1": (
+        [DNase], peaksDir + "K562_10M_CM_PU1_nan_nan_0_0_hg19/K562_10M_CM_PU1_nan_nan_0_0_hg19_peaks.motifCentered.bed",
+    ),
+    "DNase_REST": (
+        [DNase], peaksDir + "K562_10M_CM_REST_nan_nan_0_0_hg19/K562_10M_CM_REST_nan_nan_0_0_hg19_peaks.motifCentered.bed",
     )
 }
 
@@ -453,8 +444,7 @@ foots = pickle.load(open(os.path.join(plotsDir, "pickles", "footprintProbs.pickl
 # 2. overlap
 # 3. venn diagrams
 fig, axis = plt.subplots(2, 2, sharey=True, figsize=(10, 8))
-i = 0
-for TF in ["CTCF", "GATA1", "PU1", "REST"]:
+for i, TF in enumerate(["CTCF", "GATA1", "PU1", "REST"]):
     d = pd.DataFrame([
         np.ndarray.flatten(foots["CM_" + TF]),
         np.ndarray.flatten(foots["DNase_" + TF]),
@@ -475,20 +465,20 @@ for TF in ["CTCF", "GATA1", "PU1", "REST"]:
     axis[j][k].boxplot([d["CM_" + TF], d["DNase_" + TF], d["ATAC_" + TF]])
     axis[j][k].set_title(TF)
     axis[j][k].set_ylabel("Footprint probability")
-    i += 1
+
 plt.savefig(os.path.join(plotsDir, "footprint.probs.independent.boxplot.pdf"), bbox_inches='tight')
 plt.close()
 
 
 fig, axis = plt.subplots(2, 2, sharey=True, figsize=(10, 8))
-i = 0
-for TF in ["CTCF", "GATA1", "PU1", "REST"]:
+for i, TF in enumerate(["CTCF", "GATA1", "PU1", "REST"]):
     d = pd.DataFrame([
         np.ndarray.flatten(foots["CM_" + TF]),
+        np.ndarray.flatten(foots["CMHIST_" + TF]),
         np.ndarray.flatten(foots["DNase_" + TF]),
         np.ndarray.flatten(foots["ATAC_" + TF]),
     ]).T
-    d.columns = ["CM_" + TF, "DNase_" + TF, "ATAC_" + TF]
+    d.columns = ["CM_" + TF, "CMHIST_" + TF, "DNase_" + TF, "ATAC_" + TF]
 
     # Plot
     if i is 0:
@@ -500,10 +490,9 @@ for TF in ["CTCF", "GATA1", "PU1", "REST"]:
     elif i is 3:
         j, k = (1, 1)
 
-    sns.violinplot(d.dropna(), inner="points", inner_kws={"ms": 1}, ax=axis[j][k])
+    sns.violinplot(d.dropna(), ax=axis[j][k])
     sns.despine(left=True, bottom=True, ax=axis[j][k])
-    i += 1
-plt.savefig(os.path.join(plotsDir, "footprint.probs.independent.violinplot.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join(plotsDir, "footprint.probs.independent.violinplot-nodots.pdf"), bbox_inches='tight')
 plt.close()
 
 # Compare number of footprints called by each technique in each technique
@@ -511,8 +500,7 @@ plt.close()
 # 2. put together in dataframe (cols - techniques)
 # 3. plot distributions of probabilities as factor
 fig, axis = plt.subplots(2, 2, sharey=True, figsize=(10, 8))
-i = 0
-for TF in ["CM_CTCF", "CM_GATA1", "CM_PU1", "CM_REST"]:
+for i, TF in enumerate(["CM_CTCF", "CM_GATA1", "CM_PU1", "CM_REST"]):
     if i is 0:
         j, k = (0, 0)
     elif i is 1:
@@ -532,7 +520,7 @@ for TF in ["CM_CTCF", "CM_GATA1", "CM_PU1", "CM_REST"]:
     axis[j][k].boxplot([d[TF], d[TF + "_histones"]])
     axis[j][k].set_title(TF)
     axis[j][k].set_ylabel("Footprint probability")
-    i += 1
+
 plt.savefig(os.path.join(plotsDir, "footprint.probs.CM_vs_CMhistones.pdf"), bbox_inches='tight')
 plt.close()
 
@@ -602,7 +590,7 @@ for g in o.groupby(['ip']).groups.items():
     plt.savefig(os.path.join(plotsDir, "footprint.overlap.%s.pdf" % g[0]), bbox_inches='tight')
 
 
-# Pie charts overlap with ChIP
+# Plots of overlaps with ChIP
 """
 for TF in CTCF GATA1 PU1 REST
 do
@@ -641,18 +629,19 @@ o['leftover'] = 1 - (o['count'] / o['total'])
 
 
 for ip in o['ip'].unique():
-    i = 0
     fig, axis = plt.subplots(1, 3)
-    for tec in o['tec'].unique():
+    for i, tec in enumerate(o['tec'].unique()):
         s = o[
             (o['ip'] == ip) &
             (o['tec'] == tec)
         ]
         axis[i].pie(s['over'], s['leftover'], colors=['white', 'black'])
-        i += 1
     plt.savefig(os.path.join(plotsDir, "footprint.ChIP-overlap.%s.pie.pdf" % ip), bbox_inches='tight')
     plt.close()
 
 g = sns.FacetGrid(o, col="ip", size=4, aspect=.5)
 g.map(sns.barplot, "tec", "over")
+plt.savefig(os.path.join(plotsDir, "footprint.ChIP-overlap.bar.pdf"), bbox_inches='tight')
+
+sns.factorplot("tec", "over", col="ip", data=o, kind='bar', hue='tec')
 plt.savefig(os.path.join(plotsDir, "footprint.ChIP-overlap.bar.pdf"), bbox_inches='tight')
