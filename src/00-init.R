@@ -55,9 +55,16 @@ loadPSA = function() {
 }
 
 
+loadTransposePWM = function() {
+	downloadCache("transposasePWM", "https://raw.githubusercontent.com/GreenleafLab/NucleoATAC/master/pyatac/pwm/Human2.PWM.txt")
+	transposasePWM = data.frame(transposasePWM);
+	rownames(transposasePWM) = DNA_BASES
+	return(list(tpwm = as.matrix(transposasePWM)))
+}
 
 loadCageTSS = function() {
-	tss = fread(paste0(annoDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
+	tssBedFile = paste0(annoDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed")
+	tss = fread(tssBedFile, sep="\t")
 	# or switch to this set and look at robust ones?
 	
 	#tssall = fread(paste0(annoDir, "/hg19.cage_peak_all_annotation.tsv"), sep="\t")
@@ -79,44 +86,74 @@ loadCageTSS = function() {
 	tss[,.N, by=group]
 	tssGroupIds = split(1:nrow(tss), tss$group)
 	tssGroupIdsNoExp = split(1:nrow(tss), tss$groupNoExp)
-	return(nlist(tss, tssGroupIds, tssGroupIdsNoExp, tssBedFile))
+	tssGR = dtToGr(tss, "V1", "V2", "V3", strand="V6")
+	tssGR = resize(tssGR, 400, fix='center')
+	return(nlist(tss, tssGroupIds, tssGroupIdsNoExp, tssBedFile, tssGR))
 	#distance distribution:
 	summary(diff(tss$V3))
 }
 
 
-
-loadTransposePWM = function() {
-	downloadCache("transposasePWM", "https://raw.githubusercontent.com/GreenleafLab/NucleoATAC/master/pyatac/pwm/Human2.PWM.txt")
-	transposasePWM = data.frame(transposasePWM);
-	rownames(transposasePWM) = DNA_BASES
-	return(list(tpwm = as.matrix(transposasePWM)))
-}
-
-
 makeWindowAroundTSS = function() {
+	# Produce a bed file with 400bp surrounding each cage peak,
+	# to extract exact cuts.
 
-# Produce a bed file with 400bp surrounding each cage peak,
-# to extract exact cuts.
+	tss = fread(paste0(annoDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
 
-tss = fread(paste0(annoDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
+	tss[, V2:=pmax(0, V2-200)]
+	tss[, V3:=V3+200]
+	tss[, uniqueName:=1:nrow(tss)]
+	tss
+	tss[, c(1,2,3, 12), with=FALSE]
+	tssGR = dtToGr(tss, "V1", "V2", "V3")
 
-tss[, V2:=pmax(0, V2-200)]
-tss[, V3:=V3+200]
-tss[, uniqueName:=1:nrow(tss)]
-tss
-tss[, c(1,2,3, 12), with=FALSE]
-tssGR = dtToGr(tss, "V1", "V2", "V3")
-
-write.tsv(tss[, c(1,2,3, 12), with=FALSE], file=paste0(data, "/hg19.cage_peak_coord_robust.400bp.bed"), col.names=FALSE)
-
+	write.tsv(tss[, c(1,2,3, 12), with=FALSE], file=paste0(dataDir, "/hg19.cage_peak_coord_robust.400bp.bed"), col.names=FALSE)
 }
 
 
+#' Given a list of caches, load them up one-by-one and just merge (sum)
+#' them. 
+#' Might be worth moving this into simpleCache package.
+#' @param cacheNames Vector of named caches
+#' @param cacheSubDir C0mmand passed to simpleCache.
+mergeCachedMatrices = function(cacheNames, cacheSubDir) {
+	allCM=NULL
+	for (i in cacheNames) {
+		message(i)
+		simpleCache(i, cacheSubDir=cacheSubDir, reload=TRUE, assignToVariable="mat")
+		if (is.null(allCM)) {
+			allCM = matrix(0, nrow=nrow(mat), ncol=ncol(mat))
+		}
+		allCM = allCM+mat
+	}
+	return(allCM)
+}
 
+#' Given some sequences (DNAString or character), and a pwm,
+#' returns a scaled summarized match scoring matrix.
+#' @param sequences DNAStringSet or character set of sequences to search
+#' @param pwm Motif to scan.
+pwmMatchSignal = function(sequences, pwm) { 
+	if (is.character(sequences)) {
+		sequences = as.character(sequences);
+	}
+	pwmScores = lapplyAlias(as.character(sequences), matchPWMscoreI, pwm)
+	pwmScoreMatrix = do.call(rbind, pwmScores)
+	scale(colSums(pwmScoreMatrix))
+}
 
-
-
+#' Given a matrix, (and optionally subset ids for nows and cols), just
+#' smashes the matrix into a sum, scaled model.
+summarizeMatrixModel = function(signalMatrix, subsetRows=NULL, subsetCols=NULL) {
+	if (is.null(subsetRows)) {
+		subsetRows = 1:nrow(signalMatrix);
+	}
+	if (is.null(subsetCols)) {
+		subsetCols = 1:ncol(signalMatrix);
+	}
+	mod = apply(mat[subsetRows,subsetCols], 2, sum)
+	scalemod = scale(mod)[,1]
+}
 
 
 
