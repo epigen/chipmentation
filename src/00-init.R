@@ -34,8 +34,10 @@ loadPeaks = function() {
 	gata1 = readBed(gata1BedFile)
 	pu1 = readBed(pu1BedFile)
 	rest = readBed(restBedFile)
+	
+	factors = c("ctcf", "pu1", "gata1", "rest")
 
-	return(nlist(ctcf, ctcfBedFile, gata1, gata1BedFile, pu1, pu1BedFile, rest, restBedFile))
+	return(nlist(ctcf, ctcfBedFile, gata1, gata1BedFile, pu1, pu1BedFile, rest, restBedFile, factors))
 }
 
 loadPSA = function() {
@@ -51,7 +53,15 @@ loadPSA = function() {
 # experiment type
 	msa = psa[order(biologicalReplicate,technicalReplicate), .SD[1,], by=c("cellLine", "numberCells", "technique", "ip", "treatment", "genome")]
 	msa = msa[-51,]
-	return(nlist(psa, msa))
+
+
+	# COMBINE ALL CM DATA:
+	msa[technique=="CM" & substr(ip, 1, 2) == "H3" & numberCells != "1K",]
+	#msa[technique=="CM",]
+	#cmIds = msa[technique=="CM", which=TRUE]
+	cmIds = msa[technique=="CM" & substr(ip, 1, 2) == "H3" & numberCells != "1K", which=TRUE]
+	cmIggIds = msa[technique=="CM" & ip =="IGG", which=TRUE]
+	return(nlist(psa, msa, cmIds, cmIggIds))
 }
 
 
@@ -151,9 +161,56 @@ summarizeMatrixModel = function(signalMatrix, subsetRows=NULL, subsetCols=NULL) 
 	if (is.null(subsetCols)) {
 		subsetCols = 1:ncol(signalMatrix);
 	}
-	mod = apply(mat[subsetRows,subsetCols], 2, sum)
+	mod = apply(signalMatrix[subsetRows,subsetCols], 2, sum)
 	scalemod = scale(mod)[,1]
 }
+
+
+
+# and a function to do the same:
+#' Give a name for the analysis; then give a GRanges, a signal Matrix, and
+#' genomes. It will extract the DNA sequence for those GRanges, and
+#' calculate the tranpose enzyme PWM match; as well as model
+#' the signal you give.
+seqBias = function(factorName, GR, PWM, BSG=Hsapiens, BSGM=Hsapiens.masked) {
+	message("Get sequences...")
+	if (length(GR) < 2) { stop("Uhh, give me some regions, man"); }
+	simpleCache(paste0(factorName, "_Models"), { 
+		seqs = getSeq(BSG, GR)
+		modelPWM = pwmMatchSignal(seqs, PWM)
+		modelDinuc = getATDinucSignalInStringSet(seqs)
+		nlist(modelPWM, modelDinuc);
+	}, assignToVariable="models", buildEnvir=nlist(GR, BSG, PWM))
+
+	simpleCache(paste0(factorName, "_ModelsMasked"), { 
+		seqsMasked = extractSequences(GR, BSGM, reorder=FALSE) 
+		modelPWM = pwmMatchSignal(seqsMasked, PWM)
+		modelDinuc = getATDinucSignalInStringSet(seqsMasked)
+		nlist(modelPWM, modelDinuc);
+	}, assignToVariable="modelsMasked", buildEnvir=nlist(GR, BSGM, PWM))
+	
+	return(nlist(models, modelsMasked, factorName))
+}
+
+seqBiasPlot = function(factorName, models, modelsMasked, signals) {
+	maxLim = max(abs(c(models$modelPWM, modelsMasked$modelPWM)))
+	plot(gscale(models$modelPWM)-10, smooth.spline(models$modelPWM)$y, type="l", ylim=c(-maxLim, maxLim), lty="dashed",	xlab="Genome")
+	lines(gscale(modelsMasked$modelPWM)-10, smooth.spline(modelsMasked$modelPWM)$y, type="l", col="gray")
+	#lines(gscale(m[1:380])-10, m[1:380]-models$modelPWM[1:380], type="l", xlab="TSS", col="blue", lty="dashed")
+	dn = scale(models$modelDinuc)
+	lines(gscale(dn), smooth.spline(dn)$y, type="l", col="red", lty="dashed")
+
+	for (i in 1:length(signals)) {
+		lines(gscale(signals[[i]]), signals[[i]], type="l", col=i)
+	}
+	legend('topleft', c("PWM match (rpts)", "PWM match (masked)", "AT", names(signals)), col=c("blue", "gray", "red", 1:length(signals)), lty=c(2,2,2, rep(1, length(signals))), bty='n', cex=.9)
+	crosshair()
+	mtext(factorName)
+}
+#' with(sbo, seqBiasPlot(pwmScoreMatrix, pwmScoreMatrixMasked, m, factorName))
+
+
+
 
 
 

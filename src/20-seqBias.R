@@ -5,6 +5,7 @@ library(seqLogo)
 eload(loadPSA())
 eload(loadCageTSS());
 eload(loadTransposePWM())
+utility("funcMotif.R")
 SV$tss
 
 eload(loadPeaks())
@@ -20,12 +21,6 @@ tssConsensus = (consensusMatrix(ctcfSeq, as.prob=TRUE)[DNA_BASES,])
 #s = extractSequences(tssGR[1]) #broken
 #tssSequences = getSeq(Hsapiens, tssGR[1:50000])
 
-# getSeq correctly accounts for strand:
-testRegionNegStrand = GRanges(seqnames="chr1", IRanges(start=100013159, end=100013658), strand="-")
-testRegionPosStrand = GRanges(seqnames="chr1", IRanges(start=100013159, end=100013658), strand="+")
-testRegionNegStrand; testRegionPosStrand;
-getSeq(Hsapiens, testRegionNegStrand)
-reverseComplement(getSeq(Hsapiens, testRegionPosStrand))
 
 
 simpleCache("tssSequences_500s", { getSeq(Hsapiens, tssGR) }, assignToVariable="tssSequences_500")
@@ -78,76 +73,93 @@ seqs
 setLapplyAlias(8)
 pwmScoreMatrix = pwmMatchSignal(seqs, SV$tpwm)
 
-# Grab signal data:
-simpleCache("combinedCMData", { mergeCachedMatrices(paste0(SV$msa[cmIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
-
-dim(combinedCMData)
-m = summarizeMatrixModel(combinedCMData)
-
-# Plot them on the same axis:
-
-pdfrd("tssSignals/tss_tpswm_score2.pdf", width=16)
-
-dev.off()
-
-
-# Subset if desired:
-for (type in names(SV$tssGroupIds)) {
-	# add expression condition:
-	#type = paste0(type, ".NoExp")
-	subsetIds = SV$tssGroupIds[[type]]
-}
-
-
-
 subsetIds = SV$tssGroupIds[["TATA.CpG.Exp"]]
 
 subsetIds = SV$tssGroupIds[["TATA-less.CpG-less.Exp"]]
 
-seqBias("tss_TATA-less.CpG-less.Exp", SV$tssGR[subsetIds], combinedCMData[subsetIds,])
- 
-# and a function to do the same:
-factorName="tss"
-seqBias = function(factorName, GR, signalData) {
-	message("Get sequences...")
-	simpleCache(paste0(factorName, "Seq"), { getSeq(Hsapiens , GR) }, assignToVariable="seqs", buildEnvir=nlist(GR))
-	simpleCache(paste0(factorName, "SeqMasked"), { extractSequences(GR, Hsapiens.masked) }, assignToVariable="seqsMasked", buildEnvir=nlist(GR))
-	# TODO: extractSequences needs to control for strand.
+preamble = substitute({
+project.init2("chipmentation")
+eload(loadPSA())
+eload(loadTransposePWM())
+eload(loadCageTSS());
+eload(loadPeaks());
+Hsapiens.masked = BSgenome.Hsapiens.UCSC.hg19.masked
+utility("funcMotif.R")
+setLapplyAlias(4)
+})
 
-	message("Calculate PWM matches...")
-	setLapplyAlias(8)
-	simpleCache(paste0(factorName, "PWM"), {
-		pwmMatchSignal(seqs, SV$tpwm)
-	}, buildEnvir=nlist(seqs), assignToVariable="pwmScoreMatrix")
-	simpleCache(paste0(factorName, "PWMMasked"), {
-		pwmMatchSignal(seqsMasked, SV$tpwm)
-	}, buildEnvir=nlist(seqsMasked), assignToVariable="pwmScoreMatrixMasked")
 
-	m = summarizeMatrixModel(signalData)
-	plot(gscale(pwmScoreMatrix), pwmScoreMatrix, type="l", ylim=c(-3, 3))
-	lines(gscale(pwmScoreMatrixMasked), pwmScoreMatrixMasked, type="l", col="red")
-	lines(gscale(m), m, type="l", main = paste0("CM combined"), xlab="TSS", col="blue")
-	legend('topleft', c("PWM match (rpts)", "PWM match (masked)", "CM signal"), col=c("black", "red", "blue"), lty=1)
-	crosshair()
+# Grab signal data:
+
+
+# tss subsets:
+
+simpleCache("combinedCM_tss", { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
+simpleCache("combinedCM_tss_igg", { mergeCachedMatrices(paste0(SV$msa[SV$cmIggIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
+pdfrd("tssSignals/tss_tpswm_score_new2.pdf", width=16)
+iType = 2;
+for (iType in 1:length(SV$tssGroupIds)) {
+	type = names(SV$tssGroupIds)[iType]
+	message(type)
+	subsetIds = SV$tssGroupIds[[type]]
+	sbo = seqBias(paste0("tss_", type), SV$tssGR[subsetIds], SV$tpwm, Hsapiens, Hsapiens.masked)
+	m = summarizeMatrixModel(combinedCM_tss[subsetIds,])
+	m_bg = summarizeMatrixModel(combinedCM_tss_igg[subsetIds,])
+	with(sbo, seqBiasPlot(factorName, models, modelsMasked, list(cm=m, igg=m_bg)))
 }
-# TODO: Now run this on every category of interest...
+dev.off()
 
 
+dir.create("slurm")
+buildSlurmScript(rcode, preamble, submit=TRUE)
 
 
+eval(preamble)
+SV$factors
+pdfrd("tssSignals/factors_tpswm_score_new.pdf", width=16)
+iFactor=1
+for (iFactor in 1:length(SV$factors)) { 
+	factorName = SV$factors[[iFactor]];
+	message(factorName);
+	simpleCache(paste0("combinedCM_", factorName), { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), paste0("signal/", factorName, "_cap5/")) } , assignToVariable="combinedCM")
+
+	simpleCache(paste0("combinedCM_", factorName, "_igg"),  { mergeCachedMatrices(paste0(SV$msa[SV$cmIggIds, sampleName], "_cap5"), paste0("signal/", factorName, "_cap5/")) } , assignToVariable="combinedCM_igg")
+
+	SV[[factorName]] = resize(SV[[factorName]], 200, fix="center")
+	sbo = seqBias(factorName, SV[[factorName]], SV$tpwm, Hsapiens, Hsapiens.masked)
+	m = summarizeMatrixModel(combinedCM)
+	m_bg = summarizeMatrixModel(combinedCM_igg)
+	
+	with(sbo, seqBiasPlot(factorName, models, modelsMasked, list(cm=m, igg=m_bg)))
+
+}
+dev.off()
+
+# CTCF
+simpleCache("combinedCM_ctcf", { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), "signal/ctcf_cap5/") } )
+simpleCache("combinedCM_igg", { mergeCachedMatrices(paste0(SV$msa[SV$cmIggIds, sampleName], "_cap5"), "signal/ctcf_cap5/") } )
 
 
-# CTCF: 
-simpleCache("mat_ctcf", { mergeCachedMatrices(paste0(SV$msa[cmIds, sampleName], "_cap5"), "signal/ctcf_cap5/") } )
-mod_ctcf = summarizeMatrixModel(mat_ctcf)
-lines(mod_ctcf, type='l')
- 
+SV$ctcf = resize(SV$ctcf, 400, fix="center")
+sbo = seqBias("ctcf", SV$ctcf, combinedCM_ctcf, SV$tpwm, Hsapiens, Hsapiens.masked)
+with(sbo, seqBiasPlot(models, modelsMasked, m, factorName))
 
 
+rcode = substitute({
+	simpleCache("combinedCM_tss", { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
+	iType=4
+	type = names(SV$tssGroupIds)[iType]
+	message(type)
+	subsetIds = SV$tssGroupIds[[type]]
+	sbo = seqBias(paste0("tss_", type), SV$tssGR[subsetIds], combinedCM_tss[subsetIds,], SV$tpwm, Hsapiens, Hsapiens.masked)
+	with(sbo, seqBiasPlot(models, modelsMasked, m, factorName))
+})
 
-sapply(c(100,101,102,105), function(x) { length(gscale(x)) } )
-
-
-
-
+# TODO: 
+# - add naked DNA control to TF plots
+# - provide PWM and AT signal tracks to Andre
+# - produce TSS plot (all TSS, just H3K4me3 signal), with background plots:
+# (AT, PWM, and Naked DNA). To show it's not a bias.
+# NEXT:
+# - what is up with TSS signal? Cluster it?
 

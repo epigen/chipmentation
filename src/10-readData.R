@@ -145,12 +145,6 @@ plot((mat[showme[1],]), type="b")
 
 
 
-# COMBINE ALL CM DATA:
-SV$msa[technique=="CM" & substr(ip, 1, 2) == "H3" & numberCells != "1K",]
-cmIds = SV$msa[technique=="CM" & substr(ip, 1, 2) == "H3" & numberCells != "1K", which=TRUE]
-cmIds
-SV$msa[technique=="CM",]
-cmIds = SV$msa[technique=="CM", which=TRUE]
 
 
 

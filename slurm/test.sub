@@ -1,0 +1,41 @@
+#!/bin/bash
+#SBATCH --job-name=test
+#SBATCH --mem-per-cpu=4000
+#SBATCH --cpus-per-task=1            # 1 task on 1 CPU  
+#SBATCH -m block
+
+#SBATCH --partition=develop
+#SBATCH --ntasks=1
+#SBATCH --time=02:00:00
+
+#set output file:
+#SBATCH --output slurm/test.log
+echo 'Compute node:' `hostname`
+echo 'Start time:' `date +'%Y-%m-%d %T'`
+R --no-save<<END
+{
+    project.init2("chipmentation")
+    eload(loadPSA())
+    eload(loadTransposePWM())
+    eload(loadCageTSS())
+    Hsapiens.masked = BSgenome.Hsapiens.UCSC.hg19.masked
+    utility("funcMotif.R")
+}
+{
+    simpleCache("combinedCMData", {
+        mergeCachedMatrices(paste0(SV\$msa[cmIds, sampleName], 
+            "_cap5"), "signal/tss_cap5/")
+    })
+    iType = 4
+    type = names(SV\$tssGroupIds)[iType]
+    message(type)
+    subsetIds = SV\$tssGroupIds[[type]]
+    sbo = seqBias(paste0("tss_", type), SV\$tssGR[subsetIds], 
+        combinedCMData[subsetIds, ], SV\$tpwm, Hsapiens, Hsapiens.masked)
+    with(sbo, seqBiasPlot(models, modelsMasked, m, factorName))
+}
+sessionInfo()
+
+END
+echo 'End time:' `date +'%Y-%m-%d %T'`
+
