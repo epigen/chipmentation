@@ -1,5 +1,5 @@
 # Creates caches for signal surrounding TSSs.
-project.init("chipmentation", "projects/chipmentation")
+project.init2("chipmentation")
 #sParam = getSlurmParams()
 
 eload(loadPSA())
@@ -69,8 +69,10 @@ for (i in 1:nrow(SV$msa)) {
 		bedFile = SV[[paste0(factorName, "BedFile")]]
 		negStrand = which(SV[[factorName]]$V6=="-")
 		pointsToExtract = 2000
+		# Extract scores
 		simpleCache(SV$msa[i, sampleName], { x = bwSummaryOverBed(	SV$msa[i, xcfile], bedFile, nElem=pointsToExtract); xm = as.matrix(x[, -1, with=FALSE]); xm = flipRows(xm, negStrand); xm }, cacheSubDir=cacheSubDir, assignToVar="M", recreate=FALSE, nofail=TRUE)
 
+		# Create capped, binned, and capped5 versions:
 		simpleCache(paste0(SV$msa[i, sampleName], "_cap"), { capData(M, .999); }, cacheSubDir=paste0(cacheSubDir, "_cap"), noload=TRUE, recreate=FALSE, nofail=TRUE)
 		simpleCache(paste0(SV$msa[i, sampleName], "_bin"), { M[M>1] = 1; M; }, cacheSubDir=paste0(cacheSubDir,"_bin"), noload=TRUE, recreate=FALSE, nofail=TRUE)
 		simpleCache(paste0(SV$msa[i, sampleName], "_cap5"), { M[M>5] = 5; M; }, cacheSubDir=paste0(cacheSubDir,"_cap5"), noload=TRUE, recreate=FALSE, nofail=TRUE)

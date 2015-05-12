@@ -34,8 +34,10 @@ loadPeaks = function() {
 	gata1 = readBed(gata1BedFile)
 	pu1 = readBed(pu1BedFile)
 	rest = readBed(restBedFile)
+	
+	factors = c("ctcf", "pu1", "gata1", "rest")
 
-	return(nlist(ctcf, ctcfBedFile, gata1, gata1BedFile, pu1, pu1BedFile, rest, restBedFile))
+	return(nlist(ctcf, ctcfBedFile, gata1, gata1BedFile, pu1, pu1BedFile, rest, restBedFile, factors))
 }
 
 loadPSA = function() {
@@ -51,13 +53,28 @@ loadPSA = function() {
 # experiment type
 	msa = psa[order(biologicalReplicate,technicalReplicate), .SD[1,], by=c("cellLine", "numberCells", "technique", "ip", "treatment", "genome")]
 	msa = msa[-51,]
-	return(nlist(psa, msa))
+
+
+	# COMBINE ALL CM DATA:
+	msa[technique=="CM" & substr(ip, 1, 2) == "H3" & numberCells != "1K",]
+	#msa[technique=="CM",]
+	#cmIds = msa[technique=="CM", which=TRUE]
+	cmIds = msa[technique=="CM" & substr(ip, 1, 2) == "H3" & numberCells != "1K", which=TRUE]
+	cmIggIds = msa[technique=="CM" & ip =="IGG", which=TRUE]
+	return(nlist(psa, msa, cmIds, cmIggIds))
 }
 
 
+loadTransposePWM = function() {
+	downloadCache("transposasePWM", "https://raw.githubusercontent.com/GreenleafLab/NucleoATAC/master/pyatac/pwm/Human2.PWM.txt")
+	transposasePWM = data.frame(transposasePWM);
+	rownames(transposasePWM) = DNA_BASES
+	return(list(tpwm = as.matrix(transposasePWM)))
+}
 
 loadCageTSS = function() {
-	tss = fread(paste0(annoDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
+	tssBedFile = paste0(annoDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed")
+	tss = fread(tssBedFile, sep="\t")
 	# or switch to this set and look at robust ones?
 	
 	#tssall = fread(paste0(annoDir, "/hg19.cage_peak_all_annotation.tsv"), sep="\t")
@@ -79,41 +96,118 @@ loadCageTSS = function() {
 	tss[,.N, by=group]
 	tssGroupIds = split(1:nrow(tss), tss$group)
 	tssGroupIdsNoExp = split(1:nrow(tss), tss$groupNoExp)
-	return(nlist(tss, tssGroupIds, tssGroupIdsNoExp, tssBedFile))
+	tssGR = dtToGr(tss, "V1", "V2", "V3", strand="V6")
+	tssGR = resize(tssGR, 400, fix='center')
+	return(nlist(tss, tssGroupIds, tssGroupIdsNoExp, tssBedFile, tssGR))
 	#distance distribution:
 	summary(diff(tss$V3))
 }
 
 
-
-loadTransposePWM = function() {
-	downloadCache("transposasePWM", "https://raw.githubusercontent.com/GreenleafLab/NucleoATAC/master/pyatac/pwm/Human2.PWM.txt")
-	transposasePWM = data.frame(transposasePWM);
-	rownames(transposasePWM) = DNA_BASES
-	return(list(tpwm = as.matrix(transposasePWM)))
-}
-
-
 makeWindowAroundTSS = function() {
+	# Produce a bed file with 400bp surrounding each cage peak,
+	# to extract exact cuts.
 
-# Produce a bed file with 400bp surrounding each cage peak,
-# to extract exact cuts.
+	tss = fread(paste0(annoDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
 
-tss = fread(paste0(annoDir, "/hg19.cage_peak_coord_robust.TATA_Annotated.bed"), sep="\t")
+	tss[, V2:=pmax(0, V2-200)]
+	tss[, V3:=V3+200]
+	tss[, uniqueName:=1:nrow(tss)]
+	tss
+	tss[, c(1,2,3, 12), with=FALSE]
+	tssGR = dtToGr(tss, "V1", "V2", "V3")
 
-tss[, V2:=pmax(0, V2-200)]
-tss[, V3:=V3+200]
-tss[, uniqueName:=1:nrow(tss)]
-tss
-tss[, c(1,2,3, 12), with=FALSE]
-tssGR = dtToGr(tss, "V1", "V2", "V3")
+	write.tsv(tss[, c(1,2,3, 12), with=FALSE], file=paste0(dataDir, "/hg19.cage_peak_coord_robust.400bp.bed"), col.names=FALSE)
+}
 
-write.tsv(tss[, c(1,2,3, 12), with=FALSE], file=paste0(data, "/hg19.cage_peak_coord_robust.400bp.bed"), col.names=FALSE)
 
+#' Given a list of caches, load them up one-by-one and just merge (sum)
+#' them. 
+#' Might be worth moving this into simpleCache package.
+#' @param cacheNames Vector of named caches
+#' @param cacheSubDir C0mmand passed to simpleCache.
+mergeCachedMatrices = function(cacheNames, cacheSubDir) {
+	allCM=NULL
+	for (i in cacheNames) {
+		message(i)
+		simpleCache(i, cacheSubDir=cacheSubDir, reload=TRUE, assignToVariable="mat")
+		if (is.null(allCM)) {
+			allCM = matrix(0, nrow=nrow(mat), ncol=ncol(mat))
+		}
+		allCM = allCM+mat
+	}
+	return(allCM)
+}
+
+#' Given some sequences (DNAString or character), and a pwm,
+#' returns a scaled summarized match scoring matrix.
+#' @param sequences DNAStringSet or character set of sequences to search
+#' @param pwm Motif to scan.
+pwmMatchSignal = function(sequences, pwm) { 
+	if (is.character(sequences)) {
+		sequences = as.character(sequences);
+	}
+	pwmScores = lapplyAlias(as.character(sequences), matchPWMscoreI, pwm)
+	pwmScoreMatrix = do.call(rbind, pwmScores)
+	scale(colSums(pwmScoreMatrix))
+}
+
+#' Given a matrix, (and optionally subset ids for nows and cols), just
+#' smashes the matrix into a sum, scaled model.
+summarizeMatrixModel = function(signalMatrix, subsetRows=NULL, subsetCols=NULL) {
+	if (is.null(subsetRows)) {
+		subsetRows = 1:nrow(signalMatrix);
+	}
+	if (is.null(subsetCols)) {
+		subsetCols = 1:ncol(signalMatrix);
+	}
+	mod = apply(signalMatrix[subsetRows,subsetCols], 2, sum)
+	scalemod = scale(mod)[,1]
 }
 
 
 
+# and a function to do the same:
+#' Give a name for the analysis; then give a GRanges, a signal Matrix, and
+#' genomes. It will extract the DNA sequence for those GRanges, and
+#' calculate the tranpose enzyme PWM match; as well as model
+#' the signal you give.
+seqBias = function(factorName, GR, PWM, BSG=Hsapiens, BSGM=Hsapiens.masked) {
+	message("Get sequences...")
+	if (length(GR) < 2) { stop("Uhh, give me some regions, man"); }
+	simpleCache(paste0(factorName, "_Models"), { 
+		seqs = getSeq(BSG, GR)
+		modelPWM = pwmMatchSignal(seqs, PWM)
+		modelDinuc = getATDinucSignalInStringSet(seqs)
+		nlist(modelPWM, modelDinuc);
+	}, assignToVariable="models", buildEnvir=nlist(GR, BSG, PWM))
+
+	simpleCache(paste0(factorName, "_ModelsMasked"), { 
+		seqsMasked = extractSequences(GR, BSGM, reorder=FALSE) 
+		modelPWM = pwmMatchSignal(seqsMasked, PWM)
+		modelDinuc = getATDinucSignalInStringSet(seqsMasked)
+		nlist(modelPWM, modelDinuc);
+	}, assignToVariable="modelsMasked", buildEnvir=nlist(GR, BSGM, PWM))
+	
+	return(nlist(models, modelsMasked, factorName))
+}
+
+seqBiasPlot = function(factorName, models, modelsMasked, signals) {
+	maxLim = max(abs(c(models$modelPWM, modelsMasked$modelPWM)))
+	plot(gscale(models$modelPWM)-10, smooth.spline(models$modelPWM)$y, type="l", ylim=c(-maxLim, maxLim), lty="dashed",	xlab="Genome")
+	lines(gscale(modelsMasked$modelPWM)-10, smooth.spline(modelsMasked$modelPWM)$y, type="l", col="gray")
+	#lines(gscale(m[1:380])-10, m[1:380]-models$modelPWM[1:380], type="l", xlab="TSS", col="blue", lty="dashed")
+	dn = scale(models$modelDinuc)
+	lines(gscale(dn), smooth.spline(dn)$y, type="l", col="red", lty="dashed")
+
+	for (i in 1:length(signals)) {
+		lines(gscale(signals[[i]]), signals[[i]], type="l", col=i)
+	}
+	legend('topleft', c("PWM match (rpts)", "PWM match (masked)", "AT", names(signals)), col=c("blue", "gray", "red", 1:length(signals)), lty=c(2,2,2, rep(1, length(signals))), bty='n', cex=.9)
+	crosshair()
+	mtext(factorName)
+}
+#' with(sbo, seqBiasPlot(pwmScoreMatrix, pwmScoreMatrixMasked, m, factorName))
 
 
 

@@ -1,24 +1,26 @@
 # Addressing sequencing bias:
-
-project.init("chipmentation", "projects/chipmentation")
+project.init("chipmentation", "chipmentation")
 utility("funcMotif.R")
 library(seqLogo)
 eload(loadPSA())
 eload(loadCageTSS());
 eload(loadTransposePWM())
+utility("funcMotif.R")
 SV$tss
-tssGR = dtToGr(SV$tss, "V1", "V2", "V3", strand="V6")
-tssGR = resize(tssGR, 500, fix='center')
+
+eload(loadPeaks())
+
+
+for i in 
+simpleCache("ctcfSeq", { getSeq(BSgenome.Hsapiens.UCSC.hg19.masked, SV$ctcf) }, cacheSubDir="sequence")
+tssConsensus = (consensusMatrix(ctcfSeq, as.prob=TRUE)[DNA_BASES,])
+	seqLogoLabeled(makePWM(tssConsensus), ic.scale=FALSE, main=type)
+}
+
 
 #s = extractSequences(tssGR[1]) #broken
 #tssSequences = getSeq(Hsapiens, tssGR[1:50000])
 
-# getSeq correctly accounts for strand:
-testRegionNegStrand = GRanges(seqnames="chr1", IRanges(start=100013159, end=100013658), strand="-")
-testRegionPosStrand = GRanges(seqnames="chr1", IRanges(start=100013159, end=100013658), strand="+")
-testRegionNegStrand; testRegionPosStrand;
-getSeq(Hsapiens, testRegionNegStrand)
-reverseComplement(getSeq(Hsapiens, testRegionPosStrand))
 
 
 simpleCache("tssSequences_500s", { getSeq(Hsapiens, tssGR) }, assignToVariable="tssSequences_500")
@@ -41,17 +43,6 @@ dev.off()
 
 
 
-tssSequences_500
-setLapplyAlias(8)
-pwmScores = lapplyAlias(as.character(tssSequences_500), matchPWMscoreI, SV$tpwm)
-pwmScoreMatrix = do.call(rbind, pwmScores)
-scale(colSums(pwmScoreMatrix))
-pdfrd("tssSignals/tss_tpswm_score2.pdf", width=16)
-plot(-240:239, scale(colSums(pwmScoreMatrix)), type="b")
-plot(-90:110, scale(colSums(pwmScoreMatrix[,150:350])), type="b", lwd=2)
-lines(-50:50, scalemod, col="blue", lwd=2)
-dev.off()
-
 pdfrd("tssSignals/tss_tpswm_score_divided.pdf", width=16)
 for (type in names(SV$tssGroupIdsNoExp)) {
 	message(type);
@@ -61,12 +52,114 @@ for (type in names(SV$tssGroupIdsNoExp)) {
 	pwmScoreMatrix = do.call(rbind, pwmScores)
 plot(-240:239, scale(colSums(pwmScoreMatrix)), type="l", main=type)
 plot(-90:110, smooth.spline(scale(colSums(pwmScoreMatrix[,150:350])))$y, type="l", lwd=2)
-
 lines(-50:50, smooth.spline(tssCMModels[[paste0(type, ".Exp")]])$y, col="darkgreen", lwd=1)
 lines(-50:50, smooth.spline(tssCMModels[[paste0(type, ".NoExp")]])$y, col="maroon", lwd=1)
+}
+dev.off()
+
+sv()
 
 
+# TSS ###############################
+# Get sequences:
+Hsapiens.masked = BSgenome.Hsapiens.UCSC.hg19.masked
+
+simpleCache("tssSeq", { getSeq(Hsapiens , SV$tssGR) }, assignToVariable="seqs")
+simpleCache("tssSeqMasked", { extractSequences(SV$tssGR, Hsapiens.masked); }, assignToVariable="seqMasked", recreate=TRUE)
+
+seqs
+
+# Calculate PWM matches: 
+setLapplyAlias(8)
+pwmScoreMatrix = pwmMatchSignal(seqs, SV$tpwm)
+
+subsetIds = SV$tssGroupIds[["TATA.CpG.Exp"]]
+
+subsetIds = SV$tssGroupIds[["TATA-less.CpG-less.Exp"]]
+
+preamble = substitute({
+project.init2("chipmentation")
+eload(loadPSA())
+eload(loadTransposePWM())
+eload(loadCageTSS());
+eload(loadPeaks());
+Hsapiens.masked = BSgenome.Hsapiens.UCSC.hg19.masked
+utility("funcMotif.R")
+setLapplyAlias(4)
+})
+
+
+# Grab signal data:
+
+
+# tss subsets:
+
+simpleCache("combinedCM_tss", { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
+simpleCache("combinedCM_tss_igg", { mergeCachedMatrices(paste0(SV$msa[SV$cmIggIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
+pdfrd("tssSignals/tss_tpswm_score_new2.pdf", width=16)
+iType = 2;
+for (iType in 1:length(SV$tssGroupIds)) {
+	type = names(SV$tssGroupIds)[iType]
+	message(type)
+	subsetIds = SV$tssGroupIds[[type]]
+	sbo = seqBias(paste0("tss_", type), SV$tssGR[subsetIds], SV$tpwm, Hsapiens, Hsapiens.masked)
+	m = summarizeMatrixModel(combinedCM_tss[subsetIds,])
+	m_bg = summarizeMatrixModel(combinedCM_tss_igg[subsetIds,])
+	with(sbo, seqBiasPlot(factorName, models, modelsMasked, list(cm=m, igg=m_bg)))
+}
+dev.off()
+
+
+dir.create("slurm")
+buildSlurmScript(rcode, preamble, submit=TRUE)
+
+
+eval(preamble)
+SV$factors
+pdfrd("tssSignals/factors_tpswm_score_new.pdf", width=16)
+iFactor=1
+for (iFactor in 1:length(SV$factors)) { 
+	factorName = SV$factors[[iFactor]];
+	message(factorName);
+	simpleCache(paste0("combinedCM_", factorName), { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), paste0("signal/", factorName, "_cap5/")) } , assignToVariable="combinedCM")
+
+	simpleCache(paste0("combinedCM_", factorName, "_igg"),  { mergeCachedMatrices(paste0(SV$msa[SV$cmIggIds, sampleName], "_cap5"), paste0("signal/", factorName, "_cap5/")) } , assignToVariable="combinedCM_igg")
+
+	SV[[factorName]] = resize(SV[[factorName]], 200, fix="center")
+	sbo = seqBias(factorName, SV[[factorName]], SV$tpwm, Hsapiens, Hsapiens.masked)
+	m = summarizeMatrixModel(combinedCM)
+	m_bg = summarizeMatrixModel(combinedCM_igg)
+	
+	with(sbo, seqBiasPlot(factorName, models, modelsMasked, list(cm=m, igg=m_bg)))
 
 }
 dev.off()
+
+# CTCF
+simpleCache("combinedCM_ctcf", { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), "signal/ctcf_cap5/") } )
+simpleCache("combinedCM_igg", { mergeCachedMatrices(paste0(SV$msa[SV$cmIggIds, sampleName], "_cap5"), "signal/ctcf_cap5/") } )
+
+
+SV$ctcf = resize(SV$ctcf, 400, fix="center")
+sbo = seqBias("ctcf", SV$ctcf, combinedCM_ctcf, SV$tpwm, Hsapiens, Hsapiens.masked)
+with(sbo, seqBiasPlot(models, modelsMasked, m, factorName))
+
+
+rcode = substitute({
+	simpleCache("combinedCM_tss", { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
+	iType=4
+	type = names(SV$tssGroupIds)[iType]
+	message(type)
+	subsetIds = SV$tssGroupIds[[type]]
+	sbo = seqBias(paste0("tss_", type), SV$tssGR[subsetIds], combinedCM_tss[subsetIds,], SV$tpwm, Hsapiens, Hsapiens.masked)
+	with(sbo, seqBiasPlot(models, modelsMasked, m, factorName))
+})
+
+# TODO: 
+# - add naked DNA control to TF plots
+# - provide PWM and AT signal tracks to Andre
+# - produce TSS plot (all TSS, just H3K4me3 signal), with background plots:
+# (AT, PWM, and Naked DNA). To show it's not a bias.
+# NEXT:
+# - what is up with TSS signal? Cluster it?
 
