@@ -10,56 +10,6 @@ SV$tss
 
 eload(loadPeaks())
 
-
-for i in 
-simpleCache("ctcfSeq", { getSeq(BSgenome.Hsapiens.UCSC.hg19.masked, SV$ctcf) }, cacheSubDir="sequence")
-tssConsensus = (consensusMatrix(ctcfSeq, as.prob=TRUE)[DNA_BASES,])
-	seqLogoLabeled(makePWM(tssConsensus), ic.scale=FALSE, main=type)
-}
-
-
-#s = extractSequences(tssGR[1]) #broken
-#tssSequences = getSeq(Hsapiens, tssGR[1:50000])
-
-
-
-simpleCache("tssSequences_500s", { getSeq(Hsapiens, tssGR) }, assignToVariable="tssSequences_500")
-
-
-tssSequences_500
-
-# For all of them.
-tssConsensus = (consensusMatrix(tssSequences_500, as.prob=TRUE)[DNA_BASES,])
-a = seqLogo(makePWM(tssConsensus[,200:300]), ic.scale=FALSE)
-
-pdfrd("tssSignals/tss_logo_divided.pdf", width=16)
-for (type in names(SV$tssGroupIdsNoExp)) {
-	message(type);
-	subsetIds = SV$tssGroupIdsNoExp[[type]]
-	tssConsensus = (consensusMatrix(tssSequences_500[subsetIds,], as.prob=TRUE)[DNA_BASES,])
-	seqLogoLabeled(makePWM(tssConsensus[,200:300]), ic.scale=FALSE, main=type)
-}
-dev.off()
-
-
-
-pdfrd("tssSignals/tss_tpswm_score_divided.pdf", width=16)
-for (type in names(SV$tssGroupIdsNoExp)) {
-	message(type);
-	subsetIds = SV$tssGroupIdsNoExp[[type]]
-	tssSeqSubset = tssSequences_500[subsetIds,]
-	pwmScores = lapplyAlias(as.character(tssSeqSubset), matchPWMscoreI, SV$tpwm)
-	pwmScoreMatrix = do.call(rbind, pwmScores)
-plot(-240:239, scale(colSums(pwmScoreMatrix)), type="l", main=type)
-plot(-90:110, smooth.spline(scale(colSums(pwmScoreMatrix[,150:350])))$y, type="l", lwd=2)
-lines(-50:50, smooth.spline(tssCMModels[[paste0(type, ".Exp")]])$y, col="darkgreen", lwd=1)
-lines(-50:50, smooth.spline(tssCMModels[[paste0(type, ".NoExp")]])$y, col="maroon", lwd=1)
-}
-dev.off()
-
-sv()
-
-
 # TSS ###############################
 # Get sequences:
 Hsapiens.masked = BSgenome.Hsapiens.UCSC.hg19.masked
@@ -96,7 +46,10 @@ setLapplyAlias(4)
 
 simpleCache("combinedCM_tss", { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
 simpleCache("combinedCM_tss_igg", { mergeCachedMatrices(paste0(SV$msa[SV$cmIggIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
-pdfrd("tssSignals/tss_tpswm_score_new2.pdf", width=16)
+simpleCache("K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19_cap5", cacheSubDir=paste0("signal/tss_cap5/") , assignToVariable="cmSig") # ChIPmentation sample
+simpleCache("K562_500K_ATAC_INPUT_nan_01ULTN5_PE_1_1_hg19_cap5", cacheSubDir=paste0("signal/tss_cap5/") , assignToVariable="nakedSig") # naked dna
+
+pdfrd("tssSignals/transposase_bias_TSS.pdf", width=16)
 iType = 2;
 for (iType in 1:length(SV$tssGroupIds)) {
 	type = names(SV$tssGroupIds)[iType]
@@ -105,18 +58,19 @@ for (iType in 1:length(SV$tssGroupIds)) {
 	sbo = seqBias(paste0("tss_", type), SV$tssGR[subsetIds], SV$tpwm, Hsapiens, Hsapiens.masked)
 	m = summarizeMatrixModel(combinedCM_tss[subsetIds,])
 	m_bg = summarizeMatrixModel(combinedCM_tss_igg[subsetIds,])
-	with(sbo, seqBiasPlot(factorName, models, modelsMasked, list(cm=m, igg=m_bg)))
+	m_nakedSig = summarizeMatrixModel(nakedSig[subsetIds,])
+	m_cmSig = summarizeMatrixModel(cmSig[subsetIds,])
+	with(sbo, seqBiasPlot(factorName, models, modelsMasked, list(CM_Combined=m, CM_IGG=m_bg, CM_H3K4me3=m_cmSig, ATAC_INPUT=m_nakedSig)))
+	lines(gscale(m_nakedSig), m_nakedSig, col="magenta", lty="dashed")
 }
 dev.off()
 
-
-dir.create("slurm")
-buildSlurmScript(rcode, preamble, submit=TRUE)
+cor(m_nakedSig, m_cmSig)
 
 
-eval(preamble)
+# FACTORS
 SV$factors
-pdfrd("tssSignals/factors_tpswm_score_smoothed.pdf", width=16)
+pdfrd("tssSignals/transposase_bias_factor.pdf", width=16)
 iFactor=1
 for (iFactor in 1:length(SV$factors)) { 
 	factorName = SV$factors[[iFactor]];
@@ -149,26 +103,6 @@ write(scale(sbo$models$modelDinuc), rd(paste0("sequence_models/", factorName, "_
 }
 
 
-# CTCF
-simpleCache("combinedCM_ctcf", { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), "signal/ctcf_cap5/") } )
-simpleCache("combinedCM_igg", { mergeCachedMatrices(paste0(SV$msa[SV$cmIggIds, sampleName], "_cap5"), "signal/ctcf_cap5/") } )
-
-
-SV$ctcf = resize(SV$ctcf, 400, fix="center")
-sbo = seqBias("ctcf", SV$ctcf, combinedCM_ctcf, SV$tpwm, Hsapiens, Hsapiens.masked)
-with(sbo, seqBiasPlot(models, modelsMasked, m, factorName))
-
-
-rcode = substitute({
-	simpleCache("combinedCM_tss", { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), "signal/tss_cap5/") } )
-	iType=4
-	type = names(SV$tssGroupIds)[iType]
-	message(type)
-	subsetIds = SV$tssGroupIds[[type]]
-	sbo = seqBias(paste0("tss_", type), SV$tssGR[subsetIds], combinedCM_tss[subsetIds,], SV$tpwm, Hsapiens, Hsapiens.masked)
-	with(sbo, seqBiasPlot(models, modelsMasked, m, factorName))
-})
-
 # TODO: 
 # - add naked DNA control to TF plots
 # - provide PWM and AT signal tracks to Andre
@@ -176,4 +110,62 @@ rcode = substitute({
 # (AT, PWM, and Naked DNA). To show it's not a bias.
 # NEXT:
 # - what is up with TSS signal? Cluster it?
+
+
+
+################################################################################
+# Some previous work, looking at consensus motifs, which I am 
+# no longer using:
+
+for i in 
+simpleCache("ctcfSeq", { getSeq(BSgenome.Hsapiens.UCSC.hg19.masked, SV$ctcf) }, cacheSubDir="sequence")
+tssConsensus = (consensusMatrix(ctcfSeq, as.prob=TRUE)[DNA_BASES,])
+	seqLogoLabeled(makePWM(tssConsensus), ic.scale=FALSE, main=type)
+}
+
+
+#s = extractSequences(tssGR[1]) #broken
+#tssSequences = getSeq(Hsapiens, tssGR[1:50000])
+
+simpleCache("tssSequences_500s", { getSeq(Hsapiens, tssGR) }, assignToVariable="tssSequences_500")
+
+
+tssSequences_500
+
+# For all of them.
+tssConsensus = (consensusMatrix(tssSequences_500, as.prob=TRUE)[DNA_BASES,])
+a = seqLogo(makePWM(tssConsensus[,200:300]), ic.scale=FALSE)
+
+pdfrd("tssSignals/tss_logo_divided.pdf", width=16)
+for (type in names(SV$tssGroupIdsNoExp)) {
+	message(type);
+	subsetIds = SV$tssGroupIdsNoExp[[type]]
+	tssConsensus = (consensusMatrix(tssSequences_500[subsetIds,], as.prob=TRUE)[DNA_BASES,])
+	seqLogoLabeled(makePWM(tssConsensus[,200:300]), ic.scale=FALSE, main=type)
+}
+dev.off()
+
+pdfrd("tssSignals/tss_tpswm_score_divided.pdf", width=16)
+for (type in names(SV$tssGroupIdsNoExp)) {
+	message(type);
+	subsetIds = SV$tssGroupIdsNoExp[[type]]
+	tssSeqSubset = tssSequences_500[subsetIds,]
+	pwmScores = lapplyAlias(as.character(tssSeqSubset), matchPWMscoreI, SV$tpwm)
+	pwmScoreMatrix = do.call(rbind, pwmScores)
+plot(-240:239, scale(colSums(pwmScoreMatrix)), type="l", main=type)
+plot(-90:110, smooth.spline(scale(colSums(pwmScoreMatrix[,150:350])))$y, type="l", lwd=2)
+lines(-50:50, smooth.spline(tssCMModels[[paste0(type, ".Exp")]])$y, col="darkgreen", lwd=1)
+lines(-50:50, smooth.spline(tssCMModels[[paste0(type, ".NoExp")]])$y, col="maroon", lwd=1)
+}
+dev.off()
+
+sv()
+
+
+################################################################################
+# Some slurm ideas (not really used):
+dir.create("slurm")
+buildSlurmScript(rcode, preamble, submit=TRUE)
+eval(preamble)
+
 
