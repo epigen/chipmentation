@@ -116,7 +116,7 @@ buildSlurmScript(rcode, preamble, submit=TRUE)
 
 eval(preamble)
 SV$factors
-pdfrd("tssSignals/factors_tpswm_score_new.pdf", width=16)
+pdfrd("tssSignals/factors_tpswm_score_smoothed.pdf", width=16)
 iFactor=1
 for (iFactor in 1:length(SV$factors)) { 
 	factorName = SV$factors[[iFactor]];
@@ -125,15 +125,29 @@ for (iFactor in 1:length(SV$factors)) {
 
 	simpleCache(paste0("combinedCM_", factorName, "_igg"),  { mergeCachedMatrices(paste0(SV$msa[SV$cmIggIds, sampleName], "_cap5"), paste0("signal/", factorName, "_cap5/")) } , assignToVariable="combinedCM_igg")
 
+ 	simpleCache("K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19_cap5", cacheSubDir=paste0("signal/", factorName, "_cap5/") , assignToVariable="cmSig") # ChIPmentation sample
+simpleCache("K562_500K_ATAC_INPUT_nan_01ULTN5_PE_1_1_hg19_cap5", cacheSubDir=paste0("signal/", factorName, "_cap5/") , assignToVariable="nakedSig") # naked dna
+
 	SV[[factorName]] = resize(SV[[factorName]], 200, fix="center")
 	sbo = seqBias(factorName, SV[[factorName]], SV$tpwm, Hsapiens, Hsapiens.masked)
 	m = summarizeMatrixModel(combinedCM)
 	m_bg = summarizeMatrixModel(combinedCM_igg)
-	
-	with(sbo, seqBiasPlot(factorName, models, modelsMasked, list(cm=m, igg=m_bg)))
-
+	m_nakedSig = summarizeMatrixModel(nakedSig)
+	m_cmSig = summarizeMatrixModel(cmSig)
+	with(sbo, seqBiasPlot(factorName, models, modelsMasked, list(CM_Combined=m, CM_IGG=m_bg, CM_H3K4me3=m_cmSig, ATAC_INPUT=m_nakedSig)))
 }
 dev.off()
+
+# Produce text files;
+for (iFactor in 1:length(SV$factors)) { 
+	factorName = SV$factors[[iFactor]];
+	message(factorName)
+	sbo = seqBias(factorName, SV[[factorName]], SV$tpwm, Hsapiens, Hsapiens.masked)
+	sbo
+write(sbo$models$modelPWM, rd(paste0("sequence_models/", factorName, "_tranpososePWM.txt")), ncol=1)
+write(scale(sbo$models$modelDinuc), rd(paste0("sequence_models/", factorName, "_ATDinuc.txt")), ncol=1)
+}
+
 
 # CTCF
 simpleCache("combinedCM_ctcf", { mergeCachedMatrices(paste0(SV$msa[SV$cmIds, sampleName], "_cap5"), "signal/ctcf_cap5/") } )
