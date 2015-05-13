@@ -141,13 +141,14 @@ mergeCachedMatrices = function(cacheNames, cacheSubDir) {
 
 #' Given some sequences (DNAString or character), and a pwm,
 #' returns a scaled summarized match scoring matrix.
-#' @param sequences DNAStringSet or character set of sequences to search
+#' @param sequences DNAStringSet of sequences to search
 #' @param pwm Motif to scan.
-pwmMatchSignal = function(sequences, pwm) { 
-	if (is.character(sequences)) {
-		sequences = as.character(sequences);
-	}
-	pwmScores = lapplyAlias(as.character(sequences), matchPWMscoreI, pwm)
+pwmMatchSignal = function(seqs, pwm) {
+	#revSeqs = reverseComplement(seqs);
+	pwmScores = lapplyAlias(as.character(seqs), matchPWMscoreI, pwm)
+	#pwmScoresRev = lapplyAlias(as.character(revSeqs[1:100]), matchPWMscoreI, pwm)
+	#pwmScoresBestHit = mapply("cbind", pwmScores, pwmScoresRev)
+
 	pwmScoreMatrix = do.call(rbind, pwmScores)
 	scale(colSums(pwmScoreMatrix))
 }
@@ -168,52 +169,47 @@ summarizeMatrixModel = function(signalMatrix, subsetRows=NULL, subsetCols=NULL) 
 
 
 # and a function to do the same:
-#' Give a name for the analysis; then give a GRanges, a signal Matrix, and
+#' Give a name for the analysis; then give a GRanges, a PWM, and
 #' genomes. It will extract the DNA sequence for those GRanges, and
-#' calculate the tranpose enzyme PWM match; as well as model
-#' the signal you give.
-seqBias = function(factorName, GR, PWM, BSG=Hsapiens, BSGM=Hsapiens.masked) {
+#' calculate PWM match. Also calculates dinucleotide freqs.
+seqBias = function(factorName, GR, pwm, BSG=Hsapiens, BSGM=Hsapiens.masked) {
 	message("Get sequences...")
 	if (length(GR) < 2) { stop("Uhh, give me some regions, man"); }
 	simpleCache(paste0(factorName, "_Models"), { 
 		seqs = getSeq(BSG, GR)
-		modelPWM = pwmMatchSignal(seqs, PWM)
+		modelPWM = pwmMatchSignal(seqs, pwm)
 		modelDinuc = getATDinucSignalInStringSet(seqs)
 		nlist(modelPWM, modelDinuc);
-	}, assignToVariable="models", buildEnvir=nlist(GR, BSG, PWM))
+	}, assignToVariable="models", buildEnvir=nlist(GR, BSG, pwm))
 
 	simpleCache(paste0(factorName, "_ModelsMasked"), { 
 		seqsMasked = extractSequences(GR, BSGM, reorder=FALSE) 
-		modelPWM = pwmMatchSignal(seqsMasked, PWM)
+		modelPWM = pwmMatchSignal(seqsMasked, pwm)
 		modelDinuc = getATDinucSignalInStringSet(seqsMasked)
 		nlist(modelPWM, modelDinuc);
-	}, assignToVariable="modelsMasked", buildEnvir=nlist(GR, BSGM, PWM))
+	}, assignToVariable="modelsMasked", buildEnvir=nlist(GR, BSGM, pwm))
 	
 	return(nlist(models, modelsMasked, factorName))
 }
-
+#' Takes output from seqBias and plots it; along with some additional
+#' signals you provide.
 seqBiasPlot = function(factorName, models, modelsMasked, signals) {
 	maxLim = max(abs(c(models$modelPWM, modelsMasked$modelPWM)))
-	plot(gscale(models$modelPWM)-10, smooth.spline(models$modelPWM)$y, type="l", ylim=c(-maxLim, maxLim), lty="dashed",	xlab="Genome")
-	lines(gscale(modelsMasked$modelPWM)-10, smooth.spline(modelsMasked$modelPWM)$y, type="l", col="gray")
+	plot(gscale(models$modelPWM), smooth.spline(models$modelPWM)$y, type="l", ylim=c(-maxLim, maxLim), lty="dashed",	xlab="Genome")
+	lines(gscale(modelsMasked$modelPWM), smooth.spline(modelsMasked$modelPWM)$y, type="l", col="gray", lty="dashed")
 	#lines(gscale(m[1:380])-10, m[1:380]-models$modelPWM[1:380], type="l", xlab="TSS", col="blue", lty="dashed")
 	dn = scale(models$modelDinuc)
 	lines(gscale(dn), smooth.spline(dn)$y, type="l", col="red", lty="dashed")
 
 	for (i in 1:length(signals)) {
-		lines(gscale(signals[[i]]), signals[[i]], type="l", col=i)
+		sig = signals[[i]][midpoints(signals[[i]], 200)]
+		lines(gscale(sig), smooth.spline(sig, nknots=100)$y, type="l", col=i)
 	}
-	legend('topleft', c("PWM match (rpts)", "PWM match (masked)", "AT", names(signals)), col=c("blue", "gray", "red", 1:length(signals)), lty=c(2,2,2, rep(1, length(signals))), bty='n', cex=.9)
+	legend('topleft', c("PWM match (rpts)", "PWM match (masked)", "AT", names(signals)), col=c("black", "gray", "red", 1:length(signals)), lty=c(2,2,2, rep(1, length(signals))), bty='n', cex=.9)
 	crosshair()
 	mtext(factorName)
 }
 #' with(sbo, seqBiasPlot(pwmScoreMatrix, pwmScoreMatrixMasked, m, factorName))
-
-
-
-
-
-
 
 
 
