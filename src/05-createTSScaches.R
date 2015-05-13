@@ -52,8 +52,9 @@ file.exists(paste0(getOption("RCACHE.DIR"), "signal/tss/", psa[i, sampleName],".
 
 
 
+eload(loadPeaks())
 # Create caches surrounding ChIP Peaks:
-i=48; iFactor=1
+i=24; iFactor=4
 for (i in 1:nrow(SV$msa)) {
 	xcfile = SV$msa[i, xcfile]
 	if (!file.exists(xcfile)) {
@@ -62,8 +63,8 @@ for (i in 1:nrow(SV$msa)) {
 	}
 	message(i, " of ", nrow(SV$msa), ": ", SV$msa[i, sampleName]);
 
-	for (iFactor in 1:length(factors)) {
-		factorName = factors[iFactor]
+	for (iFactor in 1:length(SV$factors)) {
+		factorName = SV$factors[iFactor]
 		cacheSubDir = paste0("signal/", factorName)
 		message(factorName, "\t", appendLF=FALSE)	
 		bedFile = SV[[paste0(factorName, "BedFile")]]
