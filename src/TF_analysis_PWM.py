@@ -278,7 +278,6 @@ def exportToJavaTreeView(df, filename):
 
 
 def getPWMscores(peaks, PWM, fasta):
-    # Get PWM score
     # Get nucleotides
     seq = peaks.sequence(s=True, fi=fasta)
     seqs = open(seq.seqfn).read().split("\n")[1::2]  # get fasta sequences
@@ -348,7 +347,7 @@ signals = samples[
 signals = signals.sort(["ip", "technique"])
 
 signals = signals.append(pd.Series(data=["DNase", DNase], index=["sampleName", "filePath"]), ignore_index=True)
-signals = signals.append(pd.Series(data=["MNase", MNase], index=["sampleName", "filePath"]), ignore_index=True)
+# signals = signals.append(pd.Series(data=["MNase", MNase], index=["sampleName", "filePath"]), ignore_index=True)
 
 windowRange = (-1000, 1000)
 fragmentsize = 1
@@ -407,55 +406,25 @@ for i in range(len(sampleSubset)):
     # Get self coverage
     signalName = sampleName
     exportName = "-".join([sampleName, signalName])
-    # if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-    print(sampleName, signalName)
-    # Load bam
-    bamFile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
+    if signalName not in aveSignals[aveSignals['sample'] == sampleName]['signal'].unique():
+        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+            print(sampleName, signalName)
+            # Load bam
+            bamFile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
 
-    cov = coverage(bamFile, peaksInt, fragmentsize, strand_specific=True)
+            cov = coverage(bamFile, peaksInt, fragmentsize, strand_specific=True)
 
-    # Make multiindex dataframe
-    levels = [cov.keys(), ["+", "-"]]
-    labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
-    index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
-    df = pd.DataFrame(np.vstack(cov.values()), index=index)
-    df.columns = range(windowRange[0], windowRange[1])
+            # Make multiindex dataframe
+            levels = [cov.keys(), ["+", "-"]]
+            labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
+            index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
+            df = pd.DataFrame(np.vstack(cov.values()), index=index)
+            df.columns = range(windowRange[0], windowRange[1])
 
-    # Save raw data
-    savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
-
-    df = pd.DataFrame({
-        "sample": sampleName,
-        "signal": signalName,
-        "average": df.apply(np.mean, axis=0),                            # both strands
-        "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-        "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-        "x": df.columns
-    })
-    aveSignals = pd.concat([aveSignals, df])
-    pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
-
-    # Get coverage over other signals
-    for j in range(len(signals)):
-        signalName = signals['sampleName'][j]
-        print(sampleName, signalName)
-
-        exportName = "-".join([sampleName, signalName])
-        # if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-        print(sampleName, signalName)
-        bamFile = HTSeq.BAM_Reader(signals['filePath'][j])
-
-        cov = coverage(bamFile, peaksInt, fragmentsize, strand_specific=True)
-
-        # Make multiindex dataframe
-        levels = [cov.keys(), ["+", "-"]]
-        labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
-        index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
-        df = pd.DataFrame(np.vstack(cov.values()), index=index)
-        df.columns = range(windowRange[0], windowRange[1])
-
-        # Save raw data
-        savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+            # Save raw data
+            savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+        else:
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
 
         df = pd.DataFrame({
             "sample": sampleName,
@@ -468,16 +437,54 @@ for i in range(len(sampleSubset)):
         aveSignals = pd.concat([aveSignals, df])
         pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
+    # Get coverage over other signals
+    for j in range(len(signals)):
+        signalName = signals['sampleName'][j]
+        print(sampleName, signalName)
+
+        exportName = "-".join([sampleName, signalName])
+        if signalName not in aveSignals[aveSignals['sample'] == sampleName]['signal'].unique():
+            if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+                print(sampleName, signalName)
+                bamFile = HTSeq.BAM_Reader(signals['filePath'][j])
+
+                cov = coverage(bamFile, peaksInt, fragmentsize, strand_specific=True)
+
+                # Make multiindex dataframe
+                levels = [cov.keys(), ["+", "-"]]
+                labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
+                index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
+                df = pd.DataFrame(np.vstack(cov.values()), index=index)
+                df.columns = range(windowRange[0], windowRange[1])
+
+                # Save raw data
+                savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+            else:
+                df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+
+            df = pd.DataFrame({
+                "sample": sampleName,
+                "signal": signalName,
+                "average": df.apply(np.mean, axis=0),                            # both strands
+                "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
+                "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
+                "x": df.columns
+            })
+            aveSignals = pd.concat([aveSignals, df])
+            pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
     # Get PWM score
     signalName = "PWM"
     print(sampleName, signalName)
     exportName = "-".join([sampleName, signalName])
 
-    if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-        df = getPWMscores(peaks, PWM, fasta)
-
-        # Save raw data
-        savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+    if signalName not in aveSignals[aveSignals['sample'] == sampleName]['signal'].unique():
+        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
+            df = getPWMscores(peaks, PWM, fasta)
+            # Save raw data
+            savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+        else:
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
 
         df = pd.DataFrame({
             "sample": sampleName,
@@ -501,27 +508,26 @@ df2 = pd.DataFrame()
 
 for sample in df['sample'].unique():
     for signal in df[df['sample'] == sample]['signal'].unique():
-        for strand in ["average", "positive", "negative"]:
+        if signal == "PWM":
+            continue
+        for strand in ["average"]:
             treat = df[
                 (df["sample"] == sample) &
                 (df["signal"] == signal) &
                 (df['x'] >= -400) &
                 (df['x'] <= 400)
-            ][strand]
+            ][strand].tolist()
 
             ctrl = df[
                 (df["sample"] == sample) &
                 (df["signal"] == "PWM") &
-                (df['x'] >= -400) &
-                (df['x'] <= 400)
-            ][strand]
+                (df['x'] >= 590) &
+                (df['x'] <= 1390)
+            ][strand].tolist()
 
             # zscore transform
             treat = zscore(treat)
             ctrl = zscore(ctrl)
-
-            # smooth
-            treatSmoothed = smooth(treat)
 
             # add raw scalled
             tmp = pd.DataFrame()
@@ -531,6 +537,9 @@ for sample in df['sample'].unique():
             tmp['x'] = np.array(range(len(tmp))) - (len(tmp) / 2)
             tmp['type'] = "raw"
             df2 = df2.append(tmp, ignore_index=True)
+
+            # smooth
+            treatSmoothed = smooth(treat)
 
             # add raw scalled and smoothed
             tmp = pd.DataFrame()
@@ -542,7 +551,9 @@ for sample in df['sample'].unique():
             df2 = df2.append(tmp, ignore_index=True)
 
             # normalize (divide by log(PWM))
-            norm = treat / np.log2(ctrl)
+            norm = zscore(treat - ctrl)
+            # norm = zscore((treat) - np.log2(1 + ctrl))
+            # norm = zscore(treat / smooth(ctrl + 1)[10:])
 
             # smooth
             normSmoothed = smooth(norm)
@@ -617,10 +628,12 @@ for sample in aveSignals['sample'].unique():
 
 # individual one plot
 for sample in aveSignals['sample'].unique():
+    fig = plt.figure()
     for signal in aveSignals['signal'].unique():
         sub = aveSignals[
             (aveSignals['sample'] == sample) &
             (aveSignals['signal'] == signal) &
+            (aveSignals['type'] == "normSmooth") &
             (aveSignals['x'] >= -400) &
             (aveSignals['x'] <= 400)
         ]
@@ -923,13 +936,11 @@ for i, TF in enumerate(['CTCF', 'GATA1', 'PU1', 'REST']):
 
 
 
-for t in ["raw", "rawSmooth", "smooth", "normSmooth"]:
+for t in ['rawSmooth', 'normSmooth']:
     sub = aveSignals[
-        (aveSignals['sample'] == "K562_10M_CM_CTCF_nan_nan_0_0_hg19") &
-        (aveSignals['signal'] == "K562_10M_CM_CTCF_nan_nan_0_0_hg19") &
+        (aveSignals['sample'].str.contains("PU1")) &
+        (aveSignals['signal'].str.contains("PU1")) &
         (aveSignals['type'] == t)
     ]
     plt.plot(sub['x'], sub['average'], label=t)
-
-
-
+plt.legend()
