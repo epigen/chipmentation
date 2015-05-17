@@ -9,7 +9,6 @@
 #############################################################################################
 
 import os
-from collections import OrderedDict
 import HTSeq
 import pybedtools
 import numpy as np
@@ -18,13 +17,62 @@ import matplotlib.pyplot as plt
 import seaborn as sns  # changes plt style (+ full plotting library)
 import cPickle as pickle
 
-from divideAndSlurm import Task
-import string
-import time
-import random
-import textwrap
-
 sns.set_style("whitegrid")
+
+
+
+def smooth(x, window_len=11, window='hanning'):
+    """smooth the data using a window with requested size.
+
+    This method is based on the convolution of a scaled window with the signal.
+    The signal is prepared by introducing reflected copies of the signal
+    (with the window size) in both ends so that transient parts are minimized
+    in the begining and end part of the output signal.
+
+    input:
+        x: the input signal
+        window_len: the dimension of the smoothing window; should be an odd integer
+        window: the type of window from 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'
+            flat window will produce a moving average smoothing.
+
+    output:
+        the smoothed signal
+
+    example:
+
+    t=linspace(-2,2,0.1)
+    x=sin(t)+randn(len(t))*0.1
+    y=smooth(x)
+
+    see also:
+
+    numpy.hanning, numpy.hamming, numpy.bartlett, numpy.blackman, numpy.convolve
+    scipy.signal.lfilter
+
+    TODO: the window parameter could be the window itself if an array instead of a string
+    NOTE: length(output) != length(input), to correct this: return y[(window_len/2-1):-(window_len/2)] instead of just y.
+    """
+    if x.ndim != 1:
+        raise ValueError("smooth only accepts 1 dimension arrays.")
+
+    if x.size < window_len:
+        raise ValueError("Input vector needs to be bigger than window size.")
+
+    if window_len < 3:
+        return x
+
+    if window not in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
+        raise ValueError("Window is one of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
+
+    s = np.r_[x[window_len - 1:0:-1], x, x[-1:-window_len:-1]]
+    # print(len(s))
+    if window == 'flat':  # moving average
+        w = np.ones(window_len, 'd')
+    else:
+        w = eval('np.' + window + '(window_len)')
+
+    y = np.convolve(w / w.sum(), s, mode='valid')
+    return y
 
 
 def savePandas(fname, data):
@@ -90,7 +138,7 @@ def bedToolsInterval2GenomicInterval(bedtool):
     return intervals
 
 
-def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, strand_specific=False):
+def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True):
     """
     Gets read coverage in bed regions.
     Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
@@ -102,186 +150,108 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
     """
     # Loop through TSSs, get coverage, append to dict
     chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrM', 'chrX']
-    cov = list()
     n = len(intervals)
-    i = 0
-    for feature in intervals:
-        if i % 1000 == 0:
-            print(n - i)
-        # Initialize empty array for this feature
-        if not strand_specific:
-            profile = np.zeros(feature.length, dtype=np.float64)
-        else:
-            profile = np.zeros((2, feature.length), dtype=np.float64)
+    # Initialize empty array for this feature
+    profile = np.zeros(intervals[0].length, dtype=np.float64)
 
-        # Check if feature is in bam index
-        if feature.chrom not in chroms or feature.chrom == "chrM":
-            i += 1
-            continue
-
-        # Fetch alignments in feature window
-        for aln in bam[feature]:
-            # check if duplicate
-            if not duplicates and aln.pcr_or_optical_duplicate:
-                continue
-            # check it's aligned
-            if not aln.aligned:
+    try:
+        i = 0
+        for feature in intervals:
+            if i % 1000 == 0:
+                print(n - i)
+           
+            # Check if feature is in bam index
+            if feature.chrom not in chroms or feature.chrom == "chrM":
+                i += 1
                 continue
 
-            aln.iv.length = fragmentsize  # adjust to size
+            # Fetch alignments in feature window
+            for aln in bam[feature]:
+                # check if duplicate
+                if not duplicates and aln.pcr_or_optical_duplicate:
+                    continue
+                # check it's aligned
+                if not aln.aligned:
+                    continue
 
-            # get position in relative to window
-            if orientation:
-                if feature.strand == "+" or feature.strand == ".":
+                aln.iv.length = fragmentsize  # adjust to size
+
+                # get position in relative to window
+                if orientation:
+                    if feature.strand == "+" or feature.strand == ".":
+                        start_in_window = aln.iv.start - feature.start - 1
+                        end_in_window = aln.iv.end - feature.start - 1
+                    else:
+                        start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
+                        end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
+                else:
                     start_in_window = aln.iv.start - feature.start - 1
                     end_in_window = aln.iv.end - feature.start - 1
-                else:
-                    start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
-                    end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
-            else:
-                start_in_window = aln.iv.start - feature.start - 1
-                end_in_window = aln.iv.end - feature.start - 1
 
-            # check fragment is within window; this is because of fragmentsize adjustment
-            if start_in_window <= 0 or end_in_window > feature.length:
-                continue
+                # check fragment is within window; this is because of fragmentsize adjustment
+                if start_in_window <= 0 or end_in_window > feature.length:
+                    continue
 
-            # add +1 to all positions overlapped by read within window
-            if not strand_specific:
+                # add +1 to all positions overlapped by read within window
                 profile[start_in_window: end_in_window] += 1
-            else:
-                if aln.iv.strand == "+":
-                    profile[0][start_in_window: end_in_window] += 1
-                else:
-                    profile[1][start_in_window: end_in_window] += 1
 
-        # append feature profile to dict
-        cov.append(profile)
-        i += 1
-    return cov
+            i += 1
+    except KeyboardInterrupt:
+        return profile
+    return profile
 
 
-class Coverage(Task):
+def pairwiseDistances(intervals):
     """
-    Task to get read coverage under regions.
+    Brute force
     """
-    def __init__(self, data, fractions, *args, **kwargs):
-        super(Coverage, self).__init__(data, fractions, *args, **kwargs)
-        # Initialize rest
-        now = string.join([time.strftime("%Y%m%d%H%M%S", time.localtime()), str(random.randint(1, 1000))], sep="_")
-        self.name = "coverage_{0}".format(now)
-
-        # Parse
-        # required argument
-        if len(self.args) != 1:
-            raise TypeError("Bam file argument is missing")
-        self.bam_file = self.args[0]
-        # additional arguments
-        if "strand_wise" in kwargs.keys():
-            self.strand_wise = kwargs["strand_wise"]
-        else:
-            self.strand_wise = True
-        if "duplicates" in kwargs.keys():
-            self.duplicates = kwargs["duplicates"]
-        else:
-            self.duplicates = True
-        if "orientation" in kwargs.keys():
-            self.orientation = kwargs["orientation"]
-        else:
-            self.orientation = False
-        if "permute" in kwargs.keys():
-            self.permute = kwargs["permute"]
-        else:
-            self.permute = False
-        if "fragment_size" in kwargs.keys():
-            self.fragment_size = kwargs["fragment_size"]
-        else:
-            self.fragment_size = 1
-
-    def _prepare(self):
-        """
-        Add task to be performed with data. Is called when task is added to DivideAndSlurm object.
-        """
-        self.log = os.path.join(self.slurm.logDir, string.join([self.name, "log"], sep="."))  # add abspath
-
-        # Split data in fractions
-        ids, groups, files = self._split_data()
-
-        # Make jobs with groups of data
-        self.jobs = list(); self.jobFiles = list(); self.inputPickles = list(); self.outputPickles = list()
-
-        # for each group of data
-        for i in xrange(len(ids)):
-            jobFile = files[i] + "_coverage.sh"
-            inputPickle = files[i] + ".input.pickle"
-            outputPickle = files[i] + ".output.pickle"
-
-            # assemble job file
-            # header
-            job = self._slurmHeader(ids[i])
-
-            # command - add abspath!
-            task = """\
-                # Activate virtual environment
-                source /home/arendeiro/venv/bin/activate
-                python /home/arendeiro/coverage_parallel.py {0} {1} {2} """.format(inputPickle, outputPickle, self.bam_file)
-
-            if self.strand_wise:
-                task += "--strand-wise "
-            if self.duplicates:
-                task += "--duplicates "
-            if self.orientation:
-                task += "--orientation "
-            if self.permute:
-                task += "--permute "
-            task += "--fragment-size {0}".format(self.fragment_size)
-
-            task += """
-                # Deactivate virtual environment
-                deactivate
-                    """
-
-            job += textwrap.dedent(task)
-
-            # footer
-            job += self._slurmFooter()
-
-            # add to save attributes
-            self.jobs.append(job)
-            self.jobFiles.append(jobFile)
-            self.inputPickles.append(inputPickle)
-            self.outputPickles.append(outputPickle)
-
-            # write job file to disk
-            with open(jobFile, 'w') as handle:
-                handle.write(textwrap.dedent(job))
-
-        # Delete data if jobs are ready to submit and data is serialized
-        if hasattr(self, "jobs") and hasattr(self, "jobFiles"):
-            del self.data
-
-    def collect(self):
-        """
-        If self.is_ready(), return joined reduced data.
-        """
-        if not hasattr(self, "output"):  # if output is already stored, just return it
-            if self.is_ready():
-                # load all pickles into list
-                if self.permissive:
-                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles if os.path.isfile(outputPickle)]
-                else:
-                    outputs = [pickle.load(open(outputPickle, 'r')) for outputPickle in self.outputPickles]
-                # if all are counters, and their elements are counters, sum them
-                if all([type(outputs[i]) == dict for i in range(len(outputs))]):
-                    output = reduce(lambda x, y: dict(x, **y), outputs)
-                    if type(output) == dict:
-                        self.output = output  # store output in object
-                        self._rm_temps()  # delete tmp files
-                        return self.output
+    import itertools
+    from collections import Counter
+    distances = Counter()
+  
+    try:
+        for i, (d1, d2) in enumerate(itertools.combinations(intervals, 2)):
+            if i % 1000000 == 0:
+                print(i)
+            if d1.chrom != d2.chrom:
+                continue
+            # distance end-to-end
+            if abs(d1.end <= d2.start):
+                if abs(d2.start - d1.end) < 500:
+                    distances[abs(d2.start - d1.end)] += 1
             else:
-                raise TypeError("Task is not ready yet.")
-        else:
-            return self.output
+                if abs(d1.start - d2.end) < 500:
+                    distances[abs(d1.start - d2.end)] += 1
+
+        return distances
+    except KeyboardInterrupt:
+        return distances
+
+
+def pairwiseDistances(intervals):
+    """
+    """
+    import itertools
+    from collections import Counter
+    distances = Counter()
+  
+    try:
+        for i, (d1, d2) in enumerate(itertools.combinations(intervals, 2)):
+            if i % 1000000 == 0:
+                print(i)
+            if d1.chrom != d2.chrom:
+                continue
+            # distance end-to-end
+            if abs(d1.end <= d2.start):
+                if abs(d2.start - d1.end) < 500:
+                    distances[abs(d2.start - d1.end)] += 1
+            else:
+                if abs(d1.start - d2.end) < 500:
+                    distances[abs(d1.start - d2.end)] += 1
+
+        return distances
+    except KeyboardInterrupt:
+        return distances
 
 
 def colourPerFactor(name):
@@ -327,7 +297,7 @@ def colourPerFactor(name):
 
 # Define variables
 # projectRoot = "/projects/chipmentation/"
-projectRoot = "/media/afr/cemm-backup/chipmentation/"
+projectRoot = "/media/afr/cemm-backup1/chipmentation/"
 # projectRoot = "/home/arendeiro/chipmentation/"
 bamsDir = os.path.join(projectRoot, "data", "mapped/")
 resultsDir = os.path.join(projectRoot, "results")
@@ -340,7 +310,7 @@ MNase = os.path.join(bamsDir, "wgEncodeSydhNsomeK562Aln.merged.bam")
 
 samples = {"CM": CM, "ATAC": ATAC, "DNASE": DNase, "MNASE": MNase}
 
-dyadsFile = "/home/afr/cemm-backup/chipmentation/data/nucleoATAC/10M_CM_H3K4ME1_PE/t"
+dyadsFile = "/media/afr/cemm-backup1/chipmentation/data/nucleoATAC/10M_CM_H3K4ME1_PE/dyads_3col.bed"
 
 windowRange = (-400, 400)
 fragmentsize = 1
@@ -366,50 +336,34 @@ aveSignals = pd.DataFrame(columns=['sample'])
 for name, bam in samples.items():
     print(name)
 
-    if name not in aveSignals.sample.unique():
+    if name not in aveSignals['sample'].unique():
         # Load bam
         bamFile = HTSeq.BAM_Reader(bam)
 
-        cov = coverage(bamFile, dyads, fragmentsize, strand_specific=True)
-
-        # Make multiindex dataframe
-        levels = [range(len(cov)), ["+", "-"]]
-        labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov)) for y in (0, 1)]]
-        index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
-        df = pd.DataFrame(np.vstack(cov), index=index)
-        df.columns = range(windowRange[0], windowRange[1] + 1)
-
-        # Save raw data
-        savePandas(os.path.join(plotsDir, "pickles", "dyad_coverage" + name + ".pdy"), df)
+        cov = coverage(bamFile, dyads, fragmentsize)
 
         # Average signals
-        df2 = pd.DataFrame({
+        df = pd.DataFrame({
             "sample": name,
-            "average": df.apply(np.mean, axis=0),                            # both strands
-            "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-            "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-            "x": df.columns
+            "average": cov,                            # both strands
+            "x": range(windowRange[0], windowRange[1] + 1)
         })
-        aveSignals = pd.concat([aveSignals, df2])
-        pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "dyad_coverage.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        aveSignals = pd.concat([aveSignals, df])
+        pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "dyad_coverage-H3K4me1-all.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
 
-aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "dyad_coverage.pickle"), "r"))
-aveSignals.drop_duplicates(inplace=True)
-aveSignals["type"] = "raw"
-aveSignals.reset_index(drop=True, inplace=True)
+aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "dyad_coverage-H3K4me1-all.pickle"), "r"))
 
 # Plots
 aveSignals.groupby(['sample']).plot(['x'], labels=['sample'])
 
-fig, axis = plt.subplots(2, 2, sharex=True, figsize=(10, 8))
-for i in range(len(aveSignals.sample.unique())):
-    sample = aveSignals.sample.unique()[i]
+fig, axis = plt.subplots(2, 1, sharex=True, figsize=(10, 8))
+for i in range(len(aveSignals['sample'].unique())):
+    sample = aveSignals['sample'].unique()[i]
     sub = aveSignals[
         (aveSignals['sample'] == sample) &
-        (aveSignals['type'] == "raw") &
-        (aveSignals['x'] >= -98) &
-        (aveSignals['x'] <= 98)
+        (aveSignals['x'] > - 155) &
+        (aveSignals['x'] < 145)
     ]
 
     if i is 0:
@@ -425,16 +379,128 @@ for i in range(len(aveSignals.sample.unique())):
         if s == sample:
             sub2 = sub[sub['sample'] == s]
             colour = colourPerFactor(s)
-            axis[j][k].plot(sub2.average, color=colour, linestyle="-", alpha=1)
+            axis[i].plot(sub2['x'] + 5, sub2.average, color=colour, linestyle="-", alpha=1)
         else:
             sub2 = sub[sub['sample'].str.contains(s)]
             colour = colourPerFactor(s)
-            axis[j][k].plot(sub2.average, color=colour, linestyle="-", alpha=0.35)
+            axis[i].plot(sub2['x'] + 5, sub2.average, color=colour, linestyle="-", alpha=0.35)
 
     # subplot attributes
-    axis[j][k].set_title(sample)
-    axis[j][k].set_xlabel("Distance to dyad (bp)")
-    axis[j][k].set_ylabel("Insertion frequency")
-plt.xticks([0, 50, 100, 150, 200], [-100, -50, 0, 50, 100])
-plt.savefig(os.path.join(plotsDir, "dyad_coverage.signals.pdf"), bbox_inches='tight')
+    axis[i].set_title(sample)
+    axis[i].set_xlabel("Distance to dyad (bp)")
+    axis[i].set_ylabel("Insertion frequency")
+plt.savefig(os.path.join(plotsDir, "dyad_coverage.signals-alldata.pdf"), bbox_inches='tight')
 plt.close()
+
+
+# Distances between nucleosomes
+nucleosomesFile = "/media/afr/cemm-backup1/chipmentation/data/nucleoATAC/10M_CM_H3K4ME1_PE/nucleosomes.bed"
+nucleosomes = pybedtools.BedTool(nucleosomesFile)
+
+intervals = list()
+for iv in nucleosomes:
+    intervals.append(HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end))
+nucleosomes = intervals
+
+dists = pairwiseDistances(nucleosomes)
+
+pickle.dump(dists, open(os.path.join(plotsDir, "nucleosome-distances.pickle"), 'wb'))
+
+
+df = pd.read_csv(nucleosomesFile, sep="\t", header=None)
+df = df[[0, 1, 2]]
+df.columns = ['chrom', 'start', 'end']
+
+c = list()
+
+for chrom, indices in df.groupby('chrom').groups.items():
+    df2 = df.ix[indices].reset_index(drop=True)
+
+    df2.apply(lambda x: [x - x[i] for i in range(len(df2))], axis=0)
+
+    for i in range(len(df2)):
+        s = df2['end'][i] - df2['start']
+        c += s.tolist()
+        
+
+# Positive NucleoATAC signal around TSSs
+import BedGraphReader 
+import numpy as np
+import pybedtools
+
+bg_file = "/media/afr/cemm-backup1/chipmentation/data/nucleoATAC/10M_CM_H3K4ME1_PE/K562_10M_CM_H3K4ME1_nan_PE_1_1_hg19.nucleoatac_signal.smooth.bedgraph"
+bg_file = "/media/afr/cemm-backup1/chipmentation/data/nucleoATAC/10M_CM_H3K4ME1_PE/K562_10M_CM_H3K4ME1_nan_PE_1_1_hg19.occ.bedgraph"
+
+chromsizes = pybedtools.get_chromsizes_from_ucsc('hg19')
+
+chromsizes = {chrom: end for chrom, (start, end) in chromsizes.items()}
+genome = BedGraphReader.load_bedgraph(bg_file, chromsizes)  # actually read bed graph file
+
+ctcf = pybedtools.BedTool("/media/afr/cemm-backup1/chipmentation/data/peaks/K562_10M_CHIP_CTCF_nan_nan_0_0_hg19/K562_10M_CHIP_CTCF_nan_nan_0_0_hg19_peaks.motifCentered.bed")
+cage = pybedtools.BedTool("/media/afr/cemm-backup1/chipmentation/annotation/hg19.cage_peak.robust.TATA_Annotated.expr_Annotated.K562_Expressed.1kb.tsv")
+
+profile = np.zeros(len(cage[0]))
+for tss in cage:
+    if tss.chrom in genome.keys():
+        signal = genome[tss.chrom][tss.start: tss.end]
+        if len(signal[signal < 0]) > 1:
+            print(1)
+        signal[signal < 0] = 0
+        profile += signal
+        if tss.strand == "+":
+            profile += signal
+        else:
+            profile += signal[::-1]
+
+
+# ChIPmentation coverage in MNase dyads
+bam = "/media/afr/cemm-backup1/chipmentation/data/mapped/K562_10M_CM_H3K4ME1_nan_PE_1_1_hg19.trimmed.bowtie2.shifted.dups.bam"
+bamFile = HTSeq.BAM_Reader(bam)
+
+dyads = "/media/afr/cemm-backup1/dyads/dyads.bed"
+dyads = pybedtools.BedTool(dyads)
+dyads = dyads.slop(b=300, genome="hg19")
+intervals = list()
+for iv in dyads:
+    intervals.append(HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end))
+dyads = intervals
+
+cov = coverage(bamFile, dyads, fragmentsize)
+
+pickle.dump(cov, open(os.path.join(plotsDir, "pickles", "dyad_coverage-H3K4me1_in_MNase_dyads-all.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+cov = pickle.load(open(os.path.join(plotsDir, "pickles", "dyad_coverage-H3K4me1_in_MNase_dyads-all.pickle"), "r"))
+
+
+plt.plot(np.array(range(-150, 150)), cov[145:445], linestyle="-", alpha=1)
+plt.title("CM")
+plt.xlabel("Distance to MNase-seq dyad (bp)")
+plt.ylabel("Insertion frequency")
+plt.savefig(os.path.join(plotsDir, "dyad_coverage.H3K4me1_in_MNase_dyads-alldata.pdf"), bbox_inches='tight')
+plt.close()
+
+
+
+# MNase in ChIPmentation dyads
+bam = "/media/afr/cemm-backup1/chipmentation/data/mapped/wgEncodeSydhNsomeK562Aln.merged.bam"
+bamFile = HTSeq.BAM_Reader(bam)
+
+dyadsFile = "/media/afr/cemm-backup1/chipmentation/data/nucleoATAC/10M_CM_H3K4ME1_PE/dyads_3col.bed"
+dyads = pybedtools.BedTool(dyadsFile)
+dyads = dyads.slop(genome=genome, b=windowWidth / 2)
+intervals = list()
+for iv in dyads:
+    intervals.append(HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end))
+dyads = intervals
+
+cov = coverage(bamFile, dyads, fragmentsize)
+pickle.dump(cov, open(os.path.join(plotsDir, "pickles", "dyad_coverage-MNase_in_H3K4me1_dyads-all.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+mn = pickle.load(open(os.path.join(plotsDir, "pickles", "dyad_coverage-MNase_in_H3K4me1_dyads-all.pickle"), "r"))
+
+plt.plot(range(-200, 200), cov[100:500])
+plt.savefig(os.path.join(plotsDir, "dyad_coverage.MNase_in_H3K4me1_dyads-alldata.pdf"), bbox_inches='tight')
+
+
+cov = coverage(bamFile, dyads, 36)
+pickle.dump(cov, open(os.path.join(plotsDir, "pickles", "dyad_coverage-MNase_in_H3K4me1_dyads-36bp-all.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+mn = pickle.load(open(os.path.join(plotsDir, "pickles", "dyad_coverage-MNase_in_H3K4me1_dyads-36bp-all.pickle"), "r"))
+
