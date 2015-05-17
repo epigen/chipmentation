@@ -13,6 +13,7 @@ from collections import OrderedDict
 import re
 import HTSeq
 import pybedtools
+import MOODS
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -121,7 +122,7 @@ def loadPandas(fname, mmap_mode='r'):
         return pd.Series(values, index=meta[0]).copy()
 
 
-def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, strand_specific=False):
+def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=False, strand_specific=False):
     """
     Gets read coverage in bed regions.
     Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
@@ -243,22 +244,9 @@ def colourPerFactor(name):
     elif "MNASE" in name:
         return "#00523b"
     elif "ATAC" in name:
-        return "#001f07"
+        return "#2d3730ff"
     else:
         raise ValueError
-
-
-def getMNaseProfile(chrom, start, end):
-    command = "bigWigToWig -chrom={0} -start={1} -end={2} ".format(chrom, start, end)
-    command += "/home/arendeiro/encode_mnase_k562/wgEncodeSydhNsomeK562Sig.bigWig tmp.wig; "
-    command += "tail -n +2 tmp.wig | cut -f 4 > tmp2.wig"
-    os.system(command)
-
-    try:
-        df = pd.read_csv("tmp2.wig", sep="\t", header=-1)
-        return df[0].tolist()
-    except ValueError:
-        return [0] * (end - start)
 
 
 def exportToJavaTreeView(df, filename):
@@ -276,6 +264,91 @@ def exportToJavaTreeView(df, filename):
     df.to_csv(filename, sep="\t", index=False)
 
 
+def getPWMscores(peaks, PWM, fasta, peaksFile):
+    # Get nucleotides
+    seq = peaks.sequence(s=True, fi=fasta)
+    with open(seq.seqfn) as handle:
+        seqs = handle.read().split("\n")[1::2]  # get fasta sequences
+
+    # Match strings with PWM
+    scores = list()
+    for sequence in seqs:
+        result = MOODS.search(sequence, [PWM], 30)
+        scores.append(np.array([j for i, j in result[0]]))
+
+    names = open(peaksFile).read().split("\n")
+    names.pop(-1)
+    names = [line.split("\t")[3] for line in names]
+
+    return pd.DataFrame(scores, index=names, columns=range(-990, 990))
+
+
+def zscore(x):
+    return (x - np.mean(x)) / np.std(x)
+
+
+def callFootprints(cuts, annot):
+    """
+    Call footprints.
+    Requires dataframe with cuts and dataframe with annotation (2> cols).
+    """
+    import rpy2.robjects as robj  # for ggplot in R
+    import rpy2.robjects.pandas2ri  # for R dataframe conversion
+
+    # Plot with R
+    footprint = robj.r("""
+    library(CENTIPEDE)
+
+    function(cuts, annot) {
+        centFit <- fitCentipede(
+            Xlist = list(as.matrix(cuts)),
+            Y = as.matrix(annot)
+        )
+        # imageCutSites(cuts[order(centFit$PostPr),][c(1:100, (dim(cuts)[1]-100):(dim(cuts)[1])),])
+        # plotProfile(centFit$LambdaParList[[1]],Mlen=2)
+        return(centFit$PostPr)
+    }
+
+    """)
+
+    # convert the pandas dataframe to an R dataframe
+    robj.pandas2ri.activate()
+    cuts_R = robj.conversion.py2ri(cuts)
+    annot_R = robj.conversion.py2ri(annot)
+
+    # run the plot function on the dataframe
+    return np.ndarray.flatten(robj.conversion.ri2py(footprint(cuts_R, annot_R)))
+
+
+def plotFootprintModel(cuts, annot):
+    """
+    Plot footprint model.
+    Requires dataframe with cuts and dataframe with annotation (2> cols).
+    """
+    import rpy2.robjects as robj  # for ggplot in R
+    import rpy2.robjects.pandas2ri  # for R dataframe conversion
+
+    # Plot with R
+    footprint = robj.r("""
+    library(CENTIPEDE)
+
+    function(cuts, annot) {
+        imageCutSites(cuts[order(centFit$PostPr),][c(1:100, (dim(cuts)[1]-100):(dim(cuts)[1])),])
+        plotProfile(centFit$LambdaParList[[1]],Mlen=2)
+        return(centFit$PostPr)
+    }
+
+    """)
+
+    # convert the pandas dataframe to an R dataframe
+    robj.pandas2ri.activate()
+    cuts_R = robj.conversion.py2ri(cuts)
+    annot_R = robj.conversion.py2ri(annot)
+
+    # run the plot function on the dataframe
+    return np.ndarray.flatten(robj.conversion.ri2py(footprint(cuts_R, annot_R)))
+
+
 # Define variables
 # projectRoot = "/projects/chipmentation/"
 projectRoot = "/media/afr/cemm-backup/chipmentation/"
@@ -283,9 +356,11 @@ projectRoot = "/media/afr/cemm-backup/chipmentation/"
 bamsDir = os.path.join(projectRoot, "data", "mapped/")
 peaksDir = os.path.join(projectRoot, "data", "peaks/")
 resultsDir = os.path.join(projectRoot, "results")
-plotsDir = os.path.join(resultsDir, "plots")
+plotsDir = os.path.join(resultsDir, "footprints")
+os.mkdir(plotsDir)
 DNase = os.path.join(bamsDir, "wgEncodeUwDnaseK562Aln.merged.bam")
 MNase = os.path.join(bamsDir, "wgEncodeSydhNsomeK562Aln.merged.bam")
+NexteraBackground = ""
 
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
@@ -312,6 +387,7 @@ samples.loc[:, "peakFile"] = samples["peakFile"].apply(lambda x: re.sub(fhPath, 
 sampleSubset = samples[
     (samples["technique"] == "CM") &
     (samples["ip"].str.contains("CTCF|GATA1|PU1|REST")) &
+    (samples["numberCells"] == "10M") &
     (samples["biologicalReplicate"] == 0)
 ].reset_index(drop=True)
 sampleSubset = sampleSubset.sort(["ip", "technique"])
@@ -319,22 +395,13 @@ sampleSubset = sampleSubset.sort(["ip", "technique"])
 # subset samples into signals
 signals = samples[
     samples["sampleName"].str.contains(
-        "K562_10M_CHIP_H3K27AC_nan_nan_1_0_hg19|" +
-        "K562_10M_CM_H3K27AC_nan_nan_1_0_hg19|" +
-        "K562_10M_CHIP_H3K4ME1_nan_nan_1_0_hg19|" +
-        "K562_10M_CM_H3K4ME1_nan_nan_0_0_hg19|" +
-        "K562_500K_CHIP_H3K27ME3_nan_nan_0_0_hg19|" +
-        "K562_500K_CM_H3K27ME3_nan_nan_0_0_hg19|" +
-        "K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19|" +
-        "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19|" +
-        "K562_50K_ATAC_nan_nan_nan_0_0_hg19|" +
-        "K562_500K_ATAC_INPUT_nan_01ULTN5_PE_1_1_hg19"
+        "K562_50K_ATAC_nan_nan_nan_0_0_hg19"
     )
 ].reset_index(drop=True)
 signals = signals.sort(["ip", "technique"])
 
 signals = signals.append(pd.Series(data=["DNase", DNase], index=["sampleName", "filePath"]), ignore_index=True)
-signals = signals.append(pd.Series(data=["MNase", MNase], index=["sampleName", "filePath"]), ignore_index=True)
+# signals = signals.append(pd.Series(data=["MNase", MNase], index=["sampleName", "filePath"]), ignore_index=True)
 
 windowRange = (-1000, 1000)
 fragmentsize = 1
@@ -345,8 +412,23 @@ windowWidth = abs(windowRange[0]) + abs(windowRange[1])
 
 gapsRepeats = pybedtools.BedTool(os.path.join("/media/afr/cemm-backup", "reference/hg19/hg19_gapsRepeats.bed"))
 
+
+# Get genome fasta file
+fasta = pybedtools.BedTool("/media/afr/cemm-backup/reference/hg19/forBowtie2/hg19.fa")
+# Get PWM
+PWM = [
+    [0.83593967562, 0.9612721605805, 0.924068101918, 1.06685938079, 0.797339497119, 1.18221399883, 0.8166032303705, 0.731357810088, 0.8009085680465, 0.6413220540835, 1.24263470188, 1.27537587614, 1.093537759345, 1.270194775255, 0.607808747652, 1.1045452182715, 0.830270118282, 0.9203172509935, 0.7788696601795, 0.820042458443, 1.071536938715],
+    [1.058289907845, 0.9590219891645, 1.307638114905, 0.9474308687955, 1.625234242265, 0.703349925951, 1.126706911395, 1.15491741682, 1.29497649068, 1.446820024825, 0.669382028924, 0.673327304706, 0.85726490824, 0.842842178544, 1.703477693555, 0.883047249808, 0.911871662974, 1.071061400505, 1.12081896184, 1.356389737925, 1.075154356595],
+    [1.075154356595, 1.356389737925, 1.12081896184, 1.071061400505, 0.911871662974, 0.883047249808, 1.703477693555, 0.842842178544, 0.85726490824, 0.673327304706, 0.669787971405, 1.446820024825, 1.29497649068, 1.15491741682, 1.126706911395, 0.703349925951, 1.625234242265, 0.9474308687955, 1.307638114905, 0.9590219891645, 1.058289907845],
+    [1.071536938715, 0.820042458443, 0.7788696601795, 0.9203172509935, 0.830270118282, 1.1045452182715, 0.607808747652, 1.270194775255, 1.093537759345, 1.27537587614, 1.21553439588, 0.6413220540835, 0.8009085680465, 0.731357810088, 0.8166032303705, 1.18221399883, 0.797339497119, 1.06685938079, 0.924068101918, 0.9612721605805, 0.83593967562]
+]
+
+
 # Loop through all samples, compute coverage in peak regions centered on motifs
-for i in range(len(sampleSubset)):
+aveSignals = pd.DataFrame(columns=["sample", "signal"])
+foots = dict()
+
+for i in [1]:
     sampleName = sampleSubset['sampleName'][i]
     print(sampleName)
 
@@ -358,6 +440,9 @@ for i in range(len(sampleSubset)):
         peaks = sampleSubset['peakFile'][i]
 
     motifCentered = re.sub("\..*", ".", peaks) + "motifCentered.bed"
+
+    # replace with CHIP (do it on CHIP peaks)
+    motifCentered = re.sub("CM", "CHIP", motifCentered)
     print(motifCentered)
 
     # Load peak file from bed files centered on motif, make window around
@@ -367,46 +452,70 @@ for i in range(len(sampleSubset)):
         print("Sample's peaks were not found: %s" % sampleName)
         continue
 
-    # Exclude peaks in gaps or repeats
-    peaks.intersect(b=gapsRepeats, v=True, wa=True)
-    peaks = bedToolsInterval2GenomicInterval(peaks)
+    peaksInt = bedToolsInterval2GenomicInterval(peaks)
 
     # Filter peaks near chrm borders
-    for peak, interval in peaks.iteritems():
+    for peak, interval in peaksInt.iteritems():
         if interval.length < windowWidth:
-            peaks.pop(peak)
+            peaksInt.pop(peak)
+
+    # Get PWM score
+    # signalName = "PWM"
+    # print(sampleName, signalName)
+    # exportName = "-".join([sampleName, signalName])
+
+    # if signalName not in aveSignals[aveSignals['sample'] == sampleName]['signal'].unique():
+    #     if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy")):
+    #         ctrl = getPWMscores(peaks, PWM, fasta, motifCentered)
+    #         # Save raw data
+    #         savePandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy"), ctrl)
+    # else:
+    #     ctrl = loadPandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy")).copy()
+
+    # df = pd.DataFrame({
+    #     "sample": sampleName,
+    #     "signal": signalName,
+    #     "average": ctrl.apply(np.mean, axis=0),
+    #     "x": ctrl.columns
+    # })
+    # aveSignals = pd.concat([aveSignals, df])
+    # pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
+    # Get Nextera background
+    signalName = "NexteraBackground"
+    print(sampleName, signalName)
+    exportName = "-".join([sampleName, signalName])
+
+    if signalName not in aveSignals[aveSignals['sample'] == sampleName]['signal'].unique():
+        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy")):
+
+            bamFile = HTSeq.BAM_Reader(NexteraBackground)
+
+            ctrl = coverage(bamFile, peaksInt, fragmentsize, strand_specific=True)
+            # Save raw data
+            savePandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy"), ctrl)
+    else:
+        ctrl = loadPandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy")).copy()
+
+    df = pd.DataFrame({
+        "sample": sampleName,
+        "signal": signalName,
+        "average": ctrl.apply(np.mean, axis=0),
+        "x": ctrl.columns
+    })
+    aveSignals = pd.concat([aveSignals, df])
+    pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
     # Get self coverage
     signalName = sampleName
     exportName = "-".join([sampleName, signalName])
-    if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-        print(sampleName, signalName)
-        # Load bam
-        bamFile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
-
-        cov = coverage(bamFile, peaks, fragmentsize, strand_specific=True)
-
-        # Make multiindex dataframe
-        levels = [cov.keys(), ["+", "-"]]
-        labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
-        index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
-        df = pd.DataFrame(np.vstack(cov.values()), index=index)
-        df.columns = range(windowRange[0], windowRange[1])
-
-        # Save raw data
-        savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
-
-    # PU1 chip-tagmentation
-    if sampleName == "K562_10M_CM_PU1_nan_nan_0_0_hg19":
-        signalName = "K562_10M_ATAC_PU1_nan_PE_1_1_hg19"
-        exportName = "-".join([sampleName, signalName])
-        print(exportName)
-
-        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-            print(sampleName, signalName)
+    print(sampleName, signalName)
+    if signalName not in aveSignals[aveSignals['sample'] == sampleName]['signal'].unique():
+        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy")):
+            # Load bam
             bamFile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
 
-            cov = coverage(bamFile, peaks, fragmentsize, strand_specific=True)
+            cov = coverage(bamFile, peaksInt, fragmentsize, strand_specific=True)
 
             # Make multiindex dataframe
             levels = [cov.keys(), ["+", "-"]]
@@ -416,26 +525,68 @@ for i in range(len(sampleSubset)):
             df.columns = range(windowRange[0], windowRange[1])
 
             # Save raw data
-            savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+            savePandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy"), df)
+        else:
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy")).copy()
 
-    # Get control coverage
-    signalName = sampleSubset['controlSampleName'][i]
-    exportName = "-".join([sampleName, signalName])
-    if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-        print(sampleName, signalName)
-        bamFile = HTSeq.BAM_Reader(sampleSubset['controlSampleFilePath'][i])
+        # Average signal
+        ave = pd.DataFrame({
+            "sample": sampleName,
+            "signal": signalName,
+            "average": df.apply(np.mean, axis=0),                            # both strands
+            "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
+            "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
+            "x": df.columns
+        })
+        aveSignals = pd.concat([aveSignals, ave])
+        pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-        cov = coverage(bamFile, peaks, fragmentsize, strand_specific=True)
+        # Normalize signal
+        treat = df.ix[range(0, len(df), 2)].reset_index(drop=True) + df.ix[range(1, len(df), 2)].reset_index(drop=True)
+        treat.index = df.index.levels[0]
+        norm = treat / np.exp(ctrl)
 
-        # Make multiindex dataframe
-        levels = [cov.keys(), ["+", "-"]]
-        labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
-        index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
-        df = pd.DataFrame(np.vstack(cov.values()), index=index)
-        df.columns = range(windowRange[0], windowRange[1])
+        # Save normalized data
+        savePandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks-normalized.pdy"), norm)
 
-        # Save raw data
-        savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+        # Average normalized data
+        ave = pd.DataFrame({
+            "sample": sampleName,
+            "signal": signalName + "-normalized",
+            "average": norm.apply(sum, axis =0),                            # both strands
+            "positive": 0,  # positive strand
+            "negative": 0,  # negative strand
+            "x": df.columns
+        })
+        aveSignals = pd.concat([aveSignals, ave])
+        pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
+        # Centipede footprinting
+        print("calling footprints for %s" % exportName)
+        annot = pd.read_csv(re.sub("motifCentered", "motifAnnotated", motifCentered), sep="\t", header=None)
+
+        annot[3] = 1
+        annot.index = annot[0]
+        
+        # filter weird stuff out
+        annot = annot[annot[2] > -1.000000e+10]
+        norm = norm.ix[annot.index]
+
+        # sort both in the same way
+        norm.sort(inplace=True)
+        annot.sort(inplace=True)
+
+        # get 200bp in middle of window of cuts
+        n = len(norm.columns)
+        r = (- 200, 199)
+        norm = norm.loc[:, r[0]:r[1]]
+        norm = norm.dropna()
+
+        # call
+        annot = annot.ix[norm.index]
+        footprintProbs = callFootprints(norm, annot[[3, 2]])
+        foots[exportName] = footprintProbs
+        pickle.dump(foots, open(os.path.join(plotsDir, "pickles", "footprintProbs-normalized.pickle"), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
     # Get coverage over other signals
     for j in range(len(signals)):
@@ -443,115 +594,124 @@ for i in range(len(sampleSubset)):
         print(sampleName, signalName)
 
         exportName = "-".join([sampleName, signalName])
-        if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-            print(sampleName, signalName)
-            bamFile = HTSeq.BAM_Reader(signals['filePath'][j])
+        if signalName not in aveSignals[aveSignals['sample'] == sampleName]['signal'].unique():
+            if not os.path.isfile(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy")):
+                print(sampleName, signalName)
+                bamFile = HTSeq.BAM_Reader(signals['filePath'][j])
 
-            cov = coverage(bamFile, peaks, fragmentsize, strand_specific=True)
+                cov = coverage(bamFile, peaksInt, fragmentsize, strand_specific=True)
 
-            # Make multiindex dataframe
-            levels = [cov.keys(), ["+", "-"]]
-            labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
-            index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
-            df = pd.DataFrame(np.vstack(cov.values()), index=index)
-            df.columns = range(windowRange[0], windowRange[1])
+                # Make multiindex dataframe
+                levels = [cov.keys(), ["+", "-"]]
+                labels = [[y for x in range(len(cov)) for y in [x, x]], [y for x in range(len(cov.keys())) for y in (0, 1)]]
+                index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
+                df = pd.DataFrame(np.vstack(cov.values()), index=index)
+                df.columns = range(windowRange[0], windowRange[1])
 
-            # Save raw data
-            savePandas(os.path.join(plotsDir, "pickles", exportName + ".pdy"), df)
+                # Save raw data
+                savePandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy"), df)
+        else:
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy")).copy()
 
-# Average signals
-if os.path.exists(os.path.join(plotsDir, "pickles", "aveSignals.pickle")):
-    aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "r"))
-else:
-    aveSignals = pd.DataFrame(columns=["sample", "signal"])
-names = aveSignals[["sample", "signal"]].apply("-".join, axis=1).unique()
+        ave = pd.DataFrame({
+            "sample": sampleName,
+            "signal": signalName,
+            "average": df.apply(np.mean, axis=0),                            # both strands
+            "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
+            "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
+            "x": df.columns
+        })
+        aveSignals = pd.concat([aveSignals, ave])
+        pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-for i in range(len(sampleSubset)):
-    sampleName = sampleSubset['sampleName'][i]
+        # Normalize signal (not for DNASE!)
+        treat = df.ix[range(0, len(df), 2)].reset_index(drop=True) + df.ix[range(1, len(df), 2)].reset_index(drop=True)
+        treat.index = df.index.levels[0]
 
-    # Self
-    signalName = sampleName
-    exportName = "-".join([sampleName, signalName])
-    print(exportName)
+        if signalName != "DNase":
+            norm = treat / np.exp(ctrl)
+        else:
+            norm = treat
 
-    if exportName not in names:
-        if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+        # Save normalized data
+        savePandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks-normalized.pdy"), norm)
 
-            # Get self average profiles and append to dataframe
-            df = pd.DataFrame({
-                "sample": sampleName,
-                "signal": signalName,
-                "average": df.apply(np.mean, axis=0),                            # both strands
-                "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-                "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-                "x": df.columns
-            })
-            aveSignals = pd.concat([aveSignals, df])
-            pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        # Average normalized data
+        ave = pd.DataFrame({
+            "sample": sampleName,
+            "signal": signalName + "-normalized",
+            "average": norm.apply(sum, axis =0),                            # both strands
+            "positive": 0,  # positive strand
+            "negative": 0,  # negative strand
+            "x": df.columns
+        })
+        aveSignals = pd.concat([aveSignals, ave])
+        pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
-    # PU1 chip-tagmentation
-    if sampleName == "K562_10M_CM_PU1_nan_PE_1_1_hg19":
-        signalName = "K562_10M_ATAC_PU1_nan_PE_1_1_hg19"
-        exportName = "-".join([sampleName, signalName])
-        print(exportName)
+        # Centipede footprinting
+        if signalName in ['K562_50K_ATAC_nan_nan_nan_0_0_hg19', 'DNase']:
+            print("calling footprints for %s" % exportName)
+            annot = pd.read_csv(re.sub("motifCentered", "motifAnnotated", motifCentered), sep="\t", header=None)
 
-        if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+            annot[3] = 1
+            annot.index = annot[0]
+            
+            # filter weird stuff out
+            annot = annot[annot[2] > -1.000000e+10]
+            norm = norm.ix[annot.index]
 
-            # Get self average profiles and append to dataframe
-            df = pd.DataFrame({
-                "sample": sampleName,
-                "signal": signalName,
-                "average": df.apply(np.mean, axis=0),                            # both strands
-                "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-                "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-                "x": df.columns
-            })
-            aveSignals = pd.concat([aveSignals, df])
-            pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            # sort both in the same way
+            norm.sort(inplace=True)
+            annot.sort(inplace=True)
 
-    # Control
-    signalName = sampleSubset['controlSampleName'][i]
-    exportName = "-".join([sampleName, signalName])
-    print(exportName)
+            # get 200bp in middle of window of cuts
+            n = len(norm.columns)
+            r = (- 200, 199)
+            norm = norm.loc[:, r[0]:r[1]]
+            norm = norm.dropna()
 
-    if exportName not in names:
-        # Get control average profiles and append to dataframe
-        if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
-            df = pd.DataFrame({
-                "sample": sampleName,
-                "signal": signalName,
-                "average": df.apply(np.mean, axis=0),                            # both strands
-                "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-                "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-                "x": df.columns
-            })
-            aveSignals = pd.concat([aveSignals, df])
-            pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+            # call
+            annot = annot.ix[norm.index]
+            footprintProbs = callFootprints(norm, annot[[3, 2]])
+            foots[exportName] = footprintProbs
+            pickle.dump(foots, open(os.path.join(plotsDir, "pickles", "footprintProbs-normalized.pickle"), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
-    for j in range(len(signals)):
-        signalName = signals['sampleName'][j]
-        exportName = "-".join([sampleName, signalName])
-        print(exportName)
 
-        if exportName not in names:
-            if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-                df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
-                # Get average profiles and append to dict
-                df = pd.DataFrame({
-                    "sample": sampleName,
-                    "signal": signalName,
-                    "average": df.apply(np.mean, axis=0),                            # both strands
-                    "positive": df.ix[range(0, len(df), 2)].apply(np.mean, axis=0),  # positive strand
-                    "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0),  # negative strand
-                    "x": df.columns
-                })
-                aveSignals = pd.concat([aveSignals, df])
-                pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+# Done with collecting data
+foots = pickle.load(open(os.path.join(plotsDir, "pickles", "footprintProbs-normalized.pickle"), 'r'))
 
-aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "aveSignals.pickle"), "r"))
+
+# Plot footprint probabilities
+foots = pickle.load(open(os.path.join(plotsDir, "pickles", "footprintProbs-normalized.pickle"), 'rb'))
+
+fig, axis = plt.subplots(2, 2, sharey=True, figsize=(10, 8))
+for i, TF in enumerate(["CTCF", "GATA1", "PU1", "REST"]):
+    TF = "K562_10M_CM_" + TF + "_nan_nan_0_0_hg19"
+    d = pd.DataFrame([
+        np.ndarray.flatten(foots[TF + "-" + TF]),
+        np.ndarray.flatten(foots[TF + "-DNase"]),
+        np.ndarray.flatten(foots[TF + "-K562_50K_ATAC_nan_nan_nan_0_0_hg19"]),
+    ]).T
+    d.columns = ["CM_" + TF, "DNase_" + TF, "ATAC_" + TF]
+
+    # Plot
+    if i is 0:
+        j, k = (0, 0)
+    elif i is 1:
+        j, k = (0, 1)
+    elif i is 2:
+        j, k = (1, 0)
+    elif i is 3:
+        j, k = (1, 1)
+
+    sns.violinplot(d.dropna(), ax=axis[j][k])
+    sns.despine(left=True, bottom=True, ax=axis[j][k])
+plt.savefig(os.path.join(plotsDir, "footprint.probs.independent.violinplot-nodots-normalized.pdf"), bbox_inches='tight')
+plt.close()
+
+
+# Look at aggregate signal
+aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "r"))
 aveSignals.drop_duplicates(inplace=True)
 aveSignals["type"] = "raw"
 aveSignals.reset_index(drop=True, inplace=True)
@@ -562,35 +722,24 @@ df2 = pd.DataFrame()
 
 for sample in df['sample'].unique():
     for signal in df[df['sample'] == sample]['signal'].unique():
-        for strand in ["average", "positive", "negative"]:
+        if signal == "PWM":
+            continue
+        for strand in ["average"]:
             treat = df[
                 (df["sample"] == sample) &
                 (df["signal"] == signal) &
                 (df['x'] >= -400) &
                 (df['x'] <= 400)
-            ][strand]
+            ][strand].tolist()
 
-            controlName = sampleSubset.loc[sampleSubset["sampleName"] == sample, "controlSampleName"]
-            controlName = controlName.tolist()[0]
             ctrl = df[
                 (df["sample"] == sample) &
-                (df["signal"] == controlName) &
+                (df["signal"] == "PWM") &
                 (df['x'] >= -400) &
                 (df['x'] <= 400)
-            ][strand]
+            ][strand].tolist()
 
-            # standardize: 0-1
-            treat = (treat - treat.min()) / (treat.max() - treat.min())
-            ctrl = (ctrl - ctrl.min()) / (ctrl.max() - ctrl.min())
-
-            # normalize by input
-            norm = np.array(treat) - np.array(ctrl)
-
-            # smooth
-            treat = smooth(treat)
-            norm = smooth(norm)
-
-            # add raw scalled and smoothed
+            # add raw scalled
             tmp = pd.DataFrame()
             tmp[strand] = treat
             tmp['sample'] = sample
@@ -599,6 +748,24 @@ for sample in df['sample'].unique():
             tmp['type'] = "raw"
             df2 = df2.append(tmp, ignore_index=True)
 
+            # smooth
+            treatSmoothed = smooth(np.array(treat))
+
+            # add raw scalled and smoothed
+            tmp = pd.DataFrame()
+            tmp[strand] = treatSmoothed
+            tmp['sample'] = sample
+            tmp['signal'] = signal
+            tmp['x'] = np.array(range(len(tmp))) - (len(tmp) / 2)
+            tmp['type'] = "rawSmooth"
+            df2 = df2.append(tmp, ignore_index=True)
+
+            # normalize (divide by log(PWM))
+            norm = treat / np.exp(np.array(ctrl))
+
+            # smooth
+            normSmoothed = smooth(norm)
+
             tmp = pd.DataFrame()
             tmp[strand] = norm
             tmp['sample'] = sample
@@ -606,6 +773,15 @@ for sample in df['sample'].unique():
             tmp['x'] = np.array(range(len(tmp))) - (len(tmp) / 2)
             tmp['type'] = "norm"
             df2 = df2.append(tmp, ignore_index=True)
+
+            tmp = pd.DataFrame()
+            tmp[strand] = normSmoothed
+            tmp['sample'] = sample
+            tmp['signal'] = signal
+            tmp['x'] = np.array(range(len(tmp))) - (len(tmp) / 2)
+            tmp['type'] = "normSmooth"
+            df2 = df2.append(tmp, ignore_index=True)
+
 
 # append normalized df to df
 aveSignals = df2
@@ -626,11 +802,23 @@ grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
 grid.add_legend()
 plt.savefig(os.path.join(plotsDir, "footprints.raw.pdf"), bbox_inches='tight')
 
+sub = aveSignals[
+    (aveSignals['type'] == "rawSmooth") &
+    (aveSignals['x'] >= -400) &
+    (aveSignals['x'] <= 400)
+]
+
+grid = sns.FacetGrid(sub, col="sample", hue="signal", sharey=False, col_wrap=4)
+grid.map(plt.plot, "x", "average")
+grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+grid.add_legend()
+plt.savefig(os.path.join(plotsDir, "footprints.rawSmooth.pdf"), bbox_inches='tight')
+
 
 # individual
 for sample in aveSignals['sample'].unique():
     sub = aveSignals[
-        (aveSignals['sample'] == sample) &
+        (aveSignals['sample'] == "K562_10M_CM_CTCF_nan_nan_0_0_hg19") &
         (aveSignals['type'] == "raw") &
         (aveSignals['x'] >= -400) &
         (aveSignals['x'] <= 400)
@@ -644,10 +832,41 @@ for sample in aveSignals['sample'].unique():
     plt.savefig(os.path.join(plotsDir, sample + ".footprints.raw.pdf"), bbox_inches='tight')
 
 
+# individual one plot
+for sample in aveSignals['sample'].unique():
+    fig = plt.figure()
+    for signal in ['DNase', sample, 'K562_50K_ATAC_nan_nan_nan_0_0_hg19']:
+        sub = aveSignals[
+            (aveSignals['sample'] == sample) &
+            (aveSignals['signal'] == signal + "-normalized") &
+            (aveSignals['type'] == "raw") &
+            (aveSignals['x'] >= -400) &
+            (aveSignals['x'] <= 400)
+        ]
+        if len(sub) > 0:
+            plt.plot(zscore(smooth(sub['average'])), label=signal)
+    plt.legend()
+
+
+for sample in aveSignals['sample'].unique():
+    sub = aveSignals[
+        (aveSignals['sample'] == sample) &
+        (aveSignals['type'] == "rawSmooth") &
+        (aveSignals['x'] >= -400) &
+        (aveSignals['x'] <= 400)
+    ]
+
+    # plot
+    grid = sns.FacetGrid(sub, col="signal", hue="signal", sharey=False, col_wrap=4)
+    grid.map(plt.plot, "x", "average")
+    # grid.set(xlim=(-400, 400))
+    grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+    plt.savefig(os.path.join(plotsDir, sample + ".footprints.rawSmooth.pdf"), bbox_inches='tight')
+
+
 # several TF footprints
 sub = aveSignals[
     (aveSignals['sample'].str.contains("CTCF|GATA1|PU1|REST")) &
-    (aveSignals['signal'].str.contains("CTCF|GATA1|PU1|REST")) &
     (aveSignals['type'] == "raw") &
     (aveSignals['x'] >= -400) &
     (aveSignals['x'] <= 400)
@@ -659,9 +878,24 @@ grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
 grid.add_legend()
 plt.savefig(os.path.join(plotsDir, "footprints.raw.pdf"), bbox_inches='tight')
 
+sub = aveSignals[
+    (aveSignals['sample'].str.contains("CTCF|GATA1|PU1|REST")) &
+    (aveSignals['signal'].str.contains("CTCF|GATA1|PU1|REST")) &
+    (aveSignals['type'] == "rawSmooth") &
+    (aveSignals['x'] >= -400) &
+    (aveSignals['x'] <= 400)
+]
+
+grid = sns.FacetGrid(sub, col="sample", hue="signal", sharey=False, col_wrap=4)
+grid.map(plt.plot, "x", "average")
+grid.fig.subplots_adjust(wspace=0.5, hspace=0.5)
+grid.add_legend()
+plt.savefig(os.path.join(plotsDir, "footprints.rawSmooth.pdf"), bbox_inches='tight')
+
 
 # Fig 3:
 # compare footprints of various techniques
+# plot large area with smoothed signal
 aveSignals['ip'] = aveSignals.apply(lambda x: x['sample'].split("_")[3], axis=1)
 
 fig, axis = plt.subplots(2, 2, sharex=True, figsize=(10, 8))
@@ -670,7 +904,7 @@ for i in range(len(aveSignals.ip.unique())):
     sub = aveSignals[
         (aveSignals['ip'] == ip) &
         (aveSignals['sample'].str.contains("10M")) &
-        (aveSignals['type'] == "raw") &
+        (aveSignals['type'] == "rawSmooth") &
         (aveSignals['x'] >= -400) &
         (aveSignals['x'] <= 400)
     ]
@@ -699,16 +933,19 @@ for i in range(len(aveSignals.ip.unique())):
     axis[j][k].set_title(ip)
     axis[j][k].legend(loc="best")
     axis[j][k].set_xlabel("Distance to motif")
-plt.savefig(os.path.join(plotsDir, "footprints.raw.signals.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join(plotsDir, "footprints.rawSmooth.signals.pdf"), bbox_inches='tight')
 plt.close()
 
+
+# compare footprints of various techniques
+# plot small area with raw signal
 fig, axis = plt.subplots(2, 2, sharex=True, figsize=(10, 8))
 for i in range(len(aveSignals.ip.unique())):
     ip = aveSignals.ip.unique()[i]
     sub = aveSignals[
         (aveSignals['ip'] == ip) &
         (aveSignals['sample'].str.contains("10M")) &
-        (aveSignals['type'] == "raw") &
+        (aveSignals['type'] == "rawSmooth") &
         (aveSignals['x'] >= -100) &
         (aveSignals['x'] <= 100)
     ]
@@ -737,12 +974,13 @@ for i in range(len(aveSignals.ip.unique())):
     axis[j][k].set_title(ip)
     axis[j][k].legend(loc="best")
     axis[j][k].set_xlabel("Distance to motif")
-plt.savefig(os.path.join(plotsDir, "footprints.raw.signals.zoom.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join(plotsDir, "footprints.rawSmooth.signals.zoom.pdf"), bbox_inches='tight')
 plt.close()
 
 
-# Supplement (maybe):
+# Supplement:
 # compare footprints of different cell numbers for the same factor
+# plot large area with smoothed signal
 aveSignals['ip'] = aveSignals.apply(lambda x: x['sample'].split("_")[3], axis=1)
 sub = aveSignals[aveSignals['sample'].str.contains("CTCF|GATA1|PU1|REST")]
 
@@ -766,7 +1004,7 @@ for i in range(len(aveSignals.ip.unique())):
             (aveSignals['ip'] == ip) &
             (aveSignals['sample'] == sample) &
             (aveSignals['signal'] == sample) &
-            (aveSignals['type'] == "raw") &
+            (aveSignals['type'] == "rawSmooth") &
             (aveSignals['x'] >= -400) &
             (aveSignals['x'] <= 400)
         ]
@@ -786,12 +1024,13 @@ for i in range(len(aveSignals.ip.unique())):
     axis[j][k].set_title(ip)
     axis[j][k].legend()
     axis[j][k].set_xlabel("Distance to motif")
-plt.savefig(os.path.join(plotsDir, "footprints.raw.sameIP.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join(plotsDir, "footprints.rawSmooth.sameIP.pdf"), bbox_inches='tight')
 plt.close()
 
-# now zoom in
-fig, axis = plt.subplots(2, 2, sharex=True, figsize=(10, 8))
 
+# compare footprints of different cell numbers for the same factor
+# plot small area with raw signal
+fig, axis = plt.subplots(2, 2, sharex=True, figsize=(10, 8))
 for i in range(len(aveSignals.ip.unique())):
     ip = aveSignals.ip.unique()[i]
     sub = aveSignals[aveSignals['ip'] == ip]
@@ -842,20 +1081,24 @@ for sampleName in sampleSubset['sampleName'].unique():
     print(exportName)
 
     if os.path.isfile(os.path.join(plotsDir, "pickles", exportName + ".pdy")):
-        if not os.path.isfile(os.path.join(plotsDir, "cdt", exportName + ".cdt")):
-            try:
-                df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
-            except:
-                print("Couldn't load sample %s" % sampleName)
-                continue
+        # if not os.path.isfile(os.path.join(plotsDir, "cdt", exportName + ".cdt")):
+        try:
+            df = loadPandas(os.path.join(plotsDir, "pickles", exportName + ".pdy")).copy()
+        except:
+            print("Couldn't load sample %s" % sampleName)
+            continue
 
-            pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
-            neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
-            df = (pos + neg) / 2
+        pos = df.ix[range(0, len(df), 2)].reset_index(drop=True)  # positive strand
+        neg = df.ix[range(1, len(df), 2)].reset_index(drop=True)  # negative strand
+        df = (pos + neg) / 2
 
-            s = df.apply(sum, axis=1)
-            df["s"] = s.tolist()
+        df = df[range(-400, 400)]
 
-            df.sort(['s'], ascending=False, inplace=True)
-            df.drop('s', axis=1, inplace=True)
-            exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".cdt"))
+        s = df.apply(sum, axis=1)
+        df["s"] = s.tolist()
+
+        df.sort(['s'], ascending=False, inplace=True)
+        df.drop('s', axis=1, inplace=True)
+        exportToJavaTreeView(df, os.path.join(plotsDir, "cdt", exportName + ".400bp.cdt"))
+    else:
+        print("Sample does not have pdy. %s" % exportName)
