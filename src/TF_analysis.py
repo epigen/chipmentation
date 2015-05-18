@@ -350,8 +350,8 @@ def plotFootprintModel(cuts, annot):
 
 
 # Define variables
-# projectRoot = "/projects/chipmentation/"
-projectRoot = "/media/afr/cemm-backup/chipmentation/"
+projectRoot = "/fhgfs/groups/lab_bock/share/projects/chipmentation/"
+# projectRoot = "/media/afr/cemm-backup/chipmentation/"
 # projectRoot = "/home/arendeiro/chipmentation/"
 bamsDir = os.path.join(projectRoot, "data", "mapped/")
 peaksDir = os.path.join(projectRoot, "data", "peaks/")
@@ -360,7 +360,7 @@ plotsDir = os.path.join(resultsDir, "footprints")
 os.mkdir(plotsDir)
 DNase = os.path.join(bamsDir, "wgEncodeUwDnaseK562Aln.merged.bam")
 MNase = os.path.join(bamsDir, "wgEncodeSydhNsomeK562Aln.merged.bam")
-NexteraBackground = ""
+NexteraBackground = "/home/arendeiro/PGA1Nextera/PGA_0001_Nextera.bam"
 
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
@@ -374,14 +374,14 @@ samples.loc[samples['sampleName'] == "K562_500K_CM_PU1_nan_nan_0_0_hg19", "peakF
 samples.loc[samples['sampleName'] == "K562_100K_CM_GATA1_nan_nan_0_0_hg19", "peakFile"] = peaksDir + "K562_10M_CM_GATA1_nan_nan_0_0_hg19/K562_10M_CM_GATA1_nan_nan_0_0_hg19_peaks.narrowPeak"
 samples.loc[samples['sampleName'] == "K562_100K_CM_REST_nan_nan_0_0_hg19", "peakFile"] = peaksDir + "K562_10M_CM_REST_nan_nan_0_0_hg19/K562_10M_CM_REST_nan_nan_0_0_hg19_peaks.narrowPeak"
 
-# replace bam path with local
-fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/"
-samples.loc[:, "filePath"] = samples["filePath"].apply(lambda x: re.sub(fhPath, bamsDir, str(x)))
-samples.loc[:, "controlSampleFilePath"] = samples["controlSampleFilePath"].apply(lambda x: re.sub(fhPath, bamsDir, str(x)))
+# # replace bam path with local
+# fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/mapped/"
+# samples.loc[:, "filePath"] = samples["filePath"].apply(lambda x: re.sub(fhPath, bamsDir, str(x)))
+# samples.loc[:, "controlSampleFilePath"] = samples["controlSampleFilePath"].apply(lambda x: re.sub(fhPath, bamsDir, str(x)))
 
-# replace peaks path with local
-fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/peaks/"
-samples.loc[:, "peakFile"] = samples["peakFile"].apply(lambda x: re.sub(fhPath, peaksDir, str(x)))
+# # replace peaks path with local
+# fhPath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/data/peaks/"
+# samples.loc[:, "peakFile"] = samples["peakFile"].apply(lambda x: re.sub(fhPath, peaksDir, str(x)))
 
 # subset samples
 sampleSubset = samples[
