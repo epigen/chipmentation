@@ -13,7 +13,7 @@ from collections import OrderedDict
 import re
 import HTSeq
 import pybedtools
-import MOODS
+# import MOODS
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -350,14 +350,13 @@ def plotFootprintModel(cuts, annot):
 
 
 # Define variables
-projectRoot = "/fhgfs/groups/lab_bock/share/projects/chipmentation/"
+projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
 # projectRoot = "/media/afr/cemm-backup/chipmentation/"
 # projectRoot = "/home/arendeiro/chipmentation/"
 bamsDir = os.path.join(projectRoot, "data", "mapped/")
 peaksDir = os.path.join(projectRoot, "data", "peaks/")
 resultsDir = os.path.join(projectRoot, "results")
 plotsDir = os.path.join(resultsDir, "footprints")
-os.mkdir(plotsDir)
 DNase = os.path.join(bamsDir, "wgEncodeUwDnaseK562Aln.merged.bam")
 MNase = os.path.join(bamsDir, "wgEncodeSydhNsomeK562Aln.merged.bam")
 NexteraBackground = "/home/arendeiro/PGA1Nextera/PGA_0001_Nextera.bam"
@@ -410,11 +409,13 @@ n_clusters = 5
 
 windowWidth = abs(windowRange[0]) + abs(windowRange[1])
 
-gapsRepeats = pybedtools.BedTool(os.path.join("/media/afr/cemm-backup", "reference/hg19/hg19_gapsRepeats.bed"))
-
+# gapsRepeats = pybedtools.BedTool(os.path.join("/media/afr/cemm-backup", "reference/hg19/hg19_gapsRepeats.bed"))
+gapsRepeats = pybedtools.BedTool("/home/arendeiro/reference/Homo_sapiens/hg19_gapsRepeats.bed")
 
 # Get genome fasta file
-fasta = pybedtools.BedTool("/media/afr/cemm-backup/reference/hg19/forBowtie2/hg19.fa")
+# fasta = pybedtools.BedTool("/media/afr/cemm-backup/reference/hg19/forBowtie2/hg19.fa")
+fasta = pybedtools.BedTool("/home/arendeiro/reference/Homo_sapiens/forBowtie2/hg19.fa")
+
 # Get PWM
 PWM = [
     [0.83593967562, 0.9612721605805, 0.924068101918, 1.06685938079, 0.797339497119, 1.18221399883, 0.8166032303705, 0.731357810088, 0.8009085680465, 0.6413220540835, 1.24263470188, 1.27537587614, 1.093537759345, 1.270194775255, 0.607808747652, 1.1045452182715, 0.830270118282, 0.9203172509935, 0.7788696601795, 0.820042458443, 1.071536938715],
@@ -428,7 +429,7 @@ PWM = [
 aveSignals = pd.DataFrame(columns=["sample", "signal"])
 foots = dict()
 
-for i in [1]:
+for i in range(len(sampleSubset)):
     sampleName = sampleSubset['sampleName'][i]
     print(sampleName)
 
@@ -567,7 +568,7 @@ for i in [1]:
 
         annot[3] = 1
         annot.index = annot[0]
-        
+
         # filter weird stuff out
         annot = annot[annot[2] > -1.000000e+10]
         norm = norm.ix[annot.index]
@@ -655,7 +656,7 @@ for i in [1]:
 
             annot[3] = 1
             annot.index = annot[0]
-            
+
             # filter weird stuff out
             annot = annot[annot[2] > -1.000000e+10]
             norm = norm.ix[annot.index]
