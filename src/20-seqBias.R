@@ -89,6 +89,7 @@ simpleCache("K562_500K_ATAC_INPUT_nan_01ULTN5_PE_1_1_hg19_cap5", cacheSubDir=pas
 	m_nakedSig = summarizeMatrixModel(nakedSig)
 	m_cmSig = summarizeMatrixModel(cmSig)
 	with(sbo, seqBiasPlot(factorName, models, modelsMasked, list(CM_Combined=m, CM_IGG=m_bg, CM_H3K4me3=m_cmSig, ATAC_INPUT=m_nakedSig)))
+	lines(gscale(m_cmSig), m_nakedSig, col="magenta", lty="dashed")
 }
 dev.off()
 
