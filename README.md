@@ -10,10 +10,9 @@ The current version uses my Python repository [`chipseq-pipelines`](https://gith
 All downstream analysis is performed with scripts in `src` using libraries such as HTSeq and pybedtools for efficiency and clarity.
 
 ### Data
-See annotation sheet here: [CSV](metadata/chipmentation.sample_annotation.csv)
+See annotation sheet here: [CSV](metadata/chipmentation.replicates.annotation_sheet.csv)
 
-See tracks here:
-- [UCSC from GCS](http://genome.ucsc.edu/cgi-bin/hgTracks?org=human&hgt.customText=http://storage.googleapis.com/storage-cm/bigWig/trackHub_hg19.txt)
+[ChIpmentation TrackHub at UCSC](http://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&hubClear=http://biomedical-sequencing.at/bocklab/papers/schmidl2015/hub.txt&position=chr16:88485000-88885000)
 
 ### Sample names
 Sample names are a concatenation of the annotation fields: `cellLine, numberCells, technique, ip, patient, treatment, biologicalReplicate, technicalReplicate, genome`. 
@@ -65,45 +64,3 @@ Probably the most relevant folder is `/chipmentation/data/mapped`. There are 2 b
     - `.trimmed.bowtie2.shifted.nodups.bam` - samples trimmed, aligned, reads shifted and with duplicates removed
 
 I will document the other folders in due time.
-
-# Response to reviewers
-### Experimental procedures
-- Transposase titration on H3K4me3 ChIPmentation (up to saturation)
-- ChIPmentation on TFs with less cells (*e.g.* 100k, 200k, 500k, 1-2mio)
-- Tagmentation of H3K4me3 ChIPed DNA on K562
-- ATAC-seq on K562
-- Paired end sequencing of ChIPmentation (H3K4me3 and PU.1)
-
-### Analysis
-- Address transposition event sequence biases at the TATA box with tagmented ChIP DNA (see [relevant document](results/tn5_bias/README.md))
-- Address transposition event sequence biases genome-wide (read frequency by k-mers genome-wide?)
-- Show ChIPmentation does produce subnucleosomal fragments using paired end data
-- Show ChIPmentation is more likely to generate only one (pair) of read from each IPed fragment at least for TFs
-- Explain differences of footprints by showing ChIP, ATAC-seq and DNAse data (ChIPmentation should be a mixture of all)
-- Compare number of peaks with footprints between DNAase, ATAC-seq and ChIPmentation
-- Detect footprints of CM TFs on histone data (H3K4me1, H3K27Ac on TFs)
-
-### Manuscript
-- Better tracks to display the data
-- Reinforce the idea of novelty by showing the additional information captured (as reviwer #3 appreciates) in a better way
-- Rephrase that ChIPmentation does allow the usage of less cells, but that is dependent on the abundance of the factor and antibody efficiency
-- Mention that we're able to recover much smaller fragments due to no adapter dimers (show bioanalyzer profiles)
-- Mention we remove the transposase by washing the ChIP with SDS (as previously demonstrated)
-- Show library size distribution created with different amounts of transposase (see [relevant document](results/fragment_size))
-
-# Internal todo
-- Footprints
-    - Call footprints using concatenated histone data for all TFs
-    - De novo footprints on histone data exclusively
-    - Plot signal of PU1 ATAC
-- TFs
-    - Tn5 PWM score across windows
-- NucleoATAC
-    - Distogram & Phasogram -> compare with MNase
-- Nucleosome stability
-    - DARNS frequency around TSSs (models and CAGE) and TTSs
-    - DARNS frequency around CpGs islands
-
-- Address bias: score of Tn5 PWM in windows
-
-- Show DNase and ATAC-seq tracks
