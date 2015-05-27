@@ -988,7 +988,7 @@ def extractPattern(dists, distRange, filePrefix):
     # plot all frequencies, ask what is the amplitude of the signals
     freqs = dict()
     plt.figure(1)
-    for i in np.arange(0, len(x) / 10., 0.01):
+    for i in np.arange(0, len(x) / 10., 0.001):
         if i == 0:
             continue
         else:
@@ -1000,6 +1000,10 @@ def extractPattern(dists, distRange, filePrefix):
                 freqs[i] = np.abs(cut_f_signal).max()
     plt.savefig(filePrefix + ".fft_frequencies.pdf", bbox_inches='tight')
     plt.close()
+
+    # plot 
+    # plt.plot(freqs.keys(), freqs.values(), 'o')
+    # plt.plot(1 / np.array(freqs.keys()), freqs.values(), 'o')
 
     # get frequency of signal with highest amplitude
     top = max(freqs, key=freqs.get)
@@ -1233,12 +1237,14 @@ def measureDARNS(DARNS):
             for d1, d2 in itertools.combinations(darns, 2):
                 # distance end-to-end
                 if d1[end] <= d2[start]:
-                    distances[abs(d2[start] - d1[end])] += 1
+                    if abs(d2[start] - d1[end]) < 200:
+                        distances[abs(d2[start] - d1[end])] += 1
                 else:
-                    distances[d1[start] - d2[end]] += 1
+                    if (d1[start] - d2[end]) < 200:
+                        distances[d1[start] - d2[end]] += 1
 
                 # distance midpoint-midpoint
-                midDistances[abs(((d1[end] + d1[start]) / 2) - ((d2[end] + d2[start]) / 2))] += 1
+                # midDistances[abs(((d1[end] + d1[start]) / 2) - ((d2[end] + d2[start]) / 2))] += 1
         return (distances, midDistances)
     except KeyboardInterrupt:
         return (distances, midDistances)
@@ -1493,7 +1499,7 @@ exportName = os.path.join(data_dir, sampleName + "_" + regionName)
 
 # Correlate coverage and signal pattern
 # get pattern
-dists = pickle.load(open(os.path.join(exportName + ".countsStranded-noRepeats-slurm.pickle"), "r"))
+dists = pickle.load(open(os.path.join(exportName + ".countsStranded-slurm.pickle"), "r"))
 distsPos = {dist: count for dist, count in dists.items() if dist >= 0}
 distsNeg = {abs(dist): count for dist, count in dists.items() if dist <= 0}
 pattern = extractPattern(Counter(distsPos) + Counter(distsNeg), range(60, 100),
@@ -1618,6 +1624,60 @@ hmmOutputP, DARNSP = pickle.load(open(os.path.join(results_dir, sampleName + "_H
 # Filter DARNS with size = 1
 DARNS = {chrom: [tup for tup in DARNS[chrom] if tup[1] - tup[0] > 1] for chrom in DARNS.keys()}
 DARNSP = {chrom: [tup for tup in DARNSP[chrom] if tup[1] - tup[0] > 1] for chrom in DARNSP.keys()}
+
+
+# Plot features of predicted DARNS
+# Plot attributes
+widths = Counter([darn[1] - darn[0] for darn in DARNS.values()[0]])
+distances, midDistances = measureDARNS(DARNS)
+
+pickle.dump((widths, distances, midDistances), open(os.path.join(results_dir, sampleName + "_HMMResult-distances.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+
+
+plt.plot(widths.keys(), widths.values(), '-', color='orange')
+
+distances = {d: c for d, c in distances.items() if d < 200}
+
+plt.plot(distances.keys(), distances.values(), '-', color='purple')
+plt.plot(midDistances.keys(), midDistances.values(), '-', color='green')
+# sns.violinplot(widths.values())
+# decide how to save
+
+# start plotting
+from matplotlib.patches import Rectangle
+colors = sns.color_palette('deep', n_colors=6, desat=0.5)
+sns.set_context(rc={"figure.figsize": (14, 6)})
+sns.plt.axhline(y=1.1, c=colors[0], alpha=0.7)
+sns.plt.xlim([1, width + 1])
+sns.plt.ylim([0, 1.2])
+sns.plt.ylabel(r'posterior probs, $\gamma_k$')
+sns.plt.xlabel(r'$k$')
+axis = sns.plt.gca()
+
+# viterbi predicted DARNS
+# get darns in window
+DARNSinWindow = [darn for darn in DARNS[chrom] if darn[0] >= start and darn[1] <= end]
+# for each darn in window draw a box
+for start, end in DARNSinWindow:
+    axis.add_patch(Rectangle((start + 1, 1.075), end - start + 1, 0.05,
+                             facecolor=colors[0], alpha=0.7))
+
+# line plot of post. probs
+sns.plt.plot(range(1, width + 1), probs,  # post. probs of real data
+             c=colors[2], alpha=0.7)
+sns.plt.plot(range(1, width + 1), probsP,  # post. probs of permuted data
+             c=colors[3], alpha=0.5)
+plt.show()  # decide how to save
+
+
+
+
+
+
+
+
+
+
 
 # Measure attributes:
 # value of maximum positive strand correlation peak

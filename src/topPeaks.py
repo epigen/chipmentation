@@ -4,11 +4,21 @@ import os
 import re
 import pandas as pd
 import itertools  # for R dataframe conversion
+import numpy as np
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 sns.set_style("whitegrid")
+
+
+def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+    import matplotlib.colors as colors
+    import numpy as np
+    new_cmap = colors.LinearSegmentedColormap.from_list(
+        'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
+        cmap(np.linspace(minval, maxval, n)))
+    return new_cmap
 
 
 def getTopPeakOverlap(a, b, percA=100, percB=100):
@@ -55,7 +65,7 @@ def getTopPeakOverlap(a, b, percA=100, percB=100):
     topA = str(math.trunc(int(totalA) / fracA))
     topB = str(math.trunc(int(totalB) / fracB))
 
-    # sort files by score and get top 1%
+    # sort files by score and get top X%
     ps = subprocess.Popen(('sort', '-k9rn', peakA), stdout=subprocess.PIPE)
     output = subprocess.check_output(('head', '-n', topA), stdin=ps.stdout)
 
@@ -148,7 +158,7 @@ samples = samples[samples.ip.str.contains("PU1|CTCF|GATA1|REST")]
 
 overlaps = pd.DataFrame()
 
-for threshold in [1, 3, 5, 10, 12, 18, 25, 50, 100]:
+for threshold in [5, 25]:
     # Scatter plots
     print("techniques")
     # Different techniques
@@ -174,7 +184,7 @@ for threshold in [1, 3, 5, 10, 12, 18, 25, 50, 100]:
                 if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
                     continue
 
-                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold, 100))
+                o = (getTopPeakOverlap(s1, s2, threshold, 100) + getTopPeakOverlap(s2, s1, threshold, 100)) / 2
                 s = pd.Series(
                     [ip, c, c, t1, t2, 0, 0, o, 'techniques', threshold],
                     index=['ip', 'c1', 'c2', 't1', 't2', 'r1', 'r2', 'overlap', 'type', 'threshold'])
@@ -203,7 +213,7 @@ for threshold in [1, 3, 5, 10, 12, 18, 25, 50, 100]:
                 if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
                     continue
 
-                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold, 100))
+                o = (getTopPeakOverlap(s1, s2, threshold, 100) + getTopPeakOverlap(s2, s1, threshold, 100)) / 2
                 s = pd.Series(
                     [ip, c1, c2, t, t, 0, 0, o, 'cells', threshold],
                     index=['ip', 'c1', 'c2', 't1', 't2', 'r1', 'r2', 'overlap', 'type', 'threshold'])
@@ -233,7 +243,7 @@ for threshold in [1, 3, 5, 10, 12, 18, 25, 50, 100]:
                 if s1.empty or s2.empty or s1.ip.values[0] in ctrl or s2.ip.values[0] in ctrl:
                     continue
 
-                o = max(getTopPeakOverlap(s1, s2, threshold), getTopPeakOverlap(s2, s1, threshold, 100))
+                o = (getTopPeakOverlap(s1, s2, threshold, 100) + getTopPeakOverlap(s2, s1, threshold, 100)) / 2
                 s = pd.Series(
                     [ip, c, c, t, t, r1, r2, o, 'replicates', threshold],
                     index=['ip', 'c1', 'c2', 't1', 't2', 'r1', 'r2', 'overlap', 'type', 'threshold'])
@@ -246,7 +256,7 @@ oo = overlaps[~(
 )]
 
 # set > 1 to 1 (this is due to multiple overlapping)
-oo.loc[oo['overlap'] > 1,'overlap'] = 1
+oo.loc[oo['overlap'] > 1, 'overlap'] = 1
 
 # Plot
 colours = {ip: colourPerFactor(ip) for ip in overlaps['ip'].unique()}
@@ -275,7 +285,6 @@ g.add_legend()
 plt.savefig(os.path.join(plotsDir, "topPeakOverlaps.subset.pdf"), bbox_inches='tight')
 
 
-
 # Pie charts with 5 and 25 thresholds
 ooo = oo[oo['threshold'] == 5]
 g = sns.FacetGrid(ooo, col="type", hue="ip")
@@ -283,5 +292,16 @@ g.map(plt.scatter, "threshold", "overlap")
 
 
 ooo = oo[oo['threshold'] == 25]
+g = sns.FacetGrid(ooo, col="type", hue="ip")
+g.map(plt.scatter, "threshold", "overlap")
 
+
+
+cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
+
+# scale from 0 to 1
+new_cmap = truncate_colormap(cmap, 0, 1)
+
+sns.clustermap(oo['overlap'], row_colors=colours, method="ward", metric="euclidean",
+               col_colors=colours, figsize=(15, 15), cmap=new_cmap, annot=True)
 

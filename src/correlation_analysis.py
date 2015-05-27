@@ -89,7 +89,8 @@ def colourPerFactor(name):
     elif "NAN_NAN_NAN" in name:  # DNAse, ATAC
         return "#00523b"
     else:
-        raise ValueError
+        return "#00523b"
+        #raise ValueError
 
 
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
@@ -100,18 +101,22 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
     return new_cmap
 
 
-def plotCorrelations(normCounts, plotName, method="ward", metric="euclidean", values=False):
+def plotCorrelations(normCounts, plotName, method="ward", metric="euclidean", values=False, color="redgreen"):
     corr = normCounts.corr()
+    corr.loc["a"] = 0
+    corr["a"] = 0
 
     # col/row colours
-    colours = map(colourPerFactor, normCounts.columns)
+    colours = map(colourPerFactor, corr.columns)
 
     # data colour map
-    cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
-    # cmap = plt.get_cmap("YlGn")
+    if color == "redgreen":
+        cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
+    else:
+        cmap = plt.get_cmap("YlGn")
 
     # scale from 0 to 1
-    new_cmap = truncate_colormap(cmap, corr.min().min(), 1)
+    new_cmap = truncate_colormap(cmap, 0, 1)
 
     if not values:
         sns.clustermap(corr, row_colors=colours, method=method, metric=metric,
@@ -121,6 +126,7 @@ def plotCorrelations(normCounts, plotName, method="ward", metric="euclidean", va
                        col_colors=colours, figsize=(15, 15), cmap=new_cmap, annot=True)
 
     plt.savefig(plotName, bbox_inches='tight')
+    plt.close()
 
 
 def plotScatterCorrelation(df, path):
@@ -203,21 +209,71 @@ sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 # plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.all.pdf"))
 
 
-# All biological replicates
-print("All biologicalReplicates")
-# subset samples
+# ChIPmentation vs ChIP
+print("ChIPmentation vs ChIP")
+# histones
 sampleSubset = samples[
-    (samples["technique"].str.contains("CM|CHIP")) &
-    (samples["ip"].str.contains("H3K4ME3|H3K4ME1|H3K27ME3|H3K36ME3|H3K27AC|CTCF|PU1|GATA1|REST")) &
-    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
-    (samples["technicalReplicate"] == 0) &
-    (samples["biologicalReplicate"] != 0)
+    samples["sampleName"].str.contains(
+        "K562_10M_CM_H3K27AC_nan_nan_0_0_hg19|" + 
+        "K562_10M_CHIP_H3K27AC_nan_nan_1_0_hg19|" + 
+        "K562_500K_CHIP_H3K27ME3_nan_nan_0_0_hg19|" + 
+        "K562_500K_CM_H3K27ME3_nan_nan_0_0_hg19|" + 
+        "K562_10M_CM_H3K36ME3_nan_nan_0_0_hg19|" + 
+        "K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19|" + 
+        "K562_10M_CHIP_H3K4ME1_nan_nan_0_0_hg19|" + 
+        "K562_10M_CM_H3K4ME1_nan_nan_0_0_hg19|" + 
+        "K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19|" + 
+        "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19")
 ].reset_index(drop=True)
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
 normCounts = getCounts(sampleSubset)
-normCounts.to_pickle(os.path.join(plotsDir, "correlations.set-reps.pickle"))
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.set-reps.pdf"))
+# normCounts.to_pickle(os.path.join(plotsDir, "correlations.set-reps.pickle"))
+plotCorrelations(normCounts, "correlations.set-reps-hists-cm_chip-green.pdf", values=True, color="green")
+plotCorrelations(normCounts, "correlations.set-reps-hists-cm_chip.pdf", values=True)
+
+# TFs
+sampleSubset = samples[
+    samples["sampleName"].str.contains(
+        "K562_10M_CM_CTCF_nan_nan_0_0_hg19|" + 
+        "K562_10M_CHIP_CTCF_nan_nan_0_0_hg19|" +
+        "K562_10M_CM_GATA1_nan_nan_0_0_hg19|" + 
+        "K562_10M_CHIP_GATA1_nan_nan_0_0_hg19|" +
+        "K562_10M_CM_PU1_nan_nan_0_0_hg19|" + 
+        "K562_10M_CHIP_PU1_nan_nan_0_0_hg19|" +
+        "K562_10M_CM_REST_nan_nan_0_0_hg19|" + 
+        "K562_10M_CHIP_REST_nan_nan_0_0_hg19"
+)].reset_index(drop=True)
+sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
+
+normCounts = getCounts(sampleSubset)
+# normCounts.to_pickle(os.path.join(plotsDir, "correlations.set-reps.pickle"))
+plotCorrelations(normCounts, "correlations.set-reps-TFs-cm_chip-green.pdf", values=True, color="green")
+plotCorrelations(normCounts, "correlations.set-reps-TFs-cm_chip.pdf", values=True)
+
+
+
+# ChIPmentation low vs high cell numbers
+print("ChIPmentation vs ChIP")
+# subset samples
+sampleSubset = samples[
+    (samples["technique"].str.contains("CM")) &
+    (samples["ip"].str.contains("H3K4ME3|H3K27ME3")) &
+    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
+    (samples["technicalReplicate"] == 0) &
+    (samples["biologicalReplicate"] != 0)
+].reset_index(drop=True)
+sampleSubset = sampleSubset[~sampleSubset['sampleName'].str.contains("PE")]
+
+sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
+
+normCounts = getCounts(sampleSubset)
+# normCounts.to_pickle(os.path.join(plotsDir, "correlations.set-reps.pickle"))
+plotCorrelations(normCounts, "correlations.set-reps-hists-cellnumbers-green.pdf", values=True, color="green")
+plotCorrelations(normCounts, "correlations.set-reps-hists-cellnumbers-0.pdf", values=True)
+
+
+
 
 # All final
 print("All final")
@@ -547,11 +603,9 @@ else:
     normCounts = getCounts(sampleSubset)
     normCounts.to_pickle(os.path.join(plotsDir, "correlations.table.pickle"))
 
-
-# group by everything except biological rep
 corr = pd.DataFrame()
 
-
+# Replicate vs Replicate
 # get only CM samples
 sampleSubset = samples[
     (samples["technique"].str.contains("CM")) &
@@ -579,6 +633,7 @@ for g in groups.groups.items():
     if len(df) == 2:
         corr.loc[name, 'CR'] = df.T.corr()[1][0]
 
+# Technique vs Technique
 # get only 0_0 samples
 sampleSubset = samples[
     (samples["technique"].str.contains("CM|CHIP")) &

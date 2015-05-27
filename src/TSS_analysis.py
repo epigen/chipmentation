@@ -64,7 +64,7 @@ def bedToolsInterval2GenomicInterval(bedtool):
     return intervals
 
 
-def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, strand_specific=False):
+def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, strand_specific=False, switchChromsNames=False):
     """
     Gets read coverage in bed regions.
     Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
@@ -92,6 +92,10 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
         if feature.chrom not in chroms or feature.chrom == "chrM":
             i += 1
             continue
+
+        # Replace chromosome reference 1 -> chr1 if not chr
+        if switchChromsNames:
+            feature.chrom = re.sub("chr", "", feature.chrom)
 
         # Fetch alignments in feature window
         for aln in bam[feature]:
@@ -133,6 +137,70 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=True, st
         cov[name] = profile
         i += 1
     return cov
+
+
+def coverageSum(bam, intervals, fragmentsize, orientation=True, duplicates=True, switchChromsNames=False):
+    """
+    Gets read coverage in bed regions.
+    Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
+    bam - HTSeq.BAM_Reader object. Must be sorted and indexed with .bai file!
+    intervals - dict with HTSeq.GenomicInterval objects as values.
+    fragmentsize - integer.
+    stranded - boolean.
+    duplicates - boolean.
+    """
+    # Loop through TSSs, get coverage, append to dict
+    chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr21', 'chr22', 'chrM', 'chrX']
+
+    # Initialize empty array for this feature
+    profile = np.zeros(intervals.items()[0][1].length, dtype=np.float64)
+
+    n = len(intervals)
+    i = 0
+    for name, feature in intervals.iteritems():
+        if i % 1000 == 0:
+            print(n - i)
+
+        # Check if feature is in bam index
+        if feature.chrom not in chroms or feature.chrom == "chrM":
+            i += 1
+            continue
+
+        # Replace chromosome reference 1 -> chr1 if not chr
+        if switchChromsNames:
+            feature.chrom = re.sub("chr", "", feature.chrom)
+
+        # Fetch alignments in feature window
+        for aln in bam[feature]:
+            # check if duplicate
+            if not duplicates and aln.pcr_or_optical_duplicate:
+                continue
+            # check it's aligned
+            if not aln.aligned:
+                continue
+
+            aln.iv.length = fragmentsize  # adjust to size
+
+            # get position in relative to window
+            if orientation:
+                if feature.strand == "+" or feature.strand == ".":
+                    start_in_window = aln.iv.start - feature.start - 1
+                    end_in_window = aln.iv.end - feature.start - 1
+                else:
+                    start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
+                    end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
+            else:
+                start_in_window = aln.iv.start - feature.start - 1
+                end_in_window = aln.iv.end - feature.start - 1
+
+            # check fragment is within window; this is because of fragmentsize adjustment
+            if start_in_window <= 0 or end_in_window > feature.length:
+                continue
+
+            # add +1 to all positions overlapped by read within window
+            profile[start_in_window: end_in_window] += 1
+        i += 1
+    return profile
 
 
 def plotHeatmap(df, filename):
@@ -227,12 +295,13 @@ def smooth(x, window_len=8, window='hanning'):
 
 
 # Define variables
-projectRoot = "/projects/chipmentation/"
+projectRoot = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/"
 bamsDir = os.path.join(projectRoot, "data", "mapped/")
 resultsDir = os.path.join(projectRoot, "results")
-plotsDir = os.path.join(resultsDir, "plots")
+plotsDir = os.path.join(resultsDir, "footprints")
 DNase = os.path.join(bamsDir, "wgEncodeUwDnaseK562Aln.merged.bam")
 MNase = os.path.join(bamsDir, "wgEncodeSydhNsomeK562Aln.merged.bam")
+NexteraBackground = "/home/arendeiro/PGA1Nextera/PGA_0001_Nextera-2.bam"
 
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
@@ -243,43 +312,29 @@ samples.loc[:, "filePath"] = samples["filePath"].apply(lambda x: re.sub(fhPath, 
 
 # subset samples
 sampleSubset = samples[
-    (samples["technique"].str.contains("CM|CHIP")) &
-    (samples["ip"].str.contains("H3K4ME1|H3K4ME3|H3K27ME3")) &
-    (samples["numberCells"].str.contains("500K|10M")) &
-    (samples["biologicalReplicate"] == 0) &
-    (samples["technicalReplicate"] == 0)
+    samples["sampleName"].str.contains(
+        "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19|K562_50K_ATAC_nan_nan_nan_0_0_hg19"
+    )
 ].reset_index(drop=True)
 
-# append extra samples
-sampleSubset = sampleSubset.append(samples[
-    samples["sampleName"].str.contains(
-        "K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19|" +
-        "K562_10M_CM_H3K36ME3_nan_nan_1_1_hg19|K562_10M_CHIP_H3K4ME1_nan_nan_1_0_hg19|" +
-        "K562_10K_CM_IGG_nan_nan_0_0_hg19|K562_10M_CHIP_IGG_nan_nan_0_0_hg19|" +
-        "K562_10M_CM_IGG_nan_nan_1_0_hg19|K562_500K_CM_IGG_nan_nan_1_0_hg19|" +
-        "K562_50K_ATAC_nan_nan_nan_0_0_hg19|" +
-        "K562_500K_ATAC_H3K4ME3_nan_01ULTN5_PE_1_1_hg19|K562_500K_ATAC_INPUT_nan_01ULTN5_PE_1_1_hg19"
-    )
-]).reset_index(drop=True)
-
 sampleSubset = sampleSubset.append(pd.Series(data=["DNase", DNase], index=["sampleName", "filePath"]), ignore_index=True)
-sampleSubset = sampleSubset.append(pd.Series(data=["MNase", MNase], index=["sampleName", "filePath"]), ignore_index=True)
+sampleSubset = sampleSubset.append(pd.Series(data=["NexteraBackground", NexteraBackground], index=["sampleName", "filePath"]), ignore_index=True)
 
 sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
-bedFilePath = "/projects/reference/hg19/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
+bedFilePath = "/fhgfs/groups/lab_bock/shared/projects/chipmentation/annotation/hg19.cage_peak_coord_robust.TATA_Annotated.bed"
 genome = "hg19"
 windowRange = (-80, 95)
 fragmentsize = 1
 duplicates = True
 n_clusters = 5
 
-# plotly.sign_in("afrendeiro", "iixmygxac1")
 windowWidth = abs(windowRange[0]) + abs(windowRange[1])
 
 # Load TSSs from bed file, transform by window width
 tsss = pybedtools.BedTool(bedFilePath).slop(genome=genome, b=windowWidth / 2)
 tsss = bedToolsInterval2GenomicInterval(tsss)
+
 # Filter tsss near chrm borders
 for name, interval in tsss.iteritems():
     if interval.length < windowWidth:
@@ -299,7 +354,7 @@ for i in range(len(sampleSubset)):
         bamfile = HTSeq.BAM_Reader(sampleSubset['filePath'][i])
 
         # Get dataframe of signal coverage in bed regions, append to dict
-        cov = coverage(bamfile, tsss, fragmentsize, strand_specific=True)
+        cov = coverageSum(bamfile, tsss, fragmentsize)
 
         # Make multiindex dataframe
         levels = [cov.keys(), ["+", "-"]]
@@ -324,7 +379,7 @@ for i in range(len(sampleSubset)):
             "negative": df.ix[range(1, len(df), 2)].apply(np.mean, axis=0)     # negative strand
         }
         aveSignals[name] = pd.DataFrame(ave)
-        pickle.dump(aveSignals, open(os.path.join(resultsDir, "TSS_aveSignals.2.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(aveSignals, open(os.path.join(plotsDir, "TSS_aveSignals.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
 # Add coverage of dyads in TSSs
 name = "dyads"

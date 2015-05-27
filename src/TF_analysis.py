@@ -122,7 +122,7 @@ def loadPandas(fname, mmap_mode='r'):
         return pd.Series(values, index=meta[0]).copy()
 
 
-def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=False, strand_specific=False):
+def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=False, strand_specific=False, switchChromsNames=False):
     """
     Gets read coverage in bed regions.
     Returns dict of regionName:numpy.array if strand_specific=False, A dict of "+" and "-" keys with regionName:numpy.array.
@@ -137,59 +137,67 @@ def coverage(bam, intervals, fragmentsize, orientation=True, duplicates=False, s
     cov = OrderedDict()
     n = len(intervals)
     i = 0
-    for name, feature in intervals.iteritems():
-        if i % 1000 == 0:
-            print(n - i)
-        # Initialize empty array for this feature
-        if not strand_specific:
-            profile = np.zeros(feature.length, dtype=np.float64)
-        else:
-            profile = np.zeros((2, feature.length), dtype=np.float64)
+    try:
+        for name, feature in intervals.iteritems():
+            if i % 1000 == 0:
+                print(n - i)
+            # Initialize empty array for this feature
+            if not strand_specific:
+                profile = np.zeros(feature.length, dtype=np.float64)
+            else:
+                profile = np.zeros((2, feature.length), dtype=np.float64)
 
-        # Check if feature is in bam index
-        if feature.chrom not in chroms or feature.chrom == "chrM":
-            i += 1
-            continue
-
-        # Fetch alignments in feature window
-        for aln in bam[feature]:
-            # check if duplicate
-            if not duplicates and aln.pcr_or_optical_duplicate:
-                continue
-            # check it's aligned
-            if not aln.aligned:
+            # Check if feature is in bam index
+            if feature.chrom not in chroms or feature.chrom == "chrM":
+                i += 1
                 continue
 
-            aln.iv.length = fragmentsize  # adjust to size
+            # Replace chromosome reference 1 -> chr1 if not chr
+            if switchChromsNames:
+                feature.chrom = re.sub("chr", "", feature.chrom)
 
-            # get position in relative to window
-            if orientation:
-                if feature.strand == "+" or feature.strand == ".":
+            # Fetch alignments in feature window
+            for aln in bam[feature]:
+                # check if duplicate
+                if not duplicates and aln.pcr_or_optical_duplicate:
+                    continue
+                # check it's aligned
+                if not aln.aligned:
+                    continue
+
+                aln.iv.length = fragmentsize  # adjust to size
+
+                # get position in relative to window
+                if orientation:
+                    if feature.strand == "+" or feature.strand == ".":
+                        start_in_window = aln.iv.start - feature.start - 1
+                        end_in_window = aln.iv.end - feature.start - 1
+                    else:
+                        start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
+                        end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
+                else:
                     start_in_window = aln.iv.start - feature.start - 1
                     end_in_window = aln.iv.end - feature.start - 1
+
+                # check fragment is within window; this is because of fragmentsize adjustment
+                if start_in_window <= 0 or end_in_window > feature.length:
+                    continue
+
+                # add +1 to all positions overlapped by read within window
+                if not strand_specific:
+                    profile[start_in_window: end_in_window] += 1
                 else:
-                    start_in_window = feature.length - abs(feature.start - aln.iv.end) - 1
-                    end_in_window = feature.length - abs(feature.start - aln.iv.start) - 1
-            else:
-                start_in_window = aln.iv.start - feature.start - 1
-                end_in_window = aln.iv.end - feature.start - 1
+                    if aln.iv.strand == "+":
+                        profile[0][start_in_window: end_in_window] += 1
+                    else:
+                        profile[1][start_in_window: end_in_window] += 1
 
-            # check fragment is within window; this is because of fragmentsize adjustment
-            if start_in_window <= 0 or end_in_window > feature.length:
-                continue
+            # append feature profile to dict
+            cov[name] = profile
+            i += 1
+    except KeyboardInterrupt:
+        return cov
 
-            # add +1 to all positions overlapped by read within window
-            if not strand_specific:
-                profile[start_in_window: end_in_window] += 1
-            else:
-                if aln.iv.strand == "+":
-                    profile[0][start_in_window: end_in_window] += 1
-                else:
-                    profile[1][start_in_window: end_in_window] += 1
-
-        # append feature profile to dict
-        cov[name] = profile
-        i += 1
     return cov
 
 
@@ -359,7 +367,7 @@ resultsDir = os.path.join(projectRoot, "results")
 plotsDir = os.path.join(resultsDir, "footprints")
 DNase = os.path.join(bamsDir, "wgEncodeUwDnaseK562Aln.merged.bam")
 MNase = os.path.join(bamsDir, "wgEncodeSydhNsomeK562Aln.merged.bam")
-NexteraBackground = "/home/arendeiro/PGA1Nextera/PGA_0001_Nextera.bam"
+NexteraBackground = "/home/arendeiro/PGA1Nextera/PGA_0001_Nextera-2.bam"
 
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
@@ -492,7 +500,15 @@ for i in range(len(sampleSubset)):
 
             bamFile = HTSeq.BAM_Reader(NexteraBackground)
 
-            ctrl = coverage(bamFile, peaksInt, fragmentsize, strand_specific=True)
+            ctrl = coverage(bamFile, peaksInt, fragmentsize, strand_specific=True, switchChromsNames=True)
+
+            # Make multiindex dataframe
+            levels = [ctrl.keys(), ["+", "-"]]
+            labels = [[y for x in range(len(ctrl)) for y in [x, x]], [y for x in range(len(ctrl.keys())) for y in (0, 1)]]
+            index = pd.MultiIndex(labels=labels, levels=levels, names=["peak", "strand"])
+            ctrl = pd.DataFrame(np.vstack(ctrl.values()), index=index)
+            ctrl.columns = range(windowRange[0], windowRange[1])
+
             # Save raw data
             savePandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks.pdy"), ctrl)
     else:
@@ -543,9 +559,15 @@ for i in range(len(sampleSubset)):
         pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
         # Normalize signal
+        idx = ctrl.index.levels[0]
+        ctrlT = ctrl.ix[range(0, len(ctrl), 2)].reset_index(drop=True) + ctrl.ix[range(1, len(ctrl), 2)].reset_index(drop=True)
+        ctrlT.index = idx
+
+        idx = df.index.levels[0]
         treat = df.ix[range(0, len(df), 2)].reset_index(drop=True) + df.ix[range(1, len(df), 2)].reset_index(drop=True)
-        treat.index = df.index.levels[0]
-        norm = treat / np.exp(ctrl)
+        treat.index = idx
+
+        norm = treat / np.exp(ctrlT.apply(zscore, axis=1))
 
         # Save normalized data
         savePandas(os.path.join(plotsDir, "pickles", exportName + "-ChIPpeaks-normalized.pdy"), norm)
@@ -557,7 +579,7 @@ for i in range(len(sampleSubset)):
             "average": norm.apply(sum, axis =0),                            # both strands
             "positive": 0,  # positive strand
             "negative": 0,  # negative strand
-            "x": df.columns
+            "x": norm.columns
         })
         aveSignals = pd.concat([aveSignals, ave])
         pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
@@ -626,11 +648,16 @@ for i in range(len(sampleSubset)):
         pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
 
         # Normalize signal (not for DNASE!)
+        idx = ctrl.index.levels[0]
+        ctrlT = ctrl.ix[range(0, len(ctrl), 2)].reset_index(drop=True) + ctrl.ix[range(1, len(ctrl), 2)].reset_index(drop=True)
+        ctrlT.index = idx
+
+        idx = df.index.levels[0]
         treat = df.ix[range(0, len(df), 2)].reset_index(drop=True) + df.ix[range(1, len(df), 2)].reset_index(drop=True)
-        treat.index = df.index.levels[0]
+        treat.index = idx
 
         if signalName != "DNase":
-            norm = treat / np.exp(ctrl)
+            norm = treat / np.exp(ctrlT.apply(zscore, axis=1))
         else:
             norm = treat
 
@@ -644,7 +671,7 @@ for i in range(len(sampleSubset)):
             "average": norm.apply(sum, axis =0),                            # both strands
             "positive": 0,  # positive strand
             "negative": 0,  # negative strand
-            "x": df.columns
+            "x": norm.columns
         })
         aveSignals = pd.concat([aveSignals, ave])
         pickle.dump(aveSignals, open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "wb"), protocol=pickle.HIGHEST_PROTOCOL)
@@ -679,8 +706,7 @@ for i in range(len(sampleSubset)):
 
 
 # Done with collecting data
-foots = pickle.load(open(os.path.join(plotsDir, "pickles", "footprintProbs-normalized.pickle"), 'r'))
-
+aveSignals = pickle.load(open(os.path.join(plotsDir, "pickles", "aveSignals.subset.pickle"), "r"))
 
 # Plot footprint probabilities
 foots = pickle.load(open(os.path.join(plotsDir, "pickles", "footprintProbs-normalized.pickle"), 'rb'))
@@ -723,7 +749,7 @@ df2 = pd.DataFrame()
 
 for sample in df['sample'].unique():
     for signal in df[df['sample'] == sample]['signal'].unique():
-        if signal == "PWM":
+        if signal == "NexteraBackground":
             continue
         for strand in ["average"]:
             treat = df[
@@ -735,7 +761,7 @@ for sample in df['sample'].unique():
 
             ctrl = df[
                 (df["sample"] == sample) &
-                (df["signal"] == "PWM") &
+                (df["signal"] == "NexteraBackground") &
                 (df['x'] >= -400) &
                 (df['x'] <= 400)
             ][strand].tolist()
@@ -761,7 +787,7 @@ for sample in df['sample'].unique():
             tmp['type'] = "rawSmooth"
             df2 = df2.append(tmp, ignore_index=True)
 
-            # normalize (divide by log(PWM))
+            # normalize (divide by log(NexteraBackground))
             norm = treat / np.exp(np.array(ctrl))
 
             # smooth
@@ -788,14 +814,76 @@ for sample in df['sample'].unique():
 aveSignals = df2
 aveSignals.reset_index(drop=True, inplace=True)
 
-# Grid plots
-# raw
-# all
-sub = aveSignals[
-    (aveSignals['type'] == "raw") &
-    (aveSignals['x'] >= -400) &
-    (aveSignals['x'] <= 400)
-]
+
+# plot unormalized signals
+for sample in aveSignals['sample'].unique():
+    fig = plt.figure()
+    t = aveSignals[
+        (aveSignals['sample'] == sample) &
+        (aveSignals['signal'] == sample) &
+        (aveSignals['x'] >= -200) &
+        (aveSignals['x'] <= 200)
+    ]['average']
+
+    atac = aveSignals[
+        (aveSignals['sample'] == sample) &
+        (aveSignals['signal'] == "K562_50K_ATAC_nan_nan_nan_0_0_hg19") &
+        (aveSignals['x'] >= -200) &
+        (aveSignals['x'] <= 200)
+    ]['average']
+
+    dnase = aveSignals[
+        (aveSignals['sample'] == sample) &
+        (aveSignals['signal'] == "DNase") &
+        (aveSignals['x'] >= -200) &
+        (aveSignals['x'] <= 200)
+    ]['average']
+
+    plt.plot(range(-200, 200), smooth(zscore(t), 15)[15:], label="ChIPmentation")
+    plt.plot(range(-200, 200), smooth(zscore(atac), 15)[15:], label="ATAC-seq")
+    plt.plot(range(-200, 200), smooth(zscore(dnase), 15)[15:], label="DNase-seq")
+    plt.legend()
+    plt.savefig(os.path.join(plotsDir, sample + ".all.footprints.pdf"), bbox_inches='tight')
+    plt.close()
+
+
+# plot normalized signals
+for sample in aveSignals['sample'].unique():
+    fig = plt.figure()
+    t = aveSignals[
+        (aveSignals['sample'] == sample) &
+        (aveSignals['signal'] == sample) &
+        (aveSignals['x'] >= -200) &
+        (aveSignals['x'] <= 200)
+    ]['average']
+
+    c = aveSignals[
+        (aveSignals['sample'] == sample) &
+        (aveSignals['signal'] == "NexteraBackground") &
+        (aveSignals['x'] >= -200) &
+        (aveSignals['x'] <= 200)
+    ]['average']
+
+    atac = aveSignals[
+        (aveSignals['sample'] == sample) &
+        (aveSignals['signal'] == "K562_50K_ATAC_nan_nan_nan_0_0_hg19") &
+        (aveSignals['x'] >= -200) &
+        (aveSignals['x'] <= 200)
+    ]['average']
+
+    norm = smooth(t, 15)[15:] / np.exp(smooth(zscore(c), 15)[15:])
+    atacnorm = smooth(atac, 15)[15:] / np.exp(smooth(zscore(c), 15)[15:])
+
+    plt.plot(range(-200, 200), smooth(zscore(c), 15)[15:], label="Nextera genomic DNA library")
+    # plt.plot(range(-200, 200), smooth(zscore(t), 15)[15:], label="ChIPmentation")
+    plt.plot(range(-200, 200), zscore(norm), label="ChIPmentation normalized")
+    # plt.plot(range(-200, 200), smooth(zscore(atac), 15)[15:], label="ATAC-seq")
+    plt.plot(range(-200, 200), zscore(atacnorm), label="ATAC-seq normalized")
+    plt.legend()
+    plt.savefig(os.path.join(plotsDir, sample + ".all.footprints.norm.pdf"), bbox_inches='tight')
+    plt.close()
+
+
 
 grid = sns.FacetGrid(sub, col="sample", hue="signal", sharey=False, col_wrap=4)
 grid.map(plt.plot, "x", "average")
