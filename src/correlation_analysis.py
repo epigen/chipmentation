@@ -9,38 +9,27 @@
 #############################################################################################
 
 import os
+import yaml
 import re
 import numpy as np
 import pandas as pd
-import itertools
 import rpy2.robjects as robj  # for ggplot in R
 import rpy2.robjects.pandas2ri  # for R dataframe conversion
-
-# import matplotlib
-# # Force matplotlib to not use any Xwindows backend.
-# matplotlib.use('Agg')
-# import matplotlib.font_manager as font_manager
-
-# fontpath = '/usr/share/fonts/truetype/Roboto-Regular.ttf'
-
-# prop = font_manager.FontProperties(fname=fontpath)
-# matplotlib.rcParams['font.family'] = prop.get_name()
-
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+sns.set_style("whitegrid")
 
 
 def getCounts(sampleSubset):
     normCounts = pd.DataFrame()
 
-    for sample in range(len(sampleSubset)):
-        name = sampleSubset.ix[sample]["sampleName"]
-
+    for name in sampleSubset['sampleName']:
         # read in bed file with coverage
         try:
-            df = pd.read_csv(os.path.join(coverageDir, name + ".cov"), sep="\t", header=None)
+            df = pd.read_csv(os.path.join(coverageDir, name + ".filtered.cov"), sep="\t", header=None)
         except:
-            print("Couldn't open file %s." % os.path.join(coverageDir, name + ".cov"))
+            print("Couldn't open file %s." % os.path.join(coverageDir, name + ".filtered.cov"))
             continue
 
         # get series with counts
@@ -103,8 +92,6 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
 
 def plotCorrelations(normCounts, plotName, method="ward", metric="euclidean", values=False, color="redgreen"):
     corr = normCounts.corr()
-    corr.loc["a"] = 0
-    corr["a"] = 0
 
     # col/row colours
     colours = map(colourPerFactor, corr.columns)
@@ -174,15 +161,16 @@ def plotScatterCorrelation(df, path):
     plotFunc(df_R, path, x, y)
 
 
-def plotKDE(s1, s2, path):
-    sns.jointplot(s1, s2, kind="kde", size=7, space=0)
-    plt.savefig(path, bbox_inches='tight')
+
+# Read configuration file
+with open(os.path.join(os.path.expanduser("~"), ".pipelines_config.yaml"), 'r') as handle:
+    config = yaml.load(handle)
 
 
 # Define paths
-# projectRoot = "/projects/chipmentation/"
-projectRoot = "/media/afr/cemm-backup/chipmentation/"
-# projectRoot = "/home/arendeiro/chipmentation/"
+# coverageDir = os.path.join(config["paths"]["parent"], config["projectname"], "data", "coverage")
+# projectRoot = "/media/afr/cemm-backup1/chipmentation/"
+projectRoot = "projects/chipmentation/"
 coverageDir = projectRoot + "data/coverage"
 resultsDir = projectRoot + "results"
 plotsDir = resultsDir + "/plots/correlations"
@@ -190,484 +178,96 @@ plotsDir = resultsDir + "/plots/correlations"
 # Get samples
 samples = pd.read_csv(os.path.abspath(projectRoot + "chipmentation.replicates.annotation_sheet.csv"))
 
-# remove missing sample
-samples = samples[samples['sampleName'] != "K562_10M_CHIP_H3K4ME1_nan_nan_2_1_hg19"]
-samples = samples[samples['sampleName'] != "K562_500K_CHIP_H3K27AC_nan_nan_1_1_hg19"]
-
 # set technicalreplicate=0 to samples with only one technical replicate per biological replicate
 for n, i in samples.groupby(["cellLine", "numberCells", "technique", "ip",
                              "treatment", "biologicalReplicate", "genome"]).groups.items():
     if len(i) == 1:
         samples.loc[i[0], "technicalReplicate"] = 0
 
-# All
-# subset samples
-sampleSubset = samples.reset_index(drop=True)
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
-# normCounts = getCounts(sampleSubset)
-# plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.all.pdf"))
-
-
-# ChIPmentation vs ChIP
-print("ChIPmentation vs ChIP")
-# histones
-sampleSubset = samples[
-    samples["sampleName"].str.contains(
-        "K562_10M_CM_H3K27AC_nan_nan_0_0_hg19|" + 
-        "K562_10M_CHIP_H3K27AC_nan_nan_1_0_hg19|" + 
-        "K562_500K_CHIP_H3K27ME3_nan_nan_0_0_hg19|" + 
-        "K562_500K_CM_H3K27ME3_nan_nan_0_0_hg19|" + 
-        "K562_10M_CM_H3K36ME3_nan_nan_0_0_hg19|" + 
-        "K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19|" + 
-        "K562_10M_CHIP_H3K4ME1_nan_nan_0_0_hg19|" + 
-        "K562_10M_CM_H3K4ME1_nan_nan_0_0_hg19|" + 
-        "K562_500K_CHIP_H3K4ME3_nan_nan_0_0_hg19|" + 
-        "K562_500K_CM_H3K4ME3_nan_nan_0_0_hg19")
-].reset_index(drop=True)
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
-normCounts = getCounts(sampleSubset)
-# normCounts.to_pickle(os.path.join(plotsDir, "correlations.set-reps.pickle"))
-plotCorrelations(normCounts, "correlations.set-reps-hists-cm_chip-green.pdf", values=True, color="green")
-plotCorrelations(normCounts, "correlations.set-reps-hists-cm_chip.pdf", values=True)
-
-# TFs
-sampleSubset = samples[
-    samples["sampleName"].str.contains(
-        "K562_10M_CM_CTCF_nan_nan_0_0_hg19|" + 
-        "K562_10M_CHIP_CTCF_nan_nan_0_0_hg19|" +
-        "K562_10M_CM_GATA1_nan_nan_0_0_hg19|" + 
-        "K562_10M_CHIP_GATA1_nan_nan_0_0_hg19|" +
-        "K562_10M_CM_PU1_nan_nan_0_0_hg19|" + 
-        "K562_10M_CHIP_PU1_nan_nan_0_0_hg19|" +
-        "K562_10M_CM_REST_nan_nan_0_0_hg19|" + 
-        "K562_10M_CHIP_REST_nan_nan_0_0_hg19"
-)].reset_index(drop=True)
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
-normCounts = getCounts(sampleSubset)
-# normCounts.to_pickle(os.path.join(plotsDir, "correlations.set-reps.pickle"))
-plotCorrelations(normCounts, "correlations.set-reps-TFs-cm_chip-green.pdf", values=True, color="green")
-plotCorrelations(normCounts, "correlations.set-reps-TFs-cm_chip.pdf", values=True)
-
-
-
-# ChIPmentation low vs high cell numbers
-print("ChIPmentation vs ChIP")
+# Fig 1e: ChIPmentation titration
 # subset samples
 sampleSubset = samples[
-    (samples["technique"].str.contains("CM")) &
-    (samples["ip"].str.contains("H3K4ME3|H3K27ME3")) &
-    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
-    (samples["technicalReplicate"] == 0) &
-    (samples["biologicalReplicate"] != 0)
+    (samples["technique"] == "CM") &
+    (samples["ip"] == "H3K4ME3") &
+    (samples["numberCells"] == "500K") &
+    (samples["treatment"].notnull())
 ].reset_index(drop=True)
-sampleSubset = sampleSubset[~sampleSubset['sampleName'].str.contains("PE")]
 
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
+# get counts per window
 normCounts = getCounts(sampleSubset)
-# normCounts.to_pickle(os.path.join(plotsDir, "correlations.set-reps.pickle"))
-plotCorrelations(normCounts, "correlations.set-reps-hists-cellnumbers-green.pdf", values=True, color="green")
-plotCorrelations(normCounts, "correlations.set-reps-hists-cellnumbers-0.pdf", values=True)
+# save matrix
+c = normCounts.corr()
+c['sample1'] = c.index
+c = pd.melt(c, id_vars=['sample1'])
+c.to_csv(os.path.join(plotsDir, "fig1e-correlations.titration.tsv"))
+plotCorrelations(normCounts, os.path.join(plotsDir, "fig1e-correlations.titration.pdf"), method="single", values=True)
 
 
-
-
-# All final
-print("All final")
-# subset samples
-sampleSubset = samples[
-    (samples["technique"].str.contains("CM|CHIP")) &
-    (samples["ip"].str.contains("H3K4ME3|H3K4ME1|H3K27ME3|H3K36ME3|H3K27AC|CTCF|PU1|GATA1|REST")) &
-    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
-    (samples["technicalReplicate"] == 0) &
-    (samples["biologicalReplicate"] == 0)
-].reset_index(drop=True)
-
-sampleSubset = sampleSubset[pd.isnull(sampleSubset['treatment'])].reset_index(drop=True)
-
-sampleSubset = sampleSubset.append(
-    pd.Series(
-        data=["K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19", "H3K36ME3", "CHIP"],
-        index=["sampleName", "ip", "technique"]
-    ),
-    ignore_index=True
-)
-sampleSubset = sampleSubset.append(
-    pd.Series(
-        data=["K562_10M_CHIP_H3K27AC_nan_nan_1_0_hg19", "H3K27AC", "CHIP"],
-        index=["sampleName", "ip", "technique"]
-    ),
-    ignore_index=True
-)
-
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-if os.path.exists(os.path.join(plotsDir, "correlations.set.pickle")):
-    normCounts = pd.read_pickle(os.path.join(plotsDir, "correlations.set.pickle"))
-else:
-    normCounts = getCounts(sampleSubset)
-    normCounts.to_pickle(os.path.join(plotsDir, "correlations.set.pickle"))
-
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.set.pdf"))
-plotCorrelations(normCounts.filter(regex="CM"), os.path.join(plotsDir, "correlations.set.CM.pdf"), method="complete", metric="euclidean")
-
-
-# Histones
-print("histonesAll")
+# Fig 1g: ChIPmentation histone sample correlation
 # subset samples
 sampleSubset = samples[
     (samples["technique"].str.contains("CM|CHIP")) &
     (samples["ip"].str.contains("H3K4ME3|H3K4ME1|H3K27ME3|H3K36ME3|H3K27AC")) &
     (samples["numberCells"].str.contains("10M|500K|10K")) &
+    (~samples["treatment"].notnull()) &
     (samples["technicalReplicate"] == 0) &
-    (samples["biologicalReplicate"] != 0)
-].reset_index(drop=True)
-
-sampleSubset = sampleSubset[pd.isnull(sampleSubset['treatment'])].reset_index(drop=True)
-
-sampleSubset = sampleSubset.append(
-    pd.Series(
-        data=["K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19", "H3K36ME3", "CHIP"],
-        index=["sampleName", "ip", "technique"]
-    ),
-    ignore_index=True
-)
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
-if os.path.exists(os.path.join(plotsDir, "correlations.histones-reps.pickle")):
-    normCounts = pd.read_pickle(os.path.join(plotsDir, "correlations.histones-reps.pickle"))
-else:
-    normCounts = getCounts(sampleSubset)
-    normCounts.to_pickle(os.path.join(plotsDir, "correlations.histones-reps.pickle"))
-
-# a = normCounts.index.values
-# idx = np.array([a, a, a, a, a]).T.flatten()[:len(a)]
-# normCounts = normCounts.groupby(idx).mean()
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.histones-reps.pdf"), method="single")
-normCounts = normCounts.filter(regex='10M|500K')
-normCounts = normCounts.filter(regex='nan_nan')
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.histones-reps.best.pdf"), method="single")
-
-# Histones
-print("histones biologicalReplicate=0")
-# subset samples
-sampleSubset = samples[
-    (samples["technique"].str.contains("CM|CHIP")) &
-    (samples["ip"].str.contains("H3K4ME3|H3K4ME1|H3K27ME3|H3K36ME3|H3K27AC")) &
-    (samples["numberCells"].str.contains("10M|500K|10K")) &
-    (samples["technicalReplicate"] == 0) &
-    (samples["biologicalReplicate"] == 0)
-].reset_index(drop=True)
-
-sampleSubset = sampleSubset[pd.isnull(sampleSubset['treatment'])].reset_index(drop=True)
-
-sampleSubset = sampleSubset.append(
-    pd.Series(
-        data=["K562_10M_CHIP_H3K36ME3_nan_nan_1_1_hg19", "H3K36ME3", "CHIP"],
-        index=["sampleName", "ip", "technique"]
-    ),
-    ignore_index=True
-)
-sampleSubset = sampleSubset.append(
-    pd.Series(
-        data=["K562_10M_CHIP_H3K27AC_nan_nan_1_0_hg19", "H3K27AC", "CHIP"],
-        index=["sampleName", "ip", "technique"]
-    ),
-    ignore_index=True
-)
-
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
-if os.path.exists(os.path.join(plotsDir, "correlations.histones.pickle")):
-    normCounts = pd.read_pickle(os.path.join(plotsDir, "correlations.histones.pickle"))
-else:
-    normCounts = getCounts(sampleSubset)
-    normCounts.to_pickle(os.path.join(plotsDir, "correlations.histones.pickle"))
-
-# a = normCounts.index.values
-# idx = np.array([a, a, a, a, a]).T.flatten()[:len(a)]
-# normCounts = normCounts.groupby(idx).mean()
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.histones.pdf"), method="single")
-plotCorrelations(normCounts.filter(regex='10M|500K'), os.path.join(plotsDir, "correlations.histones.best.pdf"), method="single")
-plotCorrelations(normCounts.filter(regex='CM'), os.path.join(plotsDir, "correlations.histones.CM.pdf"), method="single")
-
-
-# TFs
-print("TFs")
-# subset samples
-sampleSubset = samples[
-    (samples["technique"].str.contains("CM|CHIP")) &
-    (samples["ip"].str.contains("CTCF|PU1|GATA1|REST")) &
-    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
-    (samples["technicalReplicate"] == 0) &
-    (samples["biologicalReplicate"] != 0)
-].reset_index(drop=True)
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
-if os.path.exists(os.path.join(plotsDir, "correlations.TFs-reps.pickle")):
-    normCounts = pd.read_pickle(os.path.join(plotsDir, "correlations.TFs-reps.pickle"))
-else:
-    normCounts = getCounts(sampleSubset)
-    normCounts.to_pickle(os.path.join(plotsDir, "correlations.TFs-reps.pickle"))
-
-# a = normCounts.index.values
-# idx = np.array([a, a, a, a, a]).T.flatten()[:len(a)]
-# normCounts = normCounts.groupby(idx).mean()
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.TFs-reps.pdf"), method="complete")
-plotCorrelations(normCounts.filter(regex='10M'), os.path.join(plotsDir, "correlations.TFs-reps.best.pdf"), method="complete")
-
-# TFs
-print("TFs")
-# subset samples
-sampleSubset = samples[
-    (samples["technique"].str.contains("CM|CHIP")) &
-    (samples["ip"].str.contains("CTCF|PU1|GATA1|REST")) &
-    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
-    (samples["technicalReplicate"] == 0) &
-    (samples["biologicalReplicate"] == 0)
-].reset_index(drop=True)
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
-if os.path.exists(os.path.join(plotsDir, "correlations.TFs.pickle")):
-    normCounts = pd.read_pickle(os.path.join(plotsDir, "correlations.TFs.pickle"))
-else:
-    normCounts = getCounts(sampleSubset)
-    normCounts.to_pickle(os.path.join(plotsDir, "correlations.TFs.pickle"))
-
-# a = normCounts.index.values
-# idx = np.array([a, a, a, a, a]).T.flatten()[:len(a)]
-# normCounts = normCounts.groupby(idx).mean()
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.TFs.pdf"), method="complete")
-plotCorrelations(normCounts.filter(regex='10M'), os.path.join(plotsDir, "correlations.TFs.best.pdf"), method="complete")
-
-
-# H3K4me3 titration
-print("Titration")
-# subset samples
-sampleSubset = samples[
-    (samples["technique"].str.contains("CM|CHIP")) &
-    (samples["ip"].str.contains("H3K4ME3")) &
-    (samples["numberCells"].str.contains("500K|10K")) &
-    (samples["technicalReplicate"] == 0) &
-    (samples["biologicalReplicate"] == 0)
-].reset_index(drop=True)
-
-s = samples[
-    (samples["technique"].str.contains("CM")) &
-    (samples["ip"].str.contains("H3K4ME3")) &
-    (samples["sampleName"].str.contains("02ULTN5_PE|05ULTN5_PE|1ULTN5_PE|5ULTN5_PE"))
-].reset_index(drop=True)
-
-sampleSubset = sampleSubset.append(s).reset_index(drop=True)
-
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
-if os.path.exists(os.path.join(plotsDir, "correlations.titration.pickle")):
-    normCounts = pd.read_pickle(os.path.join(plotsDir, "correlations.titration.pickle"))
-else:
-    normCounts = getCounts(sampleSubset)
-    normCounts.to_pickle(os.path.join(plotsDir, "correlations.titration.pickle"))
-
-# a = normCounts.index.values
-# idx = np.array([a, a, a, a, a]).T.flatten()[:len(a)]
-# normCounts = normCounts.groupby(idx).mean()
-plotCorrelations(normCounts, os.path.join(plotsDir, "correlations.titration.pdf"), method="complete", values=True)
-
-
-# Scatter plots
-print("techniques")
-# Different techniques
-for ip in samples['ip'].unique():
-    for c in samples['numberCells'].unique():
-        cells = samples['technique'].unique()
-        for (t1, t2) in itertools.combinations(cells, 2):
-            s1 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c) &
-                (samples["technique"] == t1) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == 0)
-            ]
-            s2 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c) &
-                (samples["technique"] == t2) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == 0)
-            ]
-            if s1.empty or s2.empty:
-                continue
-
-            normCounts = getCounts(s1.append(s2).reset_index())
-            normCounts.columns = s1.sampleName.tolist() + s2.sampleName.tolist()
-
-            plotScatterCorrelation(
-                normCounts,
-                os.path.join(
-                    plotsDir,
-                    "correlation.{0}.{1}.{2}_vs_{3}.pdf".format(ip, c, t1, t2)
-                )
-            )
-
-print("cells")
-# Different number of cells
-for ip in samples['ip'].unique():
-    for t in samples['technique'].unique():
-        cells = samples['numberCells'].unique()
-        for (c1, c2) in itertools.combinations(cells, 2):
-            s1 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c1) &
-                (samples["technique"] == t) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == 0)
-            ]
-            s2 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c2) &
-                (samples["technique"] == t) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == 0)
-            ]
-            if s1.empty or s2.empty:
-                continue
-
-            normCounts = getCounts(s1.append(s2).reset_index())
-            normCounts.columns = s1.sampleName.tolist() + s2.sampleName.tolist()
-
-            plotScatterCorrelation(
-                normCounts,
-                os.path.join(
-                    plotsDir,
-                    "correlation.{0}.{1}.{2}_vs_{3}.pdf".format(ip, t, c1, c2)
-                )
-            )
-
-print("replicates")
-# Replicate 1 vs 2
-for ip in samples['ip'].unique():
-    for c in samples['numberCells'].unique():
-        for t in samples['technique'].unique():
-            r1 = 1
-            r2 = 2
-            s1 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c) &
-                (samples["technique"] == t) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == r1)
-            ]
-            s2 = samples[
-                (samples["ip"] == ip) &
-                (samples["numberCells"] == c) &
-                (samples["technique"] == t) &
-                (samples["technicalReplicate"] == 0) &
-                (samples["biologicalReplicate"] == r2)
-            ]
-            if s1.empty or s2.empty:
-                continue
-
-            d = s1.append(s2).reset_index()
-            d = d[pd.isnull(d['treatment'])].reset_index(drop=True)
-
-            normCounts = getCounts(d)
-            normCounts.columns = d.sampleName
-
-            pdf = "correlation.{0}.{1}.{2}.{3}_vs_{4}.pdf".format(ip, c, t, r1, r2)
-
-            if not os.path.exists(pdf):
-                plotScatterCorrelation(
-                    normCounts,
-                    os.path.join(
-                        plotsDir,
-                        pdf
-                    )
-                )
-
-# Table with TF correlation values (Fig. 1d)
-# get all TF samples
-sampleSubset = samples[
-    (samples["technique"].str.contains("CM")) &
-    (samples["ip"].str.contains("CTCF|PU1|GATA1|REST")) &
-    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
-    (samples["technicalReplicate"] == 0)
-].reset_index(drop=True)
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
-
-# get counts
-if os.path.exists(os.path.join(plotsDir, "correlations.table.pickle")):
-    normCounts = pd.read_pickle(os.path.join(plotsDir, "correlations.table.pickle"))
-else:
-    normCounts = getCounts(sampleSubset)
-    normCounts.to_pickle(os.path.join(plotsDir, "correlations.table.pickle"))
-
-corr = pd.DataFrame()
-
-# Replicate vs Replicate
-# get only CM samples
-sampleSubset = samples[
-    (samples["technique"].str.contains("CM")) &
-    (samples["ip"].str.contains("CTCF|PU1|GATA1|REST")) &
-    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
     (samples["biologicalReplicate"] != 0) &
-    (samples["technicalReplicate"] == 0)
+    (samples["sampleName"] != "K562_500K_CHIP_H3K27AC_nan_nan_1_1_hg19")
 ].reset_index(drop=True)
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
 
-groups = sampleSubset.groupby(['cellLine', 'numberCells', 'technique', 'ip',  'patient', 'treatment'])
+# get counts per window
+normCounts = getCounts(sampleSubset)
+# save matrix
+c = normCounts.corr()
+c['sample1'] = c.index
+c = pd.melt(c, id_vars=['sample1'])
+c.to_csv(os.path.join(plotsDir, "fig1e-correlations.histones.tsv"))
+plotCorrelations(normCounts, os.path.join(plotsDir, "fig1e-correlations.histones.pdf"), method="single", values=True)
 
-for g in groups.groups.items():
-    if g[0][5] == "PE":
-        continue
-    df = pd.DataFrame()
-    for i in g[1]:
-        name = sampleSubset.ix[i]['sampleName']
-        name = re.sub("_hg19", "", name)
-        name = re.sub("K562_", "", name)
-        try:
-            df = df.append(normCounts[name], ignore_index=True)
-        except:
-            print("failed sample %s" % name)
-    if len(df) == 2:
-        corr.loc[name, 'CR'] = df.T.corr()[1][0]
 
-# Technique vs Technique
-# get only 0_0 samples
+# Fig 1g: ChIPmentation TF correlation
+# subset samples
 sampleSubset = samples[
     (samples["technique"].str.contains("CM|CHIP")) &
-    (samples["ip"].str.contains("CTCF|PU1|GATA1|REST")) &
-    (samples["numberCells"].str.contains("10M|500K|100K|10K")) &
-    (samples["biologicalReplicate"] == 0) &
+    (samples["ip"].str.contains("CTCF|GATA1|PU1|REST")) &
+    (samples["numberCells"].str.contains("10M|500K|100K")) &
+    (~samples["treatment"].notnull()) &
     (samples["technicalReplicate"] == 0)
 ].reset_index(drop=True)
-sampleSubset = sampleSubset.sort(["ip", "technique"]).reset_index(drop=True)
+
+# get counts per window
+normCounts = getCounts(sampleSubset)
+# save matrix
+c = normCounts.corr()
+c['sample1'] = c.index
+c = pd.melt(c, id_vars=['sample1'])
+c.to_csv(os.path.join(plotsDir, "fig1e-correlations.tfs.tsv"))
+plotCorrelations(normCounts, os.path.join(plotsDir, "fig1e-correlations.tfs.pdf"), method="single", values=True)
 
 
-groups = sampleSubset.groupby(['cellLine', 'numberCells', 'ip',  'patient', 'treatment'])
 
-for g in groups.groups.items():
-    if len(g[1]) == 2:
-        print(g)
-        df = pd.DataFrame()
-        for i in g[1]:
-            name = sampleSubset.ix[i]['sampleName']
-            name = re.sub("_hg19", "", name)
-            name = re.sub("K562_", "", name)
-            print(name)
-            try:
-                df = df.append(normCounts[name], ignore_index=True)
-            except:
-                print("failed sample %s" % name)
-                break
-        if len(df) == 2:
-            corr.loc[name, 'CT'] = df.T.corr()[1][0]
+# Fig S2b: ChIP-tagmentation correlation
+# subset samples
+sampleSubset = samples[
+    samples["sampleName"].str.contains("PBMC_nan_ATAC_H3K4ME3_nan_100PG_1_0_hg19|" +
+    "PBMC_nan_ATAC_H3K4ME3_nan_100PG_1_1_hg19|" +
+    "PBMC_nan_ATAC_H3K4ME3_nan_100PG_1_2_hg19|" +
+    "PBMC_nan_CHIP_H3K4ME3_nan_nan_1_1_hg19")
+].reset_index(drop=True)
 
-# plot
-cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
-new_cmap = truncate_colormap(cmap, corr.min().min(), 1)
+# get counts per window
+normCounts = getCounts(sampleSubset)
+# save matrix
+c = normCounts.corr()
+c['sample1'] = c.index
+c = pd.melt(c, id_vars=['sample1'])
+c.to_csv(os.path.join(plotsDir, "fig1e-correlations.chip-tagmentation.tsv"))
+plotCorrelations(normCounts, os.path.join(plotsDir, "fig1e-correlations.chip-tagmentation.pdf"), method="single", values=True)
 
-f, ax = plt.subplots()
-sns.heatmap(corr.sort(), vmax=.8, linewidths=0, square=True, cmap=new_cmap, annot=True, fmt=".3")
-plt.savefig(os.path.join(plotsDir, "correlations.TF.table.pdf"), bbox_inches="tight")
+
+for s1, s2 in itertools.combinations(sampleSubset['sampleName']):
+    plotScatterCorrelation(
+        normCounts[[s1, s2]],
+        os.path.join(plotsDir, "figs2b-correlations.chip-tagmentation.scatter.{0}-{1}.pdf".format(s1, s2))
+    )
