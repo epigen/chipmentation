@@ -1,0 +1,142 @@
+table {
+	border-collapse: collapse;
+	border: 2px solid #000099;
+	font: normal 80%/140% arial, verdana, helvetica, sans-serif;
+	color: #000;
+	background: #fff;
+}
+caption {
+	padding: 0 0.6em 0.8em;
+	font-size: 1.3em;
+	font-weight: bold;
+	text-align: left;
+	color: #000;
+	background: transparent;
+}
+td, th {
+	border: 1px solid #e0e0e0;
+	padding: 0.5em;
+}
+thead th {
+	border: 1px solid #e0e0e0;
+	text-align: left;
+	font-size: 1em;
+	font-weight: bold;
+	background: #c6d7cf;
+}
+tfoot th, tfoot td {
+	border: 1px solid #e0e0e0;
+	text-align: left;
+	font-size: 1em;
+	background: #e8e8cf;
+}
+tfoot th {
+	font-weight: bold;
+}
+tbody td a {
+	background: transparent;
+	color: #00c;
+	text-decoration: underline;
+}
+tbody td a:hover {
+	background: transparent;
+	color: #00c;
+	text-decoration: underline;
+}
+tbody th a {
+	background: transparent;
+	color: #036;
+	text-decoration: underline;
+	font-weight: bold;
+}
+tbody th a:visited {
+	color: #990000;
+}
+tbody th, tbody td {
+	vertical-align: top;
+	text-align: left;
+}
+tfoot td {
+	border: 1px solid #996;
+}
+tbody tr:hover {
+	background: #ffffd9;
+}
+html, body {
+	color:#000000;
+	background:#fff;
+  font-family: sans-serif;
+}
+
+h1 {
+	color:#fff;
+	background:rgb(67%,76%,84%);
+	border:1px solid rgb(67%,76%,84%);
+	border-width:1px 0;
+}
+
+h2 {
+	line-height:1;
+}
+
+h3 {
+	padding-top: 25px;
+	line-height:1.0;
+}
+
+h4 {
+	line-height:1.5;
+}
+
+p {
+	line-height:1;
+}
+
+html hr {
+	color:rgb(67%,76%,84%);
+	border:1px solid rgb(67%,76%,84%);
+	background-color:#fff;
+	height:1px;
+}
+
+address {
+	font-style:normal;
+	line-height:1.5;
+}
+
+a:link {color:#036;}
+
+a:visited {
+	color:#036;
+/*	color:#036; */
+/*	color:#89b; */
+/*	color:rgb(67%,76%,84%);  */
+}
+
+a:hover {
+	color:#036;
+}
+
+/*added by nathan*/
+
+ol,ul{
+list-style:none;
+padding: 0em;
+margin: 0em;
+}
+
+li:before {
+content:"\25B8 \0020";
+}
+
+li {
+color:#0066cc;
+}
+
+
+
+
+
+
+
+
