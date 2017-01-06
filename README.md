@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/42116269.svg)](https://zenodo.org/badge/latestdoi/42116269)
+
 ChIPmentation
 =====
 
